@@ -1,0 +1,101 @@
+================================================================================
+WKLY NUTS PRODUCTION APP - UPDATED WITH 7-DAY RECIPE SYSTEM
+================================================================================
+
+✅ MAJOR UPDATE: Now supports 7 different daily recipes per SKU!
+📅 Each day (MON-SUN) has its own unique ingredient mix
+🎨 Beautiful color-coded interface for each day
+
+================================================================================
+EXACT POWERSHELL COMMANDS TO RUN THE APP
+================================================================================
+
+STEP 1: Open PowerShell
+------------------------
+Press: Windows Key + X
+Select: "Windows PowerShell" or "Terminal"
+
+
+STEP 2: Navigate to the Project Folder
+---------------------------------------
+Copy and paste this command (press Enter after):
+
+cd "D:\POKAsoft\wkly nuts app\wkly nuts app\vendor and product management tool"
+
+
+STEP 3: Install Dependencies
+-----------------------------
+npm install
+
+
+STEP 4: Start the App
+---------------------
+npm run dev
+
+
+STEP 5: Open Browser
+--------------------
+The terminal will show a URL like:
+http://localhost:5173
+
+Open that URL in your browser.
+
+
+================================================================================
+COMPLETE ONE-TIME SETUP (Copy All at Once):
+================================================================================
+
+cd "D:\POKAsoft\wkly nuts app\wkly nuts app\vendor and product management tool"; npm install; npm run dev
+
+
+================================================================================
+WHAT'S NEW - 7-DAY RECIPE SYSTEM
+================================================================================
+
+The app now correctly supports WKLY Nuts' unique product structure:
+
+BEFORE:
+- Each SKU had ONE recipe for all sachets
+- Weekly Pack = 7 identical sachets ❌
+
+NOW:
+- Each SKU has 7 DIFFERENT recipes (MON through SUN) ✅
+- Weekly Pack = 7 unique sachets (1 per day) ✅
+- Monthly Pack = 28 sachets (4 of each day) ✅
+
+EXAMPLE:
+Night Pack has different ingredients/quantities for each day:
+- Monday: 13 ingredients, 44g total (unique mix)
+- Tuesday: 13 ingredients, 44g total (different proportions)
+- Wednesday: 13 ingredients, 44g total (different proportions)
+... and so on for all 7 days!
+
+Production Calculation Example:
+Produce 80 Monthly Packs:
+- Monthly Pack = 4 Weekly Packs
+- Need: 80 × 4 = 320 of EACH day's sachet
+- If Monday has 6g Almonds: 320 × 6g = 1,920g needed
+- Calculate for all 7 days, then sum by ingredient
+
+For full details, see UPDATES.md file!
+
+
+================================================================================
+ALTERNATIVE - Right Click Method:
+================================================================================
+
+1. Open File Explorer
+2. Navigate to: D:\POKAsoft\wkly nuts app\wkly nuts app\vendor and product management tool
+3. Hold SHIFT and right-click inside the folder
+4. Select "Open PowerShell window here" or "Open in Terminal"
+5. Run: npm install
+6. Run: npm run dev
+
+
+================================================================================
+TO STOP THE SERVER:
+================================================================================
+Press: Ctrl + C (in the PowerShell window)
+
+
+================================================================================

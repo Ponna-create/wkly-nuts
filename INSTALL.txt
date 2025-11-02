@@ -1,0 +1,202 @@
+================================================================================
+WKLY NUTS PRODUCTION MANAGEMENT APPLICATION
+Installation & Setup Instructions
+================================================================================
+
+SYSTEM REQUIREMENTS:
+-------------------
+- Node.js version 16 or higher
+- NPM (comes with Node.js)
+- Modern web browser (Chrome, Firefox, Safari, or Edge)
+- 100MB free disk space
+
+INSTALLATION STEPS:
+------------------
+
+1. INSTALL NODE.JS (if not already installed)
+   - Windows: Download from https://nodejs.org/
+   - Mac: Download from https://nodejs.org/ or use: brew install node
+   - Linux: sudo apt install nodejs npm
+
+2. VERIFY INSTALLATION
+   Open terminal/command prompt and run:
+   
+   node --version
+   npm --version
+   
+   You should see version numbers displayed.
+
+3. NAVIGATE TO PROJECT FOLDER
+   Open terminal/command prompt in this folder, or:
+   
+   cd path/to/vendor and product management tool
+
+4. INSTALL DEPENDENCIES
+   Run this command:
+   
+   npm install
+   
+   This will take 2-3 minutes. Wait for it to complete.
+
+5. START THE APPLICATION
+   Run this command:
+   
+   npm run dev
+   
+   You should see:
+   "Local: http://localhost:5173/"
+
+6. OPEN IN BROWSER
+   - The app should open automatically
+   - Or manually open: http://localhost:5173
+   - You should see the WKLY Nuts dashboard
+
+================================================================================
+
+FIRST TIME USAGE:
+----------------
+
+1. Create a Vendor:
+   - Click "Vendor Management"
+   - Click "Create Vendor"
+   - Add vendor details and ingredients
+   - Click "Save Vendor"
+
+2. Create a SKU:
+   - Click "SKU Management"
+   - Click "Create SKU"
+   - Build recipe with ingredients
+   - Click "Save SKU"
+
+3. Set Pricing:
+   - Click "Pricing Strategy"
+   - Select SKU and pack type
+   - Enter costs and profit margin
+   - Click "Save Pricing Strategy"
+
+4. Plan Sales:
+   - Click "Sales & Revenue"
+   - Add monthly targets
+   - View projections
+
+For detailed guide, see QUICKSTART.md
+
+================================================================================
+
+STOPPING THE APPLICATION:
+-------------------------
+
+In the terminal where the app is running:
+- Press: Ctrl + C (Windows/Linux)
+- Press: Cmd + C (Mac)
+
+================================================================================
+
+BUILDING FOR PRODUCTION:
+-----------------------
+
+To create a production build:
+
+npm run build
+
+The built files will be in the "dist" folder.
+
+To preview the production build:
+
+npm run preview
+
+================================================================================
+
+TROUBLESHOOTING:
+---------------
+
+Problem: "npm: command not found"
+Solution: Install Node.js from https://nodejs.org/
+
+Problem: Port 5173 already in use
+Solution: The app will automatically use the next available port
+
+Problem: App won't start after installing dependencies
+Solution: Delete node_modules folder and package-lock.json, then run:
+         npm install
+         npm run dev
+
+Problem: White/blank screen
+Solution: Check browser console for errors (F12)
+         Clear browser cache and reload
+
+Problem: Styles not loading
+Solution: Run: npm run build
+         Then: npm run dev
+
+================================================================================
+
+DATA STORAGE:
+------------
+
+⚠️ IMPORTANT: All data is stored in browser memory (RAM).
+If you refresh the page, all data will be lost.
+
+To persist data, you would need to add a backend database.
+For now, use Export CSV features to backup important data.
+
+================================================================================
+
+TECHNICAL SUPPORT:
+-----------------
+
+For issues or questions:
+1. Read README.md for full documentation
+2. Read QUICKSTART.md for usage guide
+3. Contact the development team
+
+================================================================================
+
+PROJECT STRUCTURE:
+-----------------
+
+vendor and product management tool/
+├── src/
+│   ├── components/         # Reusable components
+│   │   ├── Layout.jsx     # Main layout with sidebar
+│   │   └── Toast.jsx      # Notification system
+│   ├── context/           # Global state management
+│   │   └── AppContext.jsx # App state and actions
+│   ├── pages/             # Main pages
+│   │   ├── Dashboard.jsx
+│   │   ├── VendorManagement.jsx
+│   │   ├── SKUManagement.jsx
+│   │   ├── PricingStrategy.jsx
+│   │   └── SalesRevenue.jsx
+│   ├── App.jsx            # Root component
+│   ├── main.jsx           # Entry point
+│   └── index.css          # Global styles
+├── package.json           # Dependencies
+├── vite.config.js         # Build configuration
+├── tailwind.config.js     # Styling configuration
+├── index.html             # HTML template
+├── README.md              # Full documentation
+├── QUICKSTART.md          # Quick start guide
+└── INSTALL.txt            # This file
+
+================================================================================
+
+FEATURES:
+--------
+
+✅ Vendor Management - Add and manage ingredient suppliers
+✅ SKU Management - Create products with recipes
+✅ Production Calculator - Calculate ingredient requirements
+✅ Pricing Strategy - Set costs and profit margins
+✅ Sales & Revenue - Plan targets and projections
+✅ Break-even Analysis - Financial planning
+✅ Export to CSV - Backup and sharing
+✅ Print Functionality - Production orders
+✅ Responsive Design - Works on mobile and desktop
+✅ Real-time Calculations - Instant updates
+
+================================================================================
+
+ENJOY USING WKLY NUTS PRODUCTION MANAGER!
+
+================================================================================

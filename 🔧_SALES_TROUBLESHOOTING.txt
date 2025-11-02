@@ -1,0 +1,160 @@
+================================================================================
+🔧 SALES & REVENUE TROUBLESHOOTING GUIDE
+================================================================================
+
+ISSUE: Blank white screen on Sales & Revenue page
+
+================================================================================
+QUICK FIXES TO TRY:
+================================================================================
+
+1. ✅ CHECK THE CORRECT URL
+   Current server is running on: http://localhost:5173
+   Try: http://localhost:5173/sales
+   Or: http://localhost:5173 (then click "Sales & Revenue" in sidebar)
+
+2. ✅ HARD REFRESH THE PAGE
+   Press: Ctrl + Shift + R
+   Or: F12 → Right-click refresh button → "Empty Cache and Hard Reload"
+
+3. ✅ CHECK BROWSER CONSOLE FOR ERRORS
+   Press: F12
+   Go to: Console tab
+   Look for: Red error messages
+   If you see errors, take a screenshot!
+
+4. ✅ CLEAR BROWSER CACHE
+   Chrome: Settings → Privacy → Clear browsing data
+   Or: Ctrl + Shift + Delete
+
+5. ✅ TRY DIFFERENT BROWSER
+   Test in: Chrome, Firefox, Edge
+   Or: Incognito/Private mode
+
+================================================================================
+STEP-BY-STEP DEBUGGING:
+================================================================================
+
+STEP 1: Check if other pages work
+---------------------------------
+1. Go to: http://localhost:5173
+2. Click: "Dashboard" → Does it work? ✅/❌
+3. Click: "Vendor Management" → Does it work? ✅/❌
+4. Click: "SKU Management" → Does it work? ✅/❌
+5. Click: "Pricing Strategy" → Does it work? ✅/❌
+6. Click: "Sales & Revenue" → Does it work? ✅/❌
+
+If other pages work but Sales & Revenue doesn't → Component issue
+If all pages are blank → Server/routing issue
+
+STEP 2: Check browser console
+-----------------------------
+1. Press: F12
+2. Go to: Console tab
+3. Refresh the page
+4. Look for errors like:
+   - "Failed to load resource"
+   - "Uncaught Error"
+   - "Cannot read property"
+   - Any red text
+
+STEP 3: Check network tab
+------------------------
+1. Press: F12
+2. Go to: Network tab
+3. Refresh the page
+4. Look for:
+   - Red entries (failed requests)
+   - 404 errors
+   - 500 errors
+
+STEP 4: Check if server is running
+----------------------------------
+1. Look at terminal/command prompt
+2. Should see: "Local: http://localhost:5173"
+3. If not running: Restart with npm run dev
+
+================================================================================
+COMMON SOLUTIONS:
+================================================================================
+
+SOLUTION 1: Port Conflict
+-------------------------
+If you see "Port 5173 is in use":
+1. Close all browser tabs
+2. Stop server: Ctrl + C
+3. Start again: npm run dev
+4. Use the new port shown (5174, 5175, etc.)
+
+SOLUTION 2: JavaScript Error
+----------------------------
+If console shows errors:
+1. Take screenshot of error
+2. Try hard refresh: Ctrl + Shift + R
+3. Clear browser cache
+4. Try different browser
+
+SOLUTION 3: Missing Dependencies
+--------------------------------
+If you see "Cannot resolve module":
+1. Stop server: Ctrl + C
+2. Run: npm install
+3. Start server: npm run dev
+
+SOLUTION 4: Cached Old Version
+------------------------------
+If you see old interface:
+1. Hard refresh: Ctrl + Shift + R
+2. Clear cache: Ctrl + Shift + Delete
+3. Restart browser
+
+================================================================================
+WHAT SHOULD YOU SEE:
+================================================================================
+
+When Sales & Revenue page loads correctly, you should see:
+
+1. Header: "Sales Target & Revenue"
+2. Month/Year dropdowns (October 2025)
+3. "Monthly Targets" section with:
+   - SKU dropdown
+   - Pack Type dropdown
+   - Target Units input
+   - Add button
+4. "Break-even Analysis" section with:
+   - Fixed costs inputs
+   - Break-even calculations
+
+If you see this → Page is working! ✅
+If you see blank white → There's an issue ❌
+
+================================================================================
+EMERGENCY FIX:
+================================================================================
+
+If nothing works, try this:
+
+1. Close all browser tabs
+2. Stop server: Ctrl + C
+3. Run these commands:
+   ```
+   cd "D:\POKAsoft\wkly nuts app\wkly nuts app\vendor and product management tool"
+   npm install
+   npm run dev
+   ```
+4. Open: http://localhost:5173
+5. Click: Sales & Revenue
+
+================================================================================
+REPORT BACK:
+================================================================================
+
+Please tell me:
+1. What do you see when you go to http://localhost:5173?
+2. Do other pages work (Dashboard, Vendors, SKUs)?
+3. Any error messages in browser console (F12)?
+4. What port is shown in your terminal?
+
+This will help me fix the issue quickly!
+
+================================================================================

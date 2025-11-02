@@ -1,0 +1,75 @@
+================================================================================
+WKLY NUTS PRODUCTION APP - START COMMANDS
+================================================================================
+
+OPTION 1: Run the PowerShell Script (EASIEST)
+----------------------------------------------
+Right-click on RUN_APP.ps1 and select "Run with PowerShell"
+
+OR in PowerShell, run:
+    .\RUN_APP.ps1
+
+
+OPTION 2: Manual PowerShell Commands
+-------------------------------------
+Open PowerShell in this folder and run these commands one by one:
+
+1. Install dependencies:
+   npm install
+
+2. Start the app:
+   npm run dev
+
+3. Open browser to:
+   http://localhost:5173
+
+
+OPTION 3: One-Line Command
+---------------------------
+npm install && npm run dev
+
+
+TO STOP THE APP:
+----------------
+Press: Ctrl + C
+
+
+TROUBLESHOOTING:
+----------------
+If you get "cannot be loaded because running scripts is disabled":
+
+Run this in PowerShell as Administrator:
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+
+Then try again.
+
+
+IF PORT IS BUSY:
+----------------
+The app will automatically use the next available port (like 5174, 5175, etc.)
+Check the terminal output for the actual URL.
+
+
+WINDOWS FIREWALL:
+-----------------
+If Windows Firewall asks, click "Allow access"
+
+
+NEED HELP?
+----------
+1. Make sure Node.js is installed: node --version
+2. Make sure you're in the correct folder
+3. Delete node_modules folder and try again
+4. Read QUICKSTART.md for detailed guide
+
+
+================================================================================
+YOUR APP IS READY TO USE!
+================================================================================
+
+After running the commands above:
+- Browser will open automatically at http://localhost:5173
+- You'll see the WKLY Nuts dashboard
+- Follow QUICKSTART.md to add your first vendor and SKU
+
+================================================================================

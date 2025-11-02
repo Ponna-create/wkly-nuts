@@ -1,0 +1,5 @@
+cd "D:\POKAsoft\wkly nuts app\wkly nuts app\vendor and product management tool"
+
+npm install
+
+npm run dev
