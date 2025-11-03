@@ -308,14 +308,22 @@ export default function SalesRevenue() {
       </div>
 
       {/* Month/Year Selection */}
-      <div className="card">
+      <div className="card" style={{ overflow: 'visible' }}>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
+          <div className="relative" style={{ zIndex: 99999, isolation: 'isolate' }}>
             <label className="label">Month</label>
             <select
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
               className="input-field"
+              style={{ 
+                zIndex: 99999, 
+                position: 'relative',
+                pointerEvents: 'auto',
+                cursor: 'pointer'
+              }}
             >
               {months.map((month, index) => (
                 <option key={index} value={index}>
@@ -324,12 +332,20 @@ export default function SalesRevenue() {
               ))}
             </select>
           </div>
-          <div>
+          <div className="relative" style={{ zIndex: 99999, isolation: 'isolate' }}>
             <label className="label">Year</label>
             <select
               value={selectedYear}
               onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
               className="input-field"
+              style={{ 
+                zIndex: 99999, 
+                position: 'relative',
+                pointerEvents: 'auto',
+                cursor: 'pointer'
+              }}
             >
               {[2024, 2025, 2026, 2027, 2028].map((year) => (
                 <option key={year} value={year}>

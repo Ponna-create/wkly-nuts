@@ -222,10 +222,10 @@ export default function VendorComparison() {
       </div>
 
       {/* SKU Selection */}
-      <div className="card">
+      <div className="card" style={{ overflow: 'visible' }}>
         <h2 className="text-xl font-bold text-gray-900 mb-4">Select SKU for Cost Analysis</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
+          <div className="relative" style={{ zIndex: 99999, isolation: 'isolate' }}>
             <label className="label">Select SKU</label>
             <select
               value={selectedSKU}
@@ -233,11 +233,19 @@ export default function VendorComparison() {
                 setSelectedSKU(e.target.value);
                 setSelectedVendors([]);
               }}
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
               className="input-field"
+              style={{ 
+                zIndex: 99999, 
+                position: 'relative',
+                pointerEvents: 'auto',
+                cursor: 'pointer'
+              }}
             >
               <option value="">-- Select SKU --</option>
               {skus.map((sku) => (
-                <option key={sku.id} value={sku.id}>
+                <option key={sku.id} value={String(sku.id)}>
                   {sku.name} {sku.recipes && Object.values(sku.recipes).some(recipes => recipes.length > 0) ? `(${getSKURecipe(sku.id).length} ingredients)` : '(No recipe)'}
                 </option>
               ))}
