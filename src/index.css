@@ -25,6 +25,7 @@
     @apply bg-white rounded-lg shadow-md p-6 transition-shadow duration-200 hover:shadow-lg;
     position: relative;
     z-index: 1;
+    overflow: visible !important;
   }
   
   .input-field {

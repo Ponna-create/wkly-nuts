@@ -706,7 +706,15 @@ export default function SKUManagement() {
 
       {/* Production Calculator - Will continue in next part */}
       {showCalculator && (
-        <div className="card" style={{ position: 'relative', zIndex: 10 }}>
+        <div 
+          className="card" 
+          style={{ 
+            position: 'relative', 
+            zIndex: 10,
+            overflow: 'visible'
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-xl font-bold text-gray-900">Production Calculator</h2>
             <button
@@ -721,28 +729,37 @@ export default function SKUManagement() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <div className="relative z-50">
+            <div className="relative" style={{ zIndex: 99999, isolation: 'isolate' }}>
               <label className="label">Select SKU</label>
               <select
                 value={selectedSKU?.id || ''}
                 onChange={(e) => {
                   const skuId = e.target.value;
-                  const sku = skus.find((s) => s.id == skuId || s.id === skuId);
-                  setSelectedSKU(sku);
-                  setProductionRequirements(null);
+                  const sku = skus.find((s) => String(s.id) === String(skuId));
+                  if (sku) {
+                    setSelectedSKU(sku);
+                    setProductionRequirements(null);
+                  }
                 }}
+                onClick={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
                 className="input-field"
-                style={{ zIndex: 99999, position: 'relative' }}
+                style={{ 
+                  zIndex: 99999, 
+                  position: 'relative',
+                  pointerEvents: 'auto',
+                  cursor: 'pointer'
+                }}
               >
                 <option value="">-- Select SKU --</option>
                 {skus.map((sku) => (
-                  <option key={sku.id} value={sku.id}>
+                  <option key={sku.id} value={String(sku.id)}>
                     {sku.name}
                   </option>
                 ))}
               </select>
             </div>
-            <div className="relative z-50">
+            <div className="relative" style={{ zIndex: 99999, isolation: 'isolate' }}>
               <label className="label">Pack Type</label>
               <select
                 value={calculatorData.packType}
@@ -750,8 +767,15 @@ export default function SKUManagement() {
                   setCalculatorData({ ...calculatorData, packType: e.target.value });
                   setProductionRequirements(null);
                 }}
+                onClick={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
                 className="input-field"
-                style={{ zIndex: 99999, position: 'relative' }}
+                style={{ 
+                  zIndex: 99999, 
+                  position: 'relative',
+                  pointerEvents: 'auto',
+                  cursor: 'pointer'
+                }}
               >
                 <option value="weekly">Weekly Pack (7 different sachets)</option>
                 <option value="monthly">Monthly Pack (28 sachets = 4 weeks)</option>
