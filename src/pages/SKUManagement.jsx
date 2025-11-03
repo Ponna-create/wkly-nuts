@@ -283,15 +283,19 @@ export default function SKUManagement() {
     DAYS.forEach((day) => {
       const dayRecipe = selectedSKU.recipes[day];
       
-      // If vendor is selected, use that vendor's pricing; otherwise use SKU recipe pricing
+      // If vendor is selected, use ONLY that vendor's pricing; otherwise use SKU recipe pricing
       dayBreakdown[day] = dayRecipe.map((item) => {
         let pricePerGram = item.pricePerGram;
         
-        // If a vendor is selected, find that vendor's price for this ingredient
+        // If a vendor is selected, STRICTLY use only that vendor's price
         if (selectedVendor) {
           const vendorIng = selectedVendor.ingredients.find(ing => ing.name === item.ingredientName);
           if (vendorIng) {
+            // Ingredient available from selected vendor - use vendor's price
             pricePerGram = vendorIng.unit === 'kg' ? vendorIng.pricePerUnit / 1000 : vendorIng.pricePerUnit;
+          } else {
+            // Ingredient NOT available from selected vendor - set to 0
+            pricePerGram = 0;
           }
         }
         
@@ -310,12 +314,17 @@ export default function SKUManagement() {
         let pricePerGram = item.pricePerGram;
         let vendorName = item.vendorName;
         
-        // If vendor is selected, use that vendor's pricing
+        // If vendor is selected, STRICTLY use only that vendor's pricing
         if (selectedVendor) {
           const vendorIng = selectedVendor.ingredients.find(ing => ing.name === item.ingredientName);
           if (vendorIng) {
+            // Ingredient available from selected vendor
             pricePerGram = vendorIng.unit === 'kg' ? vendorIng.pricePerUnit / 1000 : vendorIng.pricePerUnit;
             vendorName = selectedVendor.name;
+          } else {
+            // Ingredient NOT available from selected vendor - set costs to 0
+            pricePerGram = 0;
+            vendorName = `${selectedVendor.name} (Not Supplied)`;
           }
         }
         
@@ -328,7 +337,7 @@ export default function SKUManagement() {
             ...existing,
             totalGrams: existing.totalGrams + totalGrams,
             totalCost: existing.totalCost + totalCost,
-            // Update pricePerGram and vendorName if vendor is selected
+            // When vendor selected, override with vendor-specific pricing
             pricePerGram: selectedVendor ? pricePerGram : existing.pricePerGram,
             vendorName: selectedVendor ? vendorName : existing.vendorName,
           });
@@ -367,13 +376,15 @@ export default function SKUManagement() {
             vendorUnit: vendorIng.unit,
           };
         } else {
-          // Ingredient not available from selected vendor
+          // Ingredient NOT available from selected vendor - set all costs to 0
           return {
             ...req,
+            pricePerGram: 0, // No pricing available from selected vendor
+            totalCost: 0, // No cost calculation possible
             totalKg: (req.totalGrams / 1000).toFixed(2),
             available: 0,
             shortage: req.totalGrams,
-            recommendedVendor: 'Not Available',
+            recommendedVendor: `${selectedVendor.name} (Not Supplied)`,
             hasShortage: true,
             vendorPrice: null,
             vendorUnit: null,
@@ -987,9 +998,27 @@ export default function SKUManagement() {
                             <span className="text-gray-400">N/A</span>
                           )}
                         </td>
-                        <td className="p-3 text-right">₹{req.pricePerGram.toFixed(2)}</td>
-                        <td className="p-3 text-right font-semibold">₹{req.totalCost.toFixed(2)}</td>
-                        <td className="p-3">{req.recommendedVendor}</td>
+                        <td className="p-3 text-right">
+                          {req.pricePerGram > 0 ? (
+                            `₹${req.pricePerGram.toFixed(2)}`
+                          ) : (
+                            <span className="text-gray-400">N/A</span>
+                          )}
+                        </td>
+                        <td className="p-3 text-right font-semibold">
+                          {req.totalCost > 0 ? (
+                            `₹${req.totalCost.toFixed(2)}`
+                          ) : (
+                            <span className="text-gray-400">N/A</span>
+                          )}
+                        </td>
+                        <td className="p-3">
+                          {req.recommendedVendor.includes('(Not Supplied)') ? (
+                            <span className="text-orange-600 font-medium">{req.recommendedVendor}</span>
+                          ) : (
+                            req.recommendedVendor
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
