@@ -362,6 +362,9 @@ export default function SKUManagement() {
             shortage: Math.max(0, req.totalGrams - availableGrams),
             recommendedVendor: selectedVendor.name,
             hasShortage: req.totalGrams > availableGrams,
+            // Add vendor price with unit for display
+            vendorPrice: vendorIng.pricePerUnit,
+            vendorUnit: vendorIng.unit,
           };
         } else {
           // Ingredient not available from selected vendor
@@ -372,6 +375,8 @@ export default function SKUManagement() {
             shortage: req.totalGrams,
             recommendedVendor: 'Not Available',
             hasShortage: true,
+            vendorPrice: null,
+            vendorUnit: null,
           };
         }
       } else {
@@ -388,6 +393,8 @@ export default function SKUManagement() {
               available: availableGrams,
               pricePerGram: pricePerGram,
               quality: vendorIng.quality,
+              vendorPrice: vendorIng.pricePerUnit,
+              vendorUnit: vendorIng.unit,
             });
           }
         });
@@ -405,6 +412,9 @@ export default function SKUManagement() {
           shortage: Math.max(0, req.totalGrams - (recommendedVendor?.available || 0)),
           recommendedVendor: recommendedVendor?.vendorName || 'N/A',
           hasShortage: req.totalGrams > (recommendedVendor?.available || 0),
+          // Add vendor price with unit for display
+          vendorPrice: recommendedVendor?.vendorPrice || null,
+          vendorUnit: recommendedVendor?.vendorUnit || null,
         };
       }
     });
@@ -946,6 +956,7 @@ export default function SKUManagement() {
                       <th className="text-right p-3">Total Kg</th>
                       <th className="text-right p-3">Available</th>
                       <th className="text-right p-3">Shortage</th>
+                      <th className="text-right p-3">Vendor Price</th>
                       <th className="text-right p-3">Cost/g</th>
                       <th className="text-right p-3">Total Cost</th>
                       <th className="text-left p-3">Vendor</th>
@@ -964,6 +975,16 @@ export default function SKUManagement() {
                         <td className="p-3 text-right">
                           {req.shortage > 0 && (
                             <span className="text-red-600 font-bold">{req.shortage.toFixed(0)}g</span>
+                          )}
+                        </td>
+                        <td className="p-3 text-right">
+                          {req.vendorPrice !== null && req.vendorUnit ? (
+                            <div>
+                              <span className="font-semibold text-blue-700">₹{req.vendorPrice.toFixed(2)}</span>
+                              <span className="text-xs text-gray-600 ml-1">/ {req.vendorUnit}</span>
+                            </div>
+                          ) : (
+                            <span className="text-gray-400">N/A</span>
                           )}
                         </td>
                         <td className="p-3 text-right">₹{req.pricePerGram.toFixed(2)}</td>
