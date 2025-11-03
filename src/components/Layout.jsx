@@ -32,6 +32,7 @@ export default function Layout({ children }) {
         <div
           className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
           onClick={() => setSidebarOpen(false)}
+          style={{ pointerEvents: 'auto' }}
         />
       )}
 
@@ -88,7 +89,7 @@ export default function Layout({ children }) {
       {/* Main content */}
       <div className="lg:pl-64">
         {/* Top header */}
-        <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-30 no-print">
+        <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-20 no-print">
           <div className="flex items-center justify-between h-16 px-4 sm:px-6">
             <button
               onClick={() => setSidebarOpen(true)}

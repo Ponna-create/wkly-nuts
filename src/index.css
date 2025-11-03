@@ -23,10 +23,53 @@
   
   .card {
     @apply bg-white rounded-lg shadow-md p-6 transition-shadow duration-200 hover:shadow-lg;
+    position: relative;
+    z-index: 1;
   }
   
   .input-field {
     @apply w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all duration-200;
+    position: relative;
+    z-index: 1;
+  }
+  
+  /* Fix select dropdowns to be clickable */
+  select.input-field {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23333' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 40px;
+    cursor: pointer;
+    position: relative;
+    z-index: 10;
+    pointer-events: auto !important;
+  }
+  
+  select.input-field:hover {
+    cursor: pointer;
+  }
+  
+  select.input-field:focus {
+    z-index: 50;
+    position: relative;
+  }
+  
+  /* Ensure select options are clickable */
+  select.input-field option {
+    padding: 8px;
+    cursor: pointer;
+  }
+  
+  /* Fix any overlay blocking selects */
+  .card select.input-field,
+  form select.input-field {
+    z-index: 10;
+  }
+  
+  .card:focus-within select.input-field,
+  form:focus-within select.input-field {
+    z-index: 50;
   }
   
   .label {
