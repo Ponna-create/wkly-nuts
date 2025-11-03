@@ -169,11 +169,31 @@ export default function DataManagement() {
         }. Continue?`;
 
         if (window.confirm(confirmMessage)) {
-          // Import data by dispatching actions
-          // First, clear existing data
-          localStorage.removeItem('wklyNutsAppData');
+          // Import data - dispatch actions which will sync to database automatically
+          // Clear existing data first
+          state.vendors.forEach(v => dispatch({ type: 'DELETE_VENDOR', payload: v.id }));
+          state.skus.forEach(s => dispatch({ type: 'DELETE_SKU', payload: s.id }));
+          state.pricingStrategies.forEach(p => dispatch({ type: 'DELETE_PRICING', payload: p.id }));
+          state.salesTargets.forEach(t => dispatch({ type: 'DELETE_SALES_TARGET', payload: t.id }));
 
-          // Then set new data
+          // Add imported data - this will sync to database if configured
+          importedData.vendors.forEach(vendor => {
+            dispatch({ type: 'ADD_VENDOR', payload: vendor });
+          });
+          
+          importedData.skus.forEach(sku => {
+            dispatch({ type: 'ADD_SKU', payload: sku });
+          });
+          
+          importedData.pricingStrategies.forEach(pricing => {
+            dispatch({ type: 'ADD_PRICING', payload: pricing });
+          });
+          
+          importedData.salesTargets.forEach(target => {
+            dispatch({ type: 'ADD_SALES_TARGET', payload: target });
+          });
+
+          // Also update localStorage as fallback
           localStorage.setItem('wklyNutsAppData', JSON.stringify({
             vendors: importedData.vendors,
             skus: importedData.skus,
@@ -181,10 +201,12 @@ export default function DataManagement() {
             salesTargets: importedData.salesTargets,
           }));
 
-          // Reload page to load new data
-          window.location.reload();
+          showToast('Data imported successfully! Reloading...', 'success');
           
-          showToast('Data imported successfully!', 'success');
+          // Small delay to ensure database sync completes, then reload
+          setTimeout(() => {
+            window.location.reload();
+          }, 1000);
         }
       } catch (error) {
         console.error('Import error:', error);
@@ -199,9 +221,19 @@ export default function DataManagement() {
   // Clear all data
   const handleClearData = () => {
     if (window.confirm('⚠️ Are you sure you want to delete ALL data? This cannot be undone!\n\nTip: Export a backup first!')) {
+      // Delete from database first (if configured), then clear local storage
+      state.vendors.forEach(v => dispatch({ type: 'DELETE_VENDOR', payload: v.id }));
+      state.skus.forEach(s => dispatch({ type: 'DELETE_SKU', payload: s.id }));
+      state.pricingStrategies.forEach(p => dispatch({ type: 'DELETE_PRICING', payload: p.id }));
+      state.salesTargets.forEach(t => dispatch({ type: 'DELETE_SALES_TARGET', payload: t.id }));
+      
+      // Also clear localStorage
       localStorage.removeItem('wklyNutsAppData');
-      window.location.reload();
-      showToast('All data cleared successfully', 'success');
+      
+      showToast('All data cleared successfully. Reloading...', 'success');
+      setTimeout(() => {
+        window.location.reload();
+      }, 1000);
     }
   };
 

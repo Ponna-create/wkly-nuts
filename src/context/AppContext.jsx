@@ -1,8 +1,9 @@
-import React, { createContext, useContext, useReducer, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useReducer, useCallback, useEffect, useState } from 'react';
+import { dbService, isSupabaseAvailable } from '../services/supabase';
 
 const AppContext = createContext();
 
-// Load data from localStorage
+// Load data from localStorage (fallback)
 const loadFromLocalStorage = () => {
   try {
     const savedData = localStorage.getItem('wklyNutsAppData');
@@ -28,10 +29,43 @@ const loadFromLocalStorage = () => {
   };
 };
 
-const initialState = loadFromLocalStorage();
+// Save to localStorage (fallback)
+const saveToLocalStorage = (data) => {
+  try {
+    localStorage.setItem('wklyNutsAppData', JSON.stringify(data));
+  } catch (error) {
+    console.error('Error saving to localStorage:', error);
+  }
+};
+
+const initialState = {
+  vendors: [],
+  skus: [],
+  pricingStrategies: [],
+  salesTargets: [],
+  toast: null,
+};
 
 function appReducer(state, action) {
   switch (action.type) {
+    // Load actions (from database)
+    case 'LOAD_VENDORS':
+      return { ...state, vendors: action.payload };
+    case 'LOAD_SKUS':
+      return { ...state, skus: action.payload };
+    case 'LOAD_PRICING_STRATEGIES':
+      return { ...state, pricingStrategies: action.payload };
+    case 'LOAD_SALES_TARGETS':
+      return { ...state, salesTargets: action.payload };
+    case 'LOAD_ALL_DATA':
+      return {
+        ...state,
+        vendors: action.payload.vendors || [],
+        skus: action.payload.skus || [],
+        pricingStrategies: action.payload.pricingStrategies || [],
+        salesTargets: action.payload.salesTargets || [],
+      };
+
     // Vendor actions
     case 'ADD_VENDOR':
       return { ...state, vendors: [...state.vendors, action.payload] };
@@ -108,34 +142,156 @@ function appReducer(state, action) {
 }
 
 export function AppProvider({ children }) {
-  const [state, dispatch] = useReducer(appReducer, initialState);
+  const [state, dispatchReducer] = useReducer(appReducer, initialState);
+  const [isLoading, setIsLoading] = useState(true);
+  const [useDatabase, setUseDatabase] = useState(false);
 
-  // Save to localStorage whenever state changes (except toast)
+  // Wrapper dispatch that syncs with database
+  const dispatch = useCallback((action) => {
+    // First update local state
+    dispatchReducer(action);
+
+    // Then sync with database if available (async, don't wait)
+    if (useDatabase && isSupabaseAvailable() && !isLoading) {
+      // Don't sync LOAD actions
+      if (action.type.startsWith('LOAD_') || action.type.startsWith('SHOW_') || action.type.startsWith('HIDE_')) {
+        return;
+      }
+
+      // Sync with database asynchronously
+      (async () => {
+        try {
+          switch (action.type) {
+            case 'ADD_VENDOR':
+              const vendorRes = await dbService.createVendor(action.payload);
+              if (vendorRes.data && vendorRes.data.id !== action.payload.id) {
+                // Update with database ID
+                dispatchReducer({ type: 'UPDATE_VENDOR', payload: { ...action.payload, id: vendorRes.data.id } });
+              }
+              break;
+            case 'UPDATE_VENDOR':
+              await dbService.updateVendor(action.payload);
+              break;
+            case 'DELETE_VENDOR':
+              await dbService.deleteVendor(action.payload);
+              break;
+            case 'ADD_SKU':
+              const skuRes = await dbService.createSKU(action.payload);
+              if (skuRes.data && skuRes.data.id !== action.payload.id) {
+                dispatchReducer({ type: 'UPDATE_SKU', payload: { ...action.payload, id: skuRes.data.id } });
+              }
+              break;
+            case 'UPDATE_SKU':
+              await dbService.updateSKU(action.payload);
+              break;
+            case 'DELETE_SKU':
+              await dbService.deleteSKU(action.payload);
+              break;
+            case 'ADD_PRICING':
+              const pricingRes = await dbService.createPricingStrategy(action.payload);
+              if (pricingRes.data && pricingRes.data.id !== action.payload.id) {
+                dispatchReducer({ type: 'UPDATE_PRICING', payload: { ...action.payload, id: pricingRes.data.id } });
+              }
+              break;
+            case 'UPDATE_PRICING':
+              await dbService.updatePricingStrategy(action.payload);
+              break;
+            case 'DELETE_PRICING':
+              await dbService.deletePricingStrategy(action.payload);
+              break;
+            case 'ADD_SALES_TARGET':
+              const targetRes = await dbService.createSalesTarget(action.payload);
+              if (targetRes.data && targetRes.data.id !== action.payload.id) {
+                dispatchReducer({ type: 'UPDATE_SALES_TARGET', payload: { ...action.payload, id: targetRes.data.id } });
+              }
+              break;
+            case 'UPDATE_SALES_TARGET':
+              await dbService.updateSalesTarget(action.payload);
+              break;
+            case 'DELETE_SALES_TARGET':
+              await dbService.deleteSalesTarget(action.payload);
+              break;
+          }
+        } catch (error) {
+          console.error('Error syncing with database:', error);
+        }
+      })();
+    }
+  }, [useDatabase, isLoading]);
+
+  // Check if Supabase is available and load data
   useEffect(() => {
-    try {
-      const dataToSave = {
+    const loadData = async () => {
+      setIsLoading(true);
+      
+      if (isSupabaseAvailable()) {
+        try {
+          setUseDatabase(true);
+          // Load all data from Supabase
+          const [vendorsRes, skusRes, pricingRes, targetsRes] = await Promise.all([
+            dbService.getVendors(),
+            dbService.getSKUs(),
+            dbService.getPricingStrategies(),
+            dbService.getSalesTargets(),
+          ]);
+
+          dispatchReducer({
+            type: 'LOAD_ALL_DATA',
+            payload: {
+              vendors: vendorsRes.data || [],
+              skus: skusRes.data || [],
+              pricingStrategies: pricingRes.data || [],
+              salesTargets: targetsRes.data || [],
+            },
+          });
+        } catch (error) {
+          console.error('Error loading from database:', error);
+          // Fallback to localStorage
+          const localData = loadFromLocalStorage();
+          dispatchReducer({ type: 'LOAD_ALL_DATA', payload: localData });
+          setUseDatabase(false);
+        }
+      } else {
+        // Use localStorage
+        const localData = loadFromLocalStorage();
+        dispatchReducer({ type: 'LOAD_ALL_DATA', payload: localData });
+        setUseDatabase(false);
+      }
+      
+      setIsLoading(false);
+    };
+
+    loadData();
+  }, []);
+
+  // Save data to localStorage when state changes (fallback only)
+  useEffect(() => {
+    if (isLoading) return; // Don't save during initial load
+
+    if (!useDatabase) {
+      // Save to localStorage as fallback
+      saveToLocalStorage({
         vendors: state.vendors,
         skus: state.skus,
         pricingStrategies: state.pricingStrategies,
         salesTargets: state.salesTargets,
-      };
-      localStorage.setItem('wklyNutsAppData', JSON.stringify(dataToSave));
-    } catch (error) {
-      console.error('Error saving to localStorage:', error);
+      });
     }
-  }, [state.vendors, state.skus, state.pricingStrategies, state.salesTargets]);
+  }, [state.vendors, state.skus, state.pricingStrategies, state.salesTargets, isLoading, useDatabase]);
 
   const showToast = useCallback((message, type = 'success') => {
     dispatch({ type: 'SHOW_TOAST', payload: { message, type } });
     setTimeout(() => {
       dispatch({ type: 'HIDE_TOAST' });
     }, 3000);
-  }, []);
+  }, [dispatch]);
 
   const value = {
     state,
     dispatch,
     showToast,
+    isLoading,
+    useDatabase,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
