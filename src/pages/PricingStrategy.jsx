@@ -22,12 +22,12 @@ export default function PricingStrategy() {
   const [manualPricing, setManualPricing] = useState(false);
 
   const handleSKUChange = (skuId) => {
-    const sku = skus.find((s) => s.id === parseInt(skuId));
+    const sku = skus.find((s) => String(s.id) === String(skuId));
     setSelectedSKU(sku);
     
     // Check if pricing exists for this SKU and pack type
     const existingPricing = pricingStrategies.find(
-      (p) => p.skuId === parseInt(skuId) && p.packType === packType
+      (p) => String(p.skuId) === String(skuId) && p.packType === packType
     );
 
     if (existingPricing) {
@@ -60,7 +60,7 @@ export default function PricingStrategy() {
     setPackType(newPackType);
     if (selectedSKU) {
       const existingPricing = pricingStrategies.find(
-        (p) => p.skuId === selectedSKU.id && p.packType === newPackType
+        (p) => String(p.skuId) === String(selectedSKU.id) && p.packType === newPackType
       );
 
       if (existingPricing) {
@@ -167,7 +167,7 @@ export default function PricingStrategy() {
 
     // Check if pricing already exists
     const existingIndex = pricingStrategies.findIndex(
-      (p) => p.skuId === selectedSKU.id && p.packType === packType
+      (p) => String(p.skuId) === String(selectedSKU.id) && p.packType === packType
     );
 
     if (existingIndex >= 0) {
@@ -188,10 +188,10 @@ export default function PricingStrategy() {
 
   // Get pricing for comparison
   const weeklyPricing = selectedSKU ? pricingStrategies.find(
-    (p) => p.skuId === selectedSKU.id && p.packType === 'weekly'
+    (p) => String(p.skuId) === String(selectedSKU.id) && p.packType === 'weekly'
   ) : null;
   const monthlyPricing = selectedSKU ? pricingStrategies.find(
-    (p) => p.skuId === selectedSKU.id && p.packType === 'monthly'
+    (p) => String(p.skuId) === String(selectedSKU.id) && p.packType === 'monthly'
   ) : null;
 
   return (
@@ -203,18 +203,26 @@ export default function PricingStrategy() {
       </div>
 
       {/* SKU and Pack Type Selection */}
-      <div className="card">
+      <div className="card" style={{ overflow: 'visible' }}>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
+          <div className="relative" style={{ zIndex: 99999, isolation: 'isolate' }}>
             <label className="label">Select SKU</label>
             <select
               value={selectedSKU?.id || ''}
               onChange={(e) => handleSKUChange(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
               className="input-field"
+              style={{ 
+                zIndex: 99999, 
+                position: 'relative',
+                pointerEvents: 'auto',
+                cursor: 'pointer'
+              }}
             >
               <option value="">-- Select SKU --</option>
               {skus.map((sku) => (
-                <option key={sku.id} value={sku.id}>
+                <option key={sku.id} value={String(sku.id)}>
                   {sku.name}
                 </option>
               ))}
