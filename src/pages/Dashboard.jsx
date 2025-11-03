@@ -79,20 +79,24 @@ export default function Dashboard() {
             <p className="text-primary-100 text-lg">
               Manage your entire production workflow from vendors to sales targets
             </p>
-            <div className="flex items-center gap-4 mt-2">
+            <div className="mt-3 space-y-2">
               <p className="text-primary-200 text-sm">
                 ✅ All data is automatically saved and will persist across sessions
               </p>
               {isLoading ? (
-                <span className="text-xs bg-primary-800 px-2 py-1 rounded">Loading...</span>
+                <div className="inline-block bg-primary-800 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-lg">
+                  ⏳ Loading database connection...
+                </div>
               ) : useDatabase ? (
-                <span className="text-xs bg-green-600 px-2 py-1 rounded flex items-center gap-1">
-                  🗄️ Database Connected
-                </span>
+                <div className="inline-block bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-lg flex items-center gap-2">
+                  <span>🗄️</span>
+                  <span>Database Connected</span>
+                </div>
               ) : (
-                <span className="text-xs bg-yellow-600 px-2 py-1 rounded flex items-center gap-1">
-                  💾 Using Local Storage
-                </span>
+                <div className="inline-block bg-yellow-600 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-lg flex items-center gap-2">
+                  <span>💾</span>
+                  <span>Using Local Storage (Database not configured)</span>
+                </div>
               )}
             </div>
           </div>
