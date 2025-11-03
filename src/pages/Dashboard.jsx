@@ -6,7 +6,7 @@ import DataManagement from '../components/DataManagement';
 import logo from '../assets/wkly-nuts-logo.png';
 
 export default function Dashboard() {
-  const { state } = useApp();
+  const { state, isLoading, useDatabase } = useApp();
   const { vendors, skus, pricingStrategies, salesTargets } = state;
 
   // Calculate stats
@@ -79,9 +79,22 @@ export default function Dashboard() {
             <p className="text-primary-100 text-lg">
               Manage your entire production workflow from vendors to sales targets
             </p>
-            <p className="text-primary-200 text-sm mt-2">
-              ✅ All data is automatically saved and will persist across sessions
-            </p>
+            <div className="flex items-center gap-4 mt-2">
+              <p className="text-primary-200 text-sm">
+                ✅ All data is automatically saved and will persist across sessions
+              </p>
+              {isLoading ? (
+                <span className="text-xs bg-primary-800 px-2 py-1 rounded">Loading...</span>
+              ) : useDatabase ? (
+                <span className="text-xs bg-green-600 px-2 py-1 rounded flex items-center gap-1">
+                  🗄️ Database Connected
+                </span>
+              ) : (
+                <span className="text-xs bg-yellow-600 px-2 py-1 rounded flex items-center gap-1">
+                  💾 Using Local Storage
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </div>
