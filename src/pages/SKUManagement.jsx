@@ -59,6 +59,7 @@ export default function SKUManagement() {
   const [calculatorData, setCalculatorData] = useState({
     packType: 'weekly',
     numberOfPacks: '',
+    selectedVendorId: '',
   });
 
   const [productionRequirements, setProductionRequirements] = useState(null);
@@ -271,6 +272,9 @@ export default function SKUManagement() {
 
     const numberOfPacks = parseInt(calculatorData.numberOfPacks);
     const multiplier = calculatorData.packType === 'weekly' ? numberOfPacks : numberOfPacks * 4;
+    const selectedVendor = calculatorData.selectedVendorId 
+      ? vendors.find(v => String(v.id) === String(calculatorData.selectedVendorId))
+      : null;
 
     // Calculate day-by-day requirements
     const dayBreakdown = {};
@@ -278,19 +282,45 @@ export default function SKUManagement() {
 
     DAYS.forEach((day) => {
       const dayRecipe = selectedSKU.recipes[day];
-      dayBreakdown[day] = dayRecipe.map((item) => ({
-        ingredientName: item.ingredientName,
-        gramsPerSachet: item.gramsPerSachet,
-        quantity: multiplier,
-        totalGrams: item.gramsPerSachet * multiplier,
-        pricePerGram: item.pricePerGram,
-        totalCost: item.gramsPerSachet * multiplier * item.pricePerGram,
-      }));
+      
+      // If vendor is selected, use that vendor's pricing; otherwise use SKU recipe pricing
+      dayBreakdown[day] = dayRecipe.map((item) => {
+        let pricePerGram = item.pricePerGram;
+        
+        // If a vendor is selected, find that vendor's price for this ingredient
+        if (selectedVendor) {
+          const vendorIng = selectedVendor.ingredients.find(ing => ing.name === item.ingredientName);
+          if (vendorIng) {
+            pricePerGram = vendorIng.unit === 'kg' ? vendorIng.pricePerUnit / 1000 : vendorIng.pricePerUnit;
+          }
+        }
+        
+        return {
+          ingredientName: item.ingredientName,
+          gramsPerSachet: item.gramsPerSachet,
+          quantity: multiplier,
+          totalGrams: item.gramsPerSachet * multiplier,
+          pricePerGram: pricePerGram,
+          totalCost: item.gramsPerSachet * multiplier * pricePerGram,
+        };
+      });
 
       // Consolidate ingredients
       dayRecipe.forEach((item) => {
+        let pricePerGram = item.pricePerGram;
+        let vendorName = item.vendorName;
+        
+        // If vendor is selected, use that vendor's pricing
+        if (selectedVendor) {
+          const vendorIng = selectedVendor.ingredients.find(ing => ing.name === item.ingredientName);
+          if (vendorIng) {
+            pricePerGram = vendorIng.unit === 'kg' ? vendorIng.pricePerUnit / 1000 : vendorIng.pricePerUnit;
+            vendorName = selectedVendor.name;
+          }
+        }
+        
         const totalGrams = item.gramsPerSachet * multiplier;
-        const totalCost = totalGrams * item.pricePerGram;
+        const totalCost = totalGrams * pricePerGram;
 
         if (consolidatedIngredients.has(item.ingredientName)) {
           const existing = consolidatedIngredients.get(item.ingredientName);
@@ -298,14 +328,17 @@ export default function SKUManagement() {
             ...existing,
             totalGrams: existing.totalGrams + totalGrams,
             totalCost: existing.totalCost + totalCost,
+            // Update pricePerGram and vendorName if vendor is selected
+            pricePerGram: selectedVendor ? pricePerGram : existing.pricePerGram,
+            vendorName: selectedVendor ? vendorName : existing.vendorName,
           });
         } else {
           consolidatedIngredients.set(item.ingredientName, {
             ingredientName: item.ingredientName,
             totalGrams,
-            pricePerGram: item.pricePerGram,
+            pricePerGram: pricePerGram,
             totalCost,
-            vendorName: item.vendorName,
+            vendorName: vendorName,
           });
         }
       });
@@ -313,36 +346,67 @@ export default function SKUManagement() {
 
     // Add vendor availability info
     const requirements = Array.from(consolidatedIngredients.values()).map((req) => {
-      const availableVendors = [];
-      vendors.forEach((vendor) => {
-        const vendorIng = vendor.ingredients.find((ing) => ing.name === req.ingredientName);
+      // If vendor is selected, only check that vendor
+      if (selectedVendor) {
+        const vendorIng = selectedVendor.ingredients.find((ing) => ing.name === req.ingredientName);
         if (vendorIng) {
           const availableGrams = vendorIng.unit === 'kg' ? vendorIng.quantityAvailable * 1000 : vendorIng.quantityAvailable;
           const pricePerGram = vendorIng.unit === 'kg' ? vendorIng.pricePerUnit / 1000 : vendorIng.pricePerUnit;
           
-          availableVendors.push({
-            vendorName: vendor.name,
-            available: availableGrams,
+          return {
+            ...req,
             pricePerGram: pricePerGram,
-            quality: vendorIng.quality,
-          });
+            totalCost: req.totalGrams * pricePerGram,
+            totalKg: (req.totalGrams / 1000).toFixed(2),
+            available: availableGrams,
+            shortage: Math.max(0, req.totalGrams - availableGrams),
+            recommendedVendor: selectedVendor.name,
+            hasShortage: req.totalGrams > availableGrams,
+          };
+        } else {
+          // Ingredient not available from selected vendor
+          return {
+            ...req,
+            totalKg: (req.totalGrams / 1000).toFixed(2),
+            available: 0,
+            shortage: req.totalGrams,
+            recommendedVendor: 'Not Available',
+            hasShortage: true,
+          };
         }
-      });
+      } else {
+        // No vendor selected - find all vendors and recommend best one (original behavior)
+        const availableVendors = [];
+        vendors.forEach((vendor) => {
+          const vendorIng = vendor.ingredients.find((ing) => ing.name === req.ingredientName);
+          if (vendorIng) {
+            const availableGrams = vendorIng.unit === 'kg' ? vendorIng.quantityAvailable * 1000 : vendorIng.quantityAvailable;
+            const pricePerGram = vendorIng.unit === 'kg' ? vendorIng.pricePerUnit / 1000 : vendorIng.pricePerUnit;
+            
+            availableVendors.push({
+              vendorName: vendor.name,
+              available: availableGrams,
+              pricePerGram: pricePerGram,
+              quality: vendorIng.quality,
+            });
+          }
+        });
 
-      const bestVendor = availableVendors
-        .filter((v) => v.available >= req.totalGrams)
-        .sort((a, b) => a.pricePerGram - b.pricePerGram)[0];
+        const bestVendor = availableVendors
+          .filter((v) => v.available >= req.totalGrams)
+          .sort((a, b) => a.pricePerGram - b.pricePerGram)[0];
 
-      const recommendedVendor = bestVendor || availableVendors.sort((a, b) => b.available - a.available)[0];
+        const recommendedVendor = bestVendor || availableVendors.sort((a, b) => b.available - a.available)[0];
 
-      return {
-        ...req,
-        totalKg: (req.totalGrams / 1000).toFixed(2),
-        available: recommendedVendor?.available || 0,
-        shortage: Math.max(0, req.totalGrams - (recommendedVendor?.available || 0)),
-        recommendedVendor: recommendedVendor?.vendorName || 'N/A',
-        hasShortage: req.totalGrams > (recommendedVendor?.available || 0),
-      };
+        return {
+          ...req,
+          totalKg: (req.totalGrams / 1000).toFixed(2),
+          available: recommendedVendor?.available || 0,
+          shortage: Math.max(0, req.totalGrams - (recommendedVendor?.available || 0)),
+          recommendedVendor: recommendedVendor?.vendorName || 'N/A',
+          hasShortage: req.totalGrams > (recommendedVendor?.available || 0),
+        };
+      }
     });
 
     const totalRawMaterialCost = requirements.reduce((sum, req) => sum + req.totalCost, 0);
@@ -360,6 +424,7 @@ export default function SKUManagement() {
       numberOfPacks,
       multiplier,
       packType: calculatorData.packType,
+      selectedVendorName: selectedVendor?.name || null,
     });
 
     showToast('Production requirements calculated', 'success');
@@ -384,6 +449,7 @@ export default function SKUManagement() {
       `Production Requirements - ${selectedSKU.name}`,
       `Pack Type: ${productionRequirements.packType === 'weekly' ? 'Weekly' : 'Monthly'}`,
       `Packs to Produce: ${productionRequirements.numberOfPacks}`,
+      ...(productionRequirements.selectedVendorName ? [`Vendor Used: ${productionRequirements.selectedVendorName}`] : ['Vendor: Auto-selected (best price/availability)']),
       '',
       headers.join(','),
       ...rows.map(row => row.join(',')),
@@ -748,7 +814,7 @@ export default function SKUManagement() {
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <div className="relative" style={{ zIndex: 99999, isolation: 'isolate' }}>
               <label className="label">Select SKU</label>
               <select
@@ -813,6 +879,37 @@ export default function SKUManagement() {
                 className="input-field"
                 placeholder="e.g., 80"
               />
+            </div>
+            <div className="relative" style={{ zIndex: 99999, isolation: 'isolate' }}>
+              <label className="label">Select Vendor <span className="text-gray-500 text-xs">(Optional)</span></label>
+              <select
+                value={calculatorData.selectedVendorId}
+                onChange={(e) => {
+                  setCalculatorData({ ...calculatorData, selectedVendorId: e.target.value });
+                  setProductionRequirements(null);
+                }}
+                onClick={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+                className="input-field"
+                style={{ 
+                  zIndex: 99999, 
+                  position: 'relative',
+                  pointerEvents: 'auto',
+                  cursor: 'pointer'
+                }}
+              >
+                <option value="">-- Use Default Pricing --</option>
+                {vendors.map((vendor) => (
+                  <option key={vendor.id} value={String(vendor.id)}>
+                    {vendor.name} ({vendor.ingredients.length} ingredients)
+                  </option>
+                ))}
+              </select>
+              {calculatorData.selectedVendorId && (
+                <p className="text-xs text-blue-600 mt-1">
+                  Calculations will use {vendors.find(v => String(v.id) === String(calculatorData.selectedVendorId))?.name} pricing
+                </p>
+              )}
             </div>
           </div>
 
@@ -880,7 +977,14 @@ export default function SKUManagement() {
 
               {/* Summary */}
               <div className="bg-primary-50 p-6 rounded-lg border border-primary-200">
-                <h4 className="font-bold text-primary-900 mb-4">Production Summary</h4>
+                <div className="flex justify-between items-center mb-4">
+                  <h4 className="font-bold text-primary-900">Production Summary</h4>
+                  {productionRequirements.selectedVendorName && (
+                    <div className="text-sm bg-blue-100 text-blue-800 px-3 py-1 rounded-full font-semibold">
+                      Using: {productionRequirements.selectedVendorName} Pricing
+                    </div>
+                  )}
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <div>
                     <p className="text-sm text-gray-600">Total Sachets</p>
