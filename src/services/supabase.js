@@ -272,15 +272,35 @@ export const dbService = {
       
       if (error) throw error;
       
-      const strategies = (data || []).map(strategy => ({
-        id: strategy.id,
-        skuId: strategy.sku_id,
-        packType: strategy.pack_type,
-        costs: strategy.costs || {},
-        margins: strategy.margins || {},
-        sellingPrice: strategy.selling_price,
-        created_at: strategy.created_at,
-      }));
+      const strategies = (data || []).map(strategy => {
+        // Transform database format to app format
+        const costs = strategy.costs || {};
+        const margins = strategy.margins || {};
+        
+        return {
+          id: strategy.id,
+          skuId: strategy.sku_id,
+          skuName: strategy.sku_name || '', // Will need to join or fetch separately
+          packType: strategy.pack_type,
+          // Extract flat fields from costs JSON
+          rawMaterialCost: costs.rawMaterialCost || 0,
+          sachetPackagingCost: costs.sachetPackagingCost || 0,
+          packBoxCost: costs.packBoxCost || 0,
+          operatingCost: costs.operatingCost || 0,
+          marketingCost: costs.marketingCost || 0,
+          shippingCost: costs.shippingCost || 0,
+          otherCosts: costs.otherCosts || 0,
+          totalCost: costs.totalCost || 0,
+          // Extract from margins JSON
+          profitMargin: margins.profitMargin || 0,
+          profitAmount: margins.profitAmount || 0,
+          sellingPrice: strategy.selling_price || 0,
+          // Keep original for backwards compatibility
+          costs: costs,
+          margins: margins,
+          created_at: strategy.created_at,
+        };
+      });
       
       return { data: strategies, error: null };
     } catch (error) {
@@ -293,28 +313,58 @@ export const dbService = {
     if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
     
     try {
+      // Transform flat fields to JSON structure if needed
+      const costs = strategy.costs || {
+        rawMaterialCost: strategy.rawMaterialCost || 0,
+        sachetPackagingCost: strategy.sachetPackagingCost || 0,
+        packBoxCost: strategy.packBoxCost || 0,
+        operatingCost: strategy.operatingCost || 0,
+        marketingCost: strategy.marketingCost || 0,
+        shippingCost: strategy.shippingCost || 0,
+        otherCosts: strategy.otherCosts || 0,
+        totalCost: strategy.totalCost || 0,
+      };
+      
+      const margins = strategy.margins || {
+        profitMargin: strategy.profitMargin || 0,
+        profitAmount: strategy.profitAmount || 0,
+      };
+      
       const { data, error } = await supabase
         .from('pricing_strategies')
         .insert([{
           sku_id: strategy.skuId,
           pack_type: strategy.packType,
-          costs: strategy.costs || {},
-          margins: strategy.margins || {},
-          selling_price: strategy.sellingPrice,
+          costs: costs,
+          margins: margins,
+          selling_price: strategy.sellingPrice || 0,
         }])
         .select()
         .single();
       
       if (error) throw error;
       
+      // Transform back to flat format for app
+      const costsData = data.costs || {};
+      const marginsData = data.margins || {};
+      
       return { 
         data: {
           id: data.id,
           skuId: data.sku_id,
+          skuName: strategy.skuName || '',
           packType: data.pack_type,
-          costs: data.costs || {},
-          margins: data.margins || {},
-          sellingPrice: data.selling_price,
+          rawMaterialCost: costsData.rawMaterialCost || 0,
+          sachetPackagingCost: costsData.sachetPackagingCost || 0,
+          packBoxCost: costsData.packBoxCost || 0,
+          operatingCost: costsData.operatingCost || 0,
+          marketingCost: costsData.marketingCost || 0,
+          shippingCost: costsData.shippingCost || 0,
+          otherCosts: costsData.otherCosts || 0,
+          totalCost: costsData.totalCost || 0,
+          profitMargin: marginsData.profitMargin || 0,
+          profitAmount: marginsData.profitAmount || 0,
+          sellingPrice: data.selling_price || 0,
         }, 
         error: null 
       };
@@ -328,14 +378,31 @@ export const dbService = {
     if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
     
     try {
+      // Transform flat fields to JSON structure if needed
+      const costs = strategy.costs || {
+        rawMaterialCost: strategy.rawMaterialCost || 0,
+        sachetPackagingCost: strategy.sachetPackagingCost || 0,
+        packBoxCost: strategy.packBoxCost || 0,
+        operatingCost: strategy.operatingCost || 0,
+        marketingCost: strategy.marketingCost || 0,
+        shippingCost: strategy.shippingCost || 0,
+        otherCosts: strategy.otherCosts || 0,
+        totalCost: strategy.totalCost || 0,
+      };
+      
+      const margins = strategy.margins || {
+        profitMargin: strategy.profitMargin || 0,
+        profitAmount: strategy.profitAmount || 0,
+      };
+      
       const { data, error } = await supabase
         .from('pricing_strategies')
         .update({
           sku_id: strategy.skuId,
           pack_type: strategy.packType,
-          costs: strategy.costs || {},
-          margins: strategy.margins || {},
-          selling_price: strategy.sellingPrice,
+          costs: costs,
+          margins: margins,
+          selling_price: strategy.sellingPrice || 0,
         })
         .eq('id', strategy.id)
         .select()
@@ -343,14 +410,27 @@ export const dbService = {
       
       if (error) throw error;
       
+      // Transform back to flat format for app
+      const costsData = data.costs || {};
+      const marginsData = data.margins || {};
+      
       return { 
         data: {
           id: data.id,
           skuId: data.sku_id,
+          skuName: strategy.skuName || '',
           packType: data.pack_type,
-          costs: data.costs || {},
-          margins: data.margins || {},
-          sellingPrice: data.selling_price,
+          rawMaterialCost: costsData.rawMaterialCost || 0,
+          sachetPackagingCost: costsData.sachetPackagingCost || 0,
+          packBoxCost: costsData.packBoxCost || 0,
+          operatingCost: costsData.operatingCost || 0,
+          marketingCost: costsData.marketingCost || 0,
+          shippingCost: costsData.shippingCost || 0,
+          otherCosts: costsData.otherCosts || 0,
+          totalCost: costsData.totalCost || 0,
+          profitMargin: marginsData.profitMargin || 0,
+          profitAmount: marginsData.profitAmount || 0,
+          sellingPrice: data.selling_price || 0,
         }, 
         error: null 
       };

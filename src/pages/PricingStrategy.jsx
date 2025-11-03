@@ -4,7 +4,12 @@ import { useApp } from '../context/AppContext';
 
 export default function PricingStrategy() {
   const { state, dispatch, showToast } = useApp();
-  const { skus, pricingStrategies } = state;
+  const { skus, pricingStrategies } = state || { skus: [], pricingStrategies: [] };
+  
+  // Safety check - ensure state is available
+  if (!state) {
+    return <div className="p-6">Loading...</div>;
+  }
 
   const [selectedSKU, setSelectedSKU] = useState(null);
   const [packType, setPackType] = useState('weekly');
