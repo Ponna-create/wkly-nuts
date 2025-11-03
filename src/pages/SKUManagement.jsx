@@ -515,18 +515,28 @@ export default function SKUManagement() {
                 </div>
                 <div className="md:col-span-2">
                   <label className="label">Select Vendor for All Ingredients <span className="text-red-500">*</span></label>
-                  <select
-                    value={formData.selectedVendorId}
-                    onChange={(e) => setFormData({ ...formData, selectedVendorId: e.target.value })}
-                    className="input-field"
-                  >
-                    <option value="">-- Select Vendor --</option>
-                    {vendors.map((vendor) => (
-                      <option key={vendor.id} value={vendor.id}>
-                        {vendor.name} ({vendor.ingredients.length} ingredients)
-                      </option>
-                    ))}
-                  </select>
+                  <div className="relative" style={{ zIndex: 99999, isolation: 'isolate' }}>
+                    <select
+                      value={formData.selectedVendorId}
+                      onChange={(e) => setFormData({ ...formData, selectedVendorId: e.target.value })}
+                      onClick={(e) => e.stopPropagation()}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      className="input-field"
+                      style={{ 
+                        zIndex: 99999, 
+                        position: 'relative',
+                        pointerEvents: 'auto',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <option value="">-- Select Vendor --</option>
+                      {vendors.map((vendor) => (
+                        <option key={vendor.id} value={String(vendor.id)}>
+                          {vendor.name} ({vendor.ingredients.length} ingredients)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                   {formData.selectedVendorId && (
                     <p className="text-sm text-gray-600 mt-1">
                       Selected vendor will be used for all recipe ingredients
@@ -631,19 +641,29 @@ export default function SKUManagement() {
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
                     <div className="md:col-span-2">
                       <label className="label text-sm">Ingredient</label>
-                      <select
-                        value={currentRecipeItem.ingredientId}
-                        onChange={(e) => setCurrentRecipeItem({ ...currentRecipeItem, ingredientId: e.target.value })}
-                        className="input-field"
-                        disabled={!formData.selectedVendorId}
-                      >
-                        <option value="">-- Select Ingredient --</option>
-                        {getIngredientsByVendor(formData.selectedVendorId).map((ing) => (
-                          <option key={ing.id} value={ing.id}>
-                            {ing.name} - ₹{ing.pricePerUnit}/{ing.unit}
-                          </option>
-                        ))}
-                      </select>
+                      <div className="relative" style={{ zIndex: 99999, isolation: 'isolate' }}>
+                        <select
+                          value={currentRecipeItem.ingredientId}
+                          onChange={(e) => setCurrentRecipeItem({ ...currentRecipeItem, ingredientId: e.target.value })}
+                          onClick={(e) => e.stopPropagation()}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          className="input-field"
+                          disabled={!formData.selectedVendorId}
+                          style={{ 
+                            zIndex: 99999, 
+                            position: 'relative',
+                            pointerEvents: formData.selectedVendorId ? 'auto' : 'none',
+                            cursor: formData.selectedVendorId ? 'pointer' : 'not-allowed'
+                          }}
+                        >
+                          <option value="">-- Select Ingredient --</option>
+                          {getIngredientsByVendor(formData.selectedVendorId).map((ing) => (
+                            <option key={ing.id} value={String(ing.id)}>
+                              {ing.name} - ₹{ing.pricePerUnit}/{ing.unit}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
                     <div>
                       <label className="label text-sm">Grams per Sachet</label>

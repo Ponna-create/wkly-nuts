@@ -376,7 +376,15 @@ export default function VendorManagement() {
                       onChange={(e) =>
                         setCurrentIngredient({ ...currentIngredient, unit: e.target.value })
                       }
+                      onClick={(e) => e.stopPropagation()}
+                      onMouseDown={(e) => e.stopPropagation()}
                       className="input-field w-24"
+                      style={{ 
+                        zIndex: 99999, 
+                        position: 'relative',
+                        pointerEvents: 'auto',
+                        cursor: 'pointer'
+                      }}
                     >
                       <option value="kg">kg</option>
                       <option value="grams">grams</option>
