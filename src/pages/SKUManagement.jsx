@@ -706,7 +706,7 @@ export default function SKUManagement() {
 
       {/* Production Calculator - Will continue in next part */}
       {showCalculator && (
-        <div className="card">
+        <div className="card" style={{ position: 'relative', zIndex: 10 }}>
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-xl font-bold text-gray-900">Production Calculator</h2>
             <button
@@ -721,16 +721,18 @@ export default function SKUManagement() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <div>
+            <div className="relative z-50">
               <label className="label">Select SKU</label>
               <select
                 value={selectedSKU?.id || ''}
                 onChange={(e) => {
-                  const sku = skus.find((s) => s.id === parseInt(e.target.value));
+                  const skuId = e.target.value;
+                  const sku = skus.find((s) => s.id == skuId || s.id === skuId);
                   setSelectedSKU(sku);
                   setProductionRequirements(null);
                 }}
                 className="input-field"
+                style={{ zIndex: 99999, position: 'relative' }}
               >
                 <option value="">-- Select SKU --</option>
                 {skus.map((sku) => (
@@ -740,7 +742,7 @@ export default function SKUManagement() {
                 ))}
               </select>
             </div>
-            <div>
+            <div className="relative z-50">
               <label className="label">Pack Type</label>
               <select
                 value={calculatorData.packType}
@@ -749,6 +751,7 @@ export default function SKUManagement() {
                   setProductionRequirements(null);
                 }}
                 className="input-field"
+                style={{ zIndex: 99999, position: 'relative' }}
               >
                 <option value="weekly">Weekly Pack (7 different sachets)</option>
                 <option value="monthly">Monthly Pack (28 sachets = 4 weeks)</option>

@@ -109,6 +109,21 @@
     z-index: 20 !important;
   }
   
+  /* Specific fix for Production Calculator dropdowns */
+  .card .relative.z-50 select.input-field,
+  .card div[class*="relative"] select.input-field {
+    z-index: 99999 !important;
+    position: relative !important;
+    pointer-events: auto !important;
+    isolation: isolate !important;
+  }
+  
+  /* Ensure Production Calculator card doesn't block its children */
+  .card[style*="zIndex"],
+  .card[style*="z-index"] {
+    isolation: isolate !important;
+  }
+  
   .label {
     @apply block text-sm font-medium text-gray-700 mb-2;
   }
