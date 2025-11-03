@@ -421,30 +421,46 @@ export default function SalesRevenue() {
         )}
 
         {/* Add Row Form */}
-        <div className="bg-blue-50 p-4 rounded-lg">
+        <div className="bg-blue-50 p-4 rounded-lg" style={{ overflow: 'visible' }}>
           <h3 className="font-semibold text-gray-900 mb-4">Add Target Row</h3>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div>
+            <div className="relative" style={{ zIndex: 99999, isolation: 'isolate' }}>
               <label className="label text-sm">SKU</label>
               <select
                 value={newRow.skuId}
                 onChange={(e) => setNewRow({ ...newRow, skuId: e.target.value })}
+                onClick={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
                 className="input-field"
+                style={{ 
+                  zIndex: 99999, 
+                  position: 'relative',
+                  pointerEvents: 'auto',
+                  cursor: 'pointer'
+                }}
               >
                 <option value="">-- Select SKU --</option>
                 {skus.map((sku) => (
-                  <option key={sku.id} value={sku.id}>
+                  <option key={sku.id} value={String(sku.id)}>
                     {sku.name}
                   </option>
                 ))}
               </select>
             </div>
-            <div>
+            <div className="relative" style={{ zIndex: 99999, isolation: 'isolate' }}>
               <label className="label text-sm">Pack Type</label>
               <select
                 value={newRow.packType}
                 onChange={(e) => setNewRow({ ...newRow, packType: e.target.value })}
+                onClick={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
                 className="input-field"
+                style={{ 
+                  zIndex: 99999, 
+                  position: 'relative',
+                  pointerEvents: 'auto',
+                  cursor: 'pointer'
+                }}
               >
                 <option value="weekly">Weekly</option>
                 <option value="monthly">Monthly</option>
