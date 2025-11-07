@@ -1000,7 +1000,12 @@ export default function SKUManagement() {
           {productionRequirements && (
             <div>
               <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-bold text-gray-900">Production Requirements</h3>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">Production Requirements</h3>
+                  <p className="text-xs text-gray-600 mt-1">
+                    Total quantities consolidated across all {DAYS.length} days ({productionRequirements.numberOfPacks} {productionRequirements.packType === 'weekly' ? 'weekly' : 'monthly'} packs = {productionRequirements.totalSachets} total sachets)
+                  </p>
+                </div>
                 <div className="flex gap-2">
                   <button onClick={exportToCSV} className="btn-secondary text-sm">
                     Export CSV
@@ -1127,11 +1132,19 @@ export default function SKUManagement() {
                   {DAYS.map((day) => (
                     <div key={day} className={`p-4 rounded-lg border-2 ${DAY_COLORS_LIGHT[day]}`}>
                       <h5 className={`font-bold mb-2 text-white px-3 py-1 rounded ${DAY_COLORS[day]}`}>{day}</h5>
+                      <div className="text-xs text-gray-600 mb-2 px-1">
+                        For {productionRequirements.multiplier} packs of this day
+                      </div>
                       <div className="space-y-1 text-sm">
                         {productionRequirements.dayBreakdown[day].map((item, idx) => (
                           <div key={idx} className="flex justify-between">
                             <span>{item.ingredientName}:</span>
-                            <span className="font-semibold">{item.totalGrams.toFixed(0)}g</span>
+                            <span className="font-semibold">
+                              {item.totalGrams.toFixed(0)}g
+                              <span className="text-xs text-gray-500 ml-1">
+                                ({item.gramsPerSachet}g/sachet × {productionRequirements.multiplier} packs)
+                              </span>
+                            </span>
                           </div>
                         ))}
                       </div>
