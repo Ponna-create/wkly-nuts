@@ -81,6 +81,7 @@ export default function SKUManagement() {
   const [showCalculator, setShowCalculator] = useState(false);
   const [selectedSKU, setSelectedSKU] = useState(null);
   const [orderListMode, setOrderListMode] = useState('full'); // 'full' or 'shortage'
+  const [showPurchaseView, setShowPurchaseView] = useState(false); // Toggle between Production Requirements and Purchase view
   
   const [currentStep, setCurrentStep] = useState(1); // 1 = Basic Info, 2 = Day Recipes
   const [currentDay, setCurrentDay] = useState('MON');
@@ -504,6 +505,9 @@ export default function SKUManagement() {
       packType: calculatorData.packType,
       selectedVendorName: selectedVendor?.name || null,
     });
+
+    // Reset purchase view when new calculation is made
+    setShowPurchaseView(false);
 
     showToast('Production requirements calculated', 'success');
   };
@@ -1002,24 +1006,43 @@ export default function SKUManagement() {
           {/* Production Requirements Display */}
           {productionRequirements && (
             <div>
+              {/* Header with CSV Export and Purchase button - Always visible */}
               <div className="flex justify-between items-center mb-4">
                 <div>
-                  <h3 className="text-lg font-bold text-gray-900">Production Requirements</h3>
-                  <p className="text-xs text-gray-600 mt-1">
-                    Total quantities consolidated across all {DAYS.length} days ({productionRequirements.numberOfPacks} {productionRequirements.packType === 'weekly' ? 'weekly' : 'monthly'} packs = {productionRequirements.totalSachets} total sachets)
-                  </p>
+                  <h3 className="text-lg font-bold text-gray-900">
+                    {showPurchaseView ? 'Purchase List' : 'Production Requirements'}
+                  </h3>
+                  {!showPurchaseView && (
+                    <p className="text-xs text-gray-600 mt-1">
+                      Total quantities consolidated across all {DAYS.length} days ({productionRequirements.numberOfPacks} {productionRequirements.packType === 'weekly' ? 'weekly' : 'monthly'} packs = {productionRequirements.totalSachets} total sachets)
+                    </p>
+                  )}
                 </div>
                 <div className="flex gap-2">
                   <button onClick={exportToCSV} className="btn-secondary text-sm">
                     Export CSV
                   </button>
-                  <button onClick={() => window.print()} className="btn-secondary text-sm">
-                    Print
-                  </button>
+                  {!showPurchaseView && (
+                    <button 
+                      onClick={() => setShowPurchaseView(true)} 
+                      className="btn-primary text-sm"
+                    >
+                      Purchase
+                    </button>
+                  )}
+                  {showPurchaseView && (
+                    <button 
+                      onClick={() => setShowPurchaseView(false)} 
+                      className="btn-secondary text-sm"
+                    >
+                      Back to Requirements
+                    </button>
+                  )}
                 </div>
               </div>
 
-              {/* Consolidated Ingredients Table */}
+              {/* Consolidated Ingredients Table - Hide when in Purchase view */}
+              {!showPurchaseView && (
               <div className="overflow-x-auto mb-6">
                 <table className="w-full text-sm">
                   <thead>
@@ -1086,8 +1109,10 @@ export default function SKUManagement() {
                   </tbody>
                 </table>
               </div>
+              )}
 
-              {/* Summary */}
+              {/* Summary - Hide when in Purchase view */}
+              {!showPurchaseView && (
               <div className="bg-primary-50 p-6 rounded-lg border border-primary-200">
                 <div className="flex justify-between items-center mb-4">
                   <h4 className="font-bold text-primary-900">Production Summary</h4>
@@ -1125,8 +1150,10 @@ export default function SKUManagement() {
                   </div>
                 </div>
               </div>
+              )}
 
-              {/* Day-by-Day Breakdown (Expandable) */}
+              {/* Day-by-Day Breakdown (Expandable) - Hide when in Purchase view */}
+              {!showPurchaseView && (
               <details className="mt-6 bg-gray-50 p-4 rounded-lg">
                 <summary className="font-bold text-gray-900 cursor-pointer">
                   📅 Day-by-Day Breakdown (Click to expand)
@@ -1180,9 +1207,11 @@ export default function SKUManagement() {
                   ))}
                 </div>
               </details>
+              )}
 
-              {/* Ingredients Order List */}
-              <div className="mt-8 bg-white p-6 rounded-lg border-2 border-gray-200 order-list-print">
+              {/* Purchase View - Show only when Purchase button is clicked */}
+              {showPurchaseView && (
+              <div className="bg-white p-6 rounded-lg border-2 border-gray-200 order-list-print">
                 <div className="flex justify-between items-center mb-4 no-print">
                   <div>
                     <h3 className="text-lg font-bold text-gray-900">Ingredients Order List</h3>
@@ -1447,6 +1476,7 @@ export default function SKUManagement() {
                   );
                 })()}
               </div>
+              )}
             </div>
           )}
         </div>

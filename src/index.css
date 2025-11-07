@@ -182,12 +182,19 @@
 
 /* Print styles for Ingredients Order List */
 @media print {
+  /* Hide everything except order list */
+  body * {
+    visibility: hidden !important;
+  }
+
   /* Hide layout elements */
   aside,
   header,
   nav,
   .no-print,
-  .no-print * {
+  .no-print *,
+  main > *:not(.order-list-print),
+  main > *:not(.order-list-print) * {
     display: none !important;
     visibility: hidden !important;
   }
@@ -220,6 +227,13 @@
   main > div,
   main > div > div {
     position: relative !important;
+  }
+
+  /* Hide Production Requirements when printing */
+  .order-list-print ~ *,
+  *:not(.order-list-print):not(.order-list-print *) {
+    display: none !important;
+    visibility: hidden !important;
   }
 
   /* Table display */
