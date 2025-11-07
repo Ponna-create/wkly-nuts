@@ -355,6 +355,7 @@ export default function SKUManagement() {
           quantity: multiplier,
           totalGrams: item.gramsPerSachet * multiplier,
           pricePerGram: pricePerGram,
+          pricePerSachet: item.gramsPerSachet * pricePerGram, // Price for one sachet
           totalCost: item.gramsPerSachet * multiplier * pricePerGram,
         };
       });
@@ -1133,18 +1134,22 @@ export default function SKUManagement() {
                     <div key={day} className={`p-4 rounded-lg border-2 ${DAY_COLORS_LIGHT[day]}`}>
                       <h5 className={`font-bold mb-2 text-white px-3 py-1 rounded ${DAY_COLORS[day]}`}>{day}</h5>
                       <div className="text-xs text-gray-600 mb-2 px-1">
-                        For {productionRequirements.multiplier} packs of this day
+                        Per sachet recipe
                       </div>
                       <div className="space-y-1 text-sm">
                         {productionRequirements.dayBreakdown[day].map((item, idx) => (
-                          <div key={idx} className="flex justify-between">
-                            <span>{item.ingredientName}:</span>
-                            <span className="font-semibold">
-                              {item.totalGrams.toFixed(0)}g
-                              <span className="text-xs text-gray-500 ml-1">
-                                ({item.gramsPerSachet}g/sachet × {productionRequirements.multiplier} packs)
-                              </span>
-                            </span>
+                          <div key={idx} className="flex justify-between items-center">
+                            <span className="flex-1">{item.ingredientName}:</span>
+                            <div className="text-right">
+                              <span className="font-semibold">{item.gramsPerSachet}g</span>
+                              {item.pricePerSachet > 0 ? (
+                                <span className="text-xs text-green-600 ml-2 font-medium">
+                                  ₹{item.pricePerSachet.toFixed(2)}/sachet
+                                </span>
+                              ) : (
+                                <span className="text-xs text-gray-400 ml-2">N/A</span>
+                              )}
+                            </div>
                           </div>
                         ))}
                       </div>
