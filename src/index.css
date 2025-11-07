@@ -192,10 +192,17 @@
     visibility: hidden !important;
   }
 
-  /* Hide main content except order list */
-  main > *:not(.order-list-print) {
+  /* Hide siblings of order list container */
+  .order-list-print ~ * {
     display: none !important;
     visibility: hidden !important;
+  }
+
+  /* Show order list container and its parents */
+  .order-list-print,
+  *:has(.order-list-print) {
+    display: block !important;
+    visibility: visible !important;
   }
 
   /* Show order list */
