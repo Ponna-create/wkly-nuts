@@ -27,6 +27,54 @@ export default function SKUManagement() {
   const { state, dispatch, showToast } = useApp();
   const { skus, vendors } = state;
   
+  // Helper function for flexible ingredient matching
+  const matchIngredient = (recipeName, vendorName) => {
+    const recipe = recipeName.toLowerCase().trim();
+    const vendor = vendorName.toLowerCase().trim();
+    
+    // Exact match
+    if (recipe === vendor) return true;
+    
+    // Flexible matching for common variations
+    const normalizeName = (name) => {
+      return name
+        .replace(/\s+/g, ' ') // normalize spaces
+        .replace(/[^\w\s]/g, '') // remove special characters
+        .trim();
+    };
+    
+    const normalizedRecipe = normalizeName(recipe);
+    const normalizedVendor = normalizeName(vendor);
+    
+    // Check if one contains the other (for cases like "Almond" vs "Almonds")
+    if (normalizedRecipe.includes(normalizedVendor) || normalizedVendor.includes(normalizedRecipe)) {
+      return true;
+    }
+    
+    // Check for common ingredient variations
+    const commonVariations = {
+      'almond': ['almonds', 'almond'],
+      'walnut': ['walnuts', 'walnut'],
+      'cashew': ['cashews', 'cashew'],
+      'raisin': ['raisins', 'raisin'],
+      'date': ['dates', 'date'],
+      'pista': ['pistachio', 'pista', 'pistachios', 'pista salted', 'salted pista'],
+      'pumpkin': ['pumpkin seed', 'pumpkin seeds'],
+      'sunflower': ['sunflower seed', 'sunflower seeds'],
+      'black raisin': ['black raisins', 'black raisin', 'raisins with seeds', 'raisin with seeds'],
+      'yellow raisin': ['yellow raisins', 'yellow raisin']
+    };
+    
+    for (const [key, variations] of Object.entries(commonVariations)) {
+      if (variations.some(v => normalizedRecipe.includes(v)) && 
+          variations.some(v => normalizedVendor.includes(v))) {
+        return true;
+      }
+    }
+    
+    return false;
+  };
+  
   const [showForm, setShowForm] = useState(false);
   const [editingSKU, setEditingSKU] = useState(null);
   const [showCalculator, setShowCalculator] = useState(false);
@@ -289,7 +337,9 @@ export default function SKUManagement() {
         
         // If a vendor is selected, STRICTLY use only that vendor's price
         if (selectedVendor) {
-          const vendorIng = selectedVendor.ingredients.find(ing => ing.name === item.ingredientName);
+          const vendorIng = selectedVendor.ingredients.find(ing => 
+            matchIngredient(item.ingredientName, ing.name)
+          );
           if (vendorIng) {
             // Ingredient available from selected vendor - use vendor's price
             pricePerGram = vendorIng.unit === 'kg' ? vendorIng.pricePerUnit / 1000 : vendorIng.pricePerUnit;
@@ -316,7 +366,9 @@ export default function SKUManagement() {
         
         // If vendor is selected, STRICTLY use only that vendor's pricing
         if (selectedVendor) {
-          const vendorIng = selectedVendor.ingredients.find(ing => ing.name === item.ingredientName);
+          const vendorIng = selectedVendor.ingredients.find(ing => 
+            matchIngredient(item.ingredientName, ing.name)
+          );
           if (vendorIng) {
             // Ingredient available from selected vendor
             pricePerGram = vendorIng.unit === 'kg' ? vendorIng.pricePerUnit / 1000 : vendorIng.pricePerUnit;
@@ -357,7 +409,9 @@ export default function SKUManagement() {
     const requirements = Array.from(consolidatedIngredients.values()).map((req) => {
       // If vendor is selected, only check that vendor
       if (selectedVendor) {
-        const vendorIng = selectedVendor.ingredients.find((ing) => ing.name === req.ingredientName);
+        const vendorIng = selectedVendor.ingredients.find((ing) => 
+          matchIngredient(req.ingredientName, ing.name)
+        );
         if (vendorIng) {
           const availableGrams = vendorIng.unit === 'kg' ? vendorIng.quantityAvailable * 1000 : vendorIng.quantityAvailable;
           const pricePerGram = vendorIng.unit === 'kg' ? vendorIng.pricePerUnit / 1000 : vendorIng.pricePerUnit;
