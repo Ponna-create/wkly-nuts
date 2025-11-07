@@ -1136,23 +1136,44 @@ export default function SKUManagement() {
                       <div className="text-xs text-gray-600 mb-2 px-1">
                         Per sachet recipe
                       </div>
-                      <div className="space-y-1 text-sm">
+                      {/* Header row */}
+                      <div className="flex justify-between items-center mb-1 pb-1 border-b border-gray-300 text-xs font-semibold text-gray-700">
+                        <span className="flex-1">Ingredient</span>
+                        <div className="flex gap-6">
+                          <span>Weight</span>
+                          <span className="ml-4">Price</span>
+                        </div>
+                      </div>
+                      <div className="space-y-1 text-sm mb-2">
                         {productionRequirements.dayBreakdown[day].map((item, idx) => (
                           <div key={idx} className="flex justify-between items-center">
                             <span className="flex-1">{item.ingredientName}:</span>
-                            <div className="text-right">
-                              <span className="font-semibold">{item.gramsPerSachet}g</span>
+                            <div className="flex gap-6 items-center">
+                              <span className="font-semibold w-12 text-right">{item.gramsPerSachet}g</span>
                               {item.pricePerSachet > 0 ? (
-                                <span className="text-xs text-green-600 ml-2 font-medium">
-                                  ₹{item.pricePerSachet.toFixed(2)}/sachet
+                                <span className="text-green-600 font-medium w-16 text-right">
+                                  ₹{item.pricePerSachet.toFixed(2)}
                                 </span>
                               ) : (
-                                <span className="text-xs text-gray-400 ml-2">N/A</span>
+                                <span className="text-gray-400 w-16 text-right">N/A</span>
                               )}
                             </div>
                           </div>
                         ))}
                       </div>
+                      {/* Total row */}
+                      {(() => {
+                        const dayTotal = productionRequirements.dayBreakdown[day].reduce(
+                          (sum, item) => sum + (item.pricePerSachet || 0), 
+                          0
+                        );
+                        return (
+                          <div className="flex justify-between items-center pt-2 mt-2 border-t-2 border-gray-400 font-bold text-base">
+                            <span>Total:</span>
+                            <span className="text-green-700">₹{dayTotal.toFixed(2)}</span>
+                          </div>
+                        );
+                      })()}
                     </div>
                   ))}
                 </div>
