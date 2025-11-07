@@ -1219,7 +1219,18 @@ export default function SKUManagement() {
                     </div>
                     <button
                       onClick={() => {
-                        window.print();
+                        // Focus on order list before printing
+                        const orderListElement = document.querySelector('.order-list-print');
+                        if (orderListElement) {
+                          // Scroll to order list
+                          orderListElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                          // Small delay to ensure scroll completes
+                          setTimeout(() => {
+                            window.print();
+                          }, 100);
+                        } else {
+                          window.print();
+                        }
                       }}
                       className="btn-primary flex items-center gap-2"
                     >
