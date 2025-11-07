@@ -79,6 +79,7 @@ export default function SKUManagement() {
   const [editingSKU, setEditingSKU] = useState(null);
   const [showCalculator, setShowCalculator] = useState(false);
   const [selectedSKU, setSelectedSKU] = useState(null);
+  const [orderListMode, setOrderListMode] = useState('full'); // 'full' or 'shortage'
   
   const [currentStep, setCurrentStep] = useState(1); // 1 = Basic Info, 2 = Day Recipes
   const [currentDay, setCurrentDay] = useState('MON');
