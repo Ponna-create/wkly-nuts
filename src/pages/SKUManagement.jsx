@@ -1230,20 +1230,20 @@ export default function SKUManagement() {
                 </div>
 
                 {/* Professional Header for Print */}
-                <div className="hidden print:block print:mb-6 print:pb-4 print:border-b-2 print:border-gray-400">
+                <div className="hidden print:block print:mb-2 print:pb-2 print:border-b print:border-gray-400">
                   <div className="flex justify-between items-center">
-                  <div className="flex items-center gap-4">
-                    <img 
-                      src={logo} 
-                      alt="WKLY Nuts Logo" 
-                      className="h-16 w-auto object-contain"
-                    />
-                    <div>
-                      <h2 className="text-2xl font-bold text-gray-900">WKLY Nuts</h2>
-                      <p className="text-sm text-gray-600">Production Manager</p>
+                    <div className="flex items-center gap-2">
+                      <img 
+                        src={logo} 
+                        alt="WKLY Nuts Logo" 
+                        className="h-10 print:h-8 w-auto object-contain"
+                      />
+                      <div>
+                        <h2 className="text-lg print:text-base font-bold text-gray-900">WKLY Nuts</h2>
+                        <p className="text-xs print:text-xs text-gray-600">Production Manager</p>
+                      </div>
                     </div>
-                  </div>
-                    <div className="text-right text-sm text-gray-600">
+                    <div className="text-right text-xs print:text-xs text-gray-600">
                       <div>{new Date().toLocaleDateString('en-IN', { 
                         year: 'numeric', 
                         month: '2-digit', 
@@ -1297,20 +1297,21 @@ export default function SKUManagement() {
                         }, 0);
 
                         return (
-                          <div key={vendorName} className="border-2 border-gray-300 rounded-lg p-4 print:break-inside-avoid">
-                            <div className="flex justify-between items-center mb-4 pb-2 border-b-2 border-gray-400">
-                              <h4 className="text-xl font-bold text-gray-900">Order List</h4>
-                              <div className="text-sm text-gray-600">
+                          <div key={vendorName} className="border-2 border-gray-300 rounded-lg p-3 print:p-2 print:break-inside-avoid">
+                            <div className="flex justify-between items-center mb-2 print:mb-1 pb-1 print:pb-1 border-b border-gray-400">
+                              <h4 className="text-lg print:text-base font-bold text-gray-900">Order List</h4>
+                              <div className="text-xs print:text-xs text-gray-600">
                                 {items.length} ingredient{items.length !== 1 ? 's' : ''}
                               </div>
                             </div>
                             
-                            <table className="w-full text-sm mb-4">
+                            <table className="w-full text-xs print:text-xs mb-2 print:mb-2">
                               <thead>
                                 <tr className="bg-gray-100 border-b">
-                                  <th className="text-left p-2">#</th>
-                                  <th className="text-left p-2">Ingredient</th>
-                                  <th className="text-right p-2">Quantity (Kg)</th>
+                                  <th className="text-left p-1 print:p-1">#</th>
+                                  <th className="text-left p-1 print:p-1">Ingredient</th>
+                                  <th className="text-right p-1 print:p-1">Required (Kg)</th>
+                                  <th className="text-right p-1 print:p-1">Purchase (1kg packs)</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -1318,13 +1319,16 @@ export default function SKUManagement() {
                                   const quantityKg = orderListMode === 'shortage'
                                     ? (item.shortage / 1000)
                                     : parseFloat(item.totalKg);
+                                  const purchaseKg = Math.ceil(quantityKg); // Round up to nearest 1kg
+                                  const purchasePacks = purchaseKg; // Since vendors sell in 1kg packs
 
                                   return (
                                     <tr key={idx} className="border-b hover:bg-gray-50">
-                                      <td className="p-2 text-gray-600">{idx + 1}</td>
-                                      <td className="p-2 font-medium">{item.ingredientName}</td>
-                                      <td className="p-2 text-right font-semibold">
-                                        {quantityKg.toFixed(2)} kg
+                                      <td className="p-1 print:p-1 text-gray-600">{idx + 1}</td>
+                                      <td className="p-1 print:p-1 font-medium">{item.ingredientName}</td>
+                                      <td className="p-1 print:p-1 text-right">{quantityKg.toFixed(2)}</td>
+                                      <td className="p-1 print:p-1 text-right font-semibold text-blue-700">
+                                        {purchasePacks} pack{purchasePacks !== 1 ? 's' : ''} ({purchaseKg} kg)
                                       </td>
                                     </tr>
                                   );
@@ -1332,18 +1336,83 @@ export default function SKUManagement() {
                               </tbody>
                               <tfoot>
                                 <tr className="bg-gray-100 font-bold border-t-2 border-gray-400">
-                                  <td colSpan="2" className="p-2">Total</td>
-                                  <td className="p-2 text-right">{totalQuantity.toFixed(2)} kg</td>
+                                  <td colSpan="2" className="p-1 print:p-1">Total</td>
+                                  <td className="p-1 print:p-1 text-right">{totalQuantity.toFixed(2)} kg</td>
+                                  <td className="p-1 print:p-1 text-right text-blue-700">
+                                    {Math.ceil(totalQuantity)} pack{Math.ceil(totalQuantity) !== 1 ? 's' : ''} ({Math.ceil(totalQuantity)} kg)
+                                  </td>
                                 </tr>
                               </tfoot>
                             </table>
+
+                            {/* Purchase Suggestion & Pack Calculation */}
+                            {(() => {
+                              if (!productionRequirements || !selectedSKU) return null;
+
+                              // Calculate how many times we can make the current production from purchased quantities
+                              // Find the limiting ingredient (the one that will run out first)
+                              const limitingFactor = items.reduce((min, item) => {
+                                const requiredKg = orderListMode === 'shortage'
+                                  ? (item.shortage / 1000)
+                                  : parseFloat(item.totalKg);
+                                const purchasedKg = Math.ceil(requiredKg);
+                                
+                                if (requiredKg <= 0) return min;
+                                
+                                const multiplier = purchasedKg / requiredKg; // How many times we can make the required quantity
+                                return (!min || multiplier < min.multiplier) 
+                                  ? { item: item.ingredientName, required: requiredKg, purchased: purchasedKg, multiplier } 
+                                  : min;
+                              }, null);
+
+                              if (!limitingFactor) return null;
+
+                              // Calculate packs possible based on limiting ingredient
+                              const currentPackType = productionRequirements.packType;
+                              const currentNumberOfPacks = productionRequirements.numberOfPacks;
+                              const packsPossible = Math.floor(limitingFactor.multiplier * currentNumberOfPacks);
+                              
+                              // Convert to weekly/monthly based on current pack type
+                              let weeklyPacksPossible = 0;
+                              let monthlyPacksPossible = 0;
+                              
+                              if (currentPackType === 'weekly') {
+                                weeklyPacksPossible = packsPossible;
+                                monthlyPacksPossible = Math.floor(weeklyPacksPossible / 4);
+                              } else {
+                                monthlyPacksPossible = packsPossible;
+                                weeklyPacksPossible = monthlyPacksPossible * 4;
+                              }
+
+                              return (
+                                <div className="mt-2 pt-2 border-t border-gray-300 print:mt-1 print:pt-1 text-xs print:text-xs">
+                                  <div className="grid grid-cols-2 gap-2 print:gap-1">
+                                    <div>
+                                      <span className="font-semibold text-gray-700">Suggested Purchase:</span>
+                                      <div className="text-blue-700 font-bold">{Math.ceil(totalQuantity)} kg</div>
+                                      <div className="text-gray-500 text-xs">(1kg packs)</div>
+                                    </div>
+                                    <div>
+                                      <span className="font-semibold text-gray-700">Packs Possible:</span>
+                                      <div className="text-green-700">
+                                        <div>Weekly: {weeklyPacksPossible} pack{weeklyPacksPossible !== 1 ? 's' : ''}</div>
+                                        <div>Monthly: {monthlyPacksPossible} pack{monthlyPacksPossible !== 1 ? 's' : ''}</div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div className="mt-1 text-xs text-gray-500 italic">
+                                    * Based on limiting ingredient: {limitingFactor.item}
+                                  </div>
+                                </div>
+                              );
+                            })()}
 
                             {/* Vendor Contact Info (if available) - Only show in print */}
                             {(() => {
                               const vendor = vendors.find(v => v.name === vendorName);
                               if (vendor && (vendor.phone || vendor.email || vendor.location)) {
                                 return (
-                                  <div className="hidden print:block text-xs text-gray-600 pt-2 border-t border-gray-300">
+                                  <div className="hidden print:block text-xs print:text-xs text-gray-600 pt-1 print:pt-1 border-t border-gray-300">
                                     {vendor.phone && <div>Phone: {vendor.phone}</div>}
                                     {vendor.email && <div>Email: {vendor.email}</div>}
                                     {vendor.location && <div>Location: {vendor.location}</div>}
