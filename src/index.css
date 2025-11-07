@@ -180,8 +180,9 @@
   animation: fade-in 0.3s ease-out;
 }
 
-/* Print styles */
+/* Print styles for Ingredients Order List */
 @media print {
+  /* Hide non-essential elements when printing */
   .no-print {
     display: none !important;
   }
@@ -189,8 +190,30 @@
   body {
     background: white;
   }
+
+  /* Ensure order list sections don't break across pages */
+  .print\\:break-inside-avoid {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
   
   .card {
     break-inside: avoid;
+  }
+
+  /* Better spacing for printed order lists */
+  .bg-white {
+    background: white !important;
+  }
+
+  /* Ensure tables print properly */
+  table {
+    border-collapse: collapse;
+  }
+
+  /* Remove shadows and borders that don't print well */
+  .shadow-md,
+  .shadow-lg {
+    box-shadow: none !important;
   }
 }

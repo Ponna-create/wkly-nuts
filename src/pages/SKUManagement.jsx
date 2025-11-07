@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Edit, Trash2, Calculator, X, Package, ChevronLeft, ChevronRight, Check } from 'lucide-react';
+import { Plus, Edit, Trash2, Calculator, X, Package, ChevronLeft, ChevronRight, Check, Printer } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 
 const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
@@ -1178,6 +1178,209 @@ export default function SKUManagement() {
                   ))}
                 </div>
               </details>
+
+              {/* Ingredients Order List */}
+              <div className="mt-8 bg-white p-6 rounded-lg border-2 border-gray-200">
+                <div className="flex justify-between items-center mb-4">
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-900">Ingredients Order List</h3>
+                    <p className="text-xs text-gray-600 mt-1">
+                      Purchase list grouped by vendor - ready to send to suppliers
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1 print:hidden">
+                      Mode: {orderListMode === 'full' ? 'Full Order (All Ingredients)' : 'Shortage Only (Missing Items)'}
+                    </p>
+                  </div>
+                  <div className="flex gap-3 items-center no-print">
+                    {/* Mode Toggle */}
+                    <div className="flex gap-2 bg-gray-100 p-1 rounded-lg">
+                      <button
+                        onClick={() => setOrderListMode('full')}
+                        className={`px-4 py-1 rounded text-sm font-medium transition-colors ${
+                          orderListMode === 'full'
+                            ? 'bg-primary-600 text-white'
+                            : 'text-gray-600 hover:text-gray-900'
+                        }`}
+                      >
+                        Full Order
+                      </button>
+                      <button
+                        onClick={() => setOrderListMode('shortage')}
+                        className={`px-4 py-1 rounded text-sm font-medium transition-colors ${
+                          orderListMode === 'shortage'
+                            ? 'bg-primary-600 text-white'
+                            : 'text-gray-600 hover:text-gray-900'
+                        }`}
+                      >
+                        Shortage Only
+                      </button>
+                    </div>
+                    <button
+                      onClick={() => {
+                        window.print();
+                      }}
+                      className="btn-primary flex items-center gap-2"
+                    >
+                      <Printer size={18} />
+                      Print / Save PDF
+                    </button>
+                  </div>
+                </div>
+
+                {/* Order List by Vendor */}
+                {(() => {
+                  // Filter requirements based on mode
+                  const filteredRequirements = orderListMode === 'shortage'
+                    ? productionRequirements.requirements.filter(req => req.shortage > 0)
+                    : productionRequirements.requirements;
+
+                  // Group by vendor
+                  const vendorGroups = {};
+                  filteredRequirements.forEach(req => {
+                    const vendorName = req.recommendedVendor || 'Unknown Vendor';
+                    if (!vendorGroups[vendorName]) {
+                      vendorGroups[vendorName] = [];
+                    }
+                    vendorGroups[vendorName].push(req);
+                  });
+
+                  // Calculate totals
+                  const calculateVendorTotal = (items) => {
+                    return items.reduce((sum, item) => {
+                      const quantityKg = orderListMode === 'shortage'
+                        ? (item.shortage / 1000)
+                        : parseFloat(item.totalKg);
+                      const price = item.vendorPrice || 0;
+                      return sum + (quantityKg * price);
+                    }, 0);
+                  };
+
+                  return (
+                    <div className="space-y-6">
+                      {Object.entries(vendorGroups).map(([vendorName, items]) => {
+                        const vendorTotal = calculateVendorTotal(items);
+                        const totalQuantity = items.reduce((sum, item) => {
+                          const quantityKg = orderListMode === 'shortage'
+                            ? (item.shortage / 1000)
+                            : parseFloat(item.totalKg);
+                          return sum + quantityKg;
+                        }, 0);
+
+                        return (
+                          <div key={vendorName} className="border-2 border-gray-300 rounded-lg p-4 print:break-inside-avoid">
+                            <div className="flex justify-between items-center mb-4 pb-2 border-b-2 border-gray-400">
+                              <h4 className="text-lg font-bold text-gray-900">Vendor: {vendorName}</h4>
+                              <div className="text-sm text-gray-600">
+                                {items.length} ingredient{items.length !== 1 ? 's' : ''}
+                              </div>
+                            </div>
+                            
+                            <table className="w-full text-sm mb-4">
+                              <thead>
+                                <tr className="bg-gray-100 border-b">
+                                  <th className="text-left p-2">#</th>
+                                  <th className="text-left p-2">Ingredient</th>
+                                  <th className="text-right p-2">Quantity (Kg)</th>
+                                  <th className="text-right p-2">Unit Price</th>
+                                  <th className="text-right p-2">Total Cost</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {items.map((item, idx) => {
+                                  const quantityKg = orderListMode === 'shortage'
+                                    ? (item.shortage / 1000)
+                                    : parseFloat(item.totalKg);
+                                  const unitPrice = item.vendorPrice || 0;
+                                  const itemTotal = quantityKg * unitPrice;
+
+                                  return (
+                                    <tr key={idx} className="border-b hover:bg-gray-50">
+                                      <td className="p-2 text-gray-600">{idx + 1}</td>
+                                      <td className="p-2 font-medium">{item.ingredientName}</td>
+                                      <td className="p-2 text-right font-semibold">
+                                        {quantityKg.toFixed(2)} kg
+                                      </td>
+                                      <td className="p-2 text-right">
+                                        {item.vendorPrice && item.vendorUnit ? (
+                                          <span>₹{item.vendorPrice.toFixed(2)} / {item.vendorUnit}</span>
+                                        ) : (
+                                          <span className="text-gray-400">N/A</span>
+                                        )}
+                                      </td>
+                                      <td className="p-2 text-right font-semibold text-green-700">
+                                        {itemTotal > 0 ? `₹${itemTotal.toFixed(2)}` : 'N/A'}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                              <tfoot>
+                                <tr className="bg-gray-100 font-bold border-t-2 border-gray-400">
+                                  <td colSpan="2" className="p-2">Total</td>
+                                  <td className="p-2 text-right">{totalQuantity.toFixed(2)} kg</td>
+                                  <td className="p-2 text-right">-</td>
+                                  <td className="p-2 text-right text-green-700">
+                                    ₹{vendorTotal.toFixed(2)}
+                                  </td>
+                                </tr>
+                              </tfoot>
+                            </table>
+
+                            {/* Vendor Contact Info (if available) */}
+                            {(() => {
+                              const vendor = vendors.find(v => v.name === vendorName);
+                              if (vendor && (vendor.phone || vendor.email || vendor.location)) {
+                                return (
+                                  <div className="text-xs text-gray-600 pt-2 border-t border-gray-300">
+                                    {vendor.phone && <div>Phone: {vendor.phone}</div>}
+                                    {vendor.email && <div>Email: {vendor.email}</div>}
+                                    {vendor.location && <div>Location: {vendor.location}</div>}
+                                  </div>
+                                );
+                              }
+                              return null;
+                            })()}
+                          </div>
+                        );
+                      })}
+
+                      {Object.keys(vendorGroups).length === 0 && (
+                        <div className="text-center py-8 text-gray-500">
+                          {orderListMode === 'shortage'
+                            ? 'No shortage items to order'
+                            : 'No ingredients to order'}
+                        </div>
+                      )}
+
+                      {/* Grand Total */}
+                      {Object.keys(vendorGroups).length > 0 && (
+                        <div className="bg-primary-50 p-4 rounded-lg border-2 border-primary-300">
+                          <div className="flex justify-between items-center">
+                            <span className="text-lg font-bold text-gray-900">Grand Total</span>
+                            <div className="text-right">
+                              <div className="text-sm text-gray-600">
+                                {Object.values(vendorGroups).reduce((sum, items) => {
+                                  return sum + items.reduce((s, item) => {
+                                    const qty = orderListMode === 'shortage'
+                                      ? (item.shortage / 1000)
+                                      : parseFloat(item.totalKg);
+                                    return s + qty;
+                                  }, 0);
+                                }, 0).toFixed(2)} kg total
+                              </div>
+                              <div className="text-2xl font-bold text-primary-700">
+                                ₹{Object.values(vendorGroups).reduce((sum, items) => {
+                                  return sum + calculateVendorTotal(items);
+                                }, 0).toFixed(2)}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
             </div>
           )}
         </div>
