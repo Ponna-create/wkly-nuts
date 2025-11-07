@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Plus, Edit, Trash2, Calculator, X, Package, ChevronLeft, ChevronRight, Check, Printer } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import logo from '../assets/wkly-nuts-logo.png';
 
 const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 const DAY_COLORS = {
@@ -1181,18 +1182,18 @@ export default function SKUManagement() {
               </details>
 
               {/* Ingredients Order List */}
-              <div className="mt-8 bg-white p-6 rounded-lg border-2 border-gray-200">
-                <div className="flex justify-between items-center mb-4">
+              <div className="mt-8 bg-white p-6 rounded-lg border-2 border-gray-200 order-list-print">
+                <div className="flex justify-between items-center mb-4 no-print">
                   <div>
                     <h3 className="text-lg font-bold text-gray-900">Ingredients Order List</h3>
                     <p className="text-xs text-gray-600 mt-1">
                       Purchase list grouped by vendor - ready to send to suppliers
                     </p>
-                    <p className="text-xs text-gray-500 mt-1 print:hidden">
+                    <p className="text-xs text-gray-500 mt-1">
                       Mode: {orderListMode === 'full' ? 'Full Order (All Ingredients)' : 'Shortage Only (Missing Items)'}
                     </p>
                   </div>
-                  <div className="flex gap-3 items-center no-print">
+                  <div className="flex gap-3 items-center">
                     {/* Mode Toggle */}
                     <div className="flex gap-2 bg-gray-100 p-1 rounded-lg">
                       <button
@@ -1228,6 +1229,35 @@ export default function SKUManagement() {
                   </div>
                 </div>
 
+                {/* Professional Header for Print */}
+                <div className="hidden print:block print:mb-6 print:pb-4 print:border-b-2 print:border-gray-400">
+                  <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-4">
+                    <img 
+                      src={logo} 
+                      alt="WKLY Nuts Logo" 
+                      className="h-16 w-auto object-contain"
+                    />
+                    <div>
+                      <h2 className="text-2xl font-bold text-gray-900">WKLY Nuts</h2>
+                      <p className="text-sm text-gray-600">Production Manager</p>
+                    </div>
+                  </div>
+                    <div className="text-right text-sm text-gray-600">
+                      <div>{new Date().toLocaleDateString('en-IN', { 
+                        year: 'numeric', 
+                        month: '2-digit', 
+                        day: '2-digit' 
+                      })}</div>
+                      <div>{new Date().toLocaleTimeString('en-IN', { 
+                        hour: '2-digit', 
+                        minute: '2-digit',
+                        hour12: true
+                      })}</div>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Order List by Vendor */}
                 {(() => {
                   // Filter requirements based on mode
@@ -1259,7 +1289,6 @@ export default function SKUManagement() {
                   return (
                     <div className="space-y-6">
                       {Object.entries(vendorGroups).map(([vendorName, items]) => {
-                        const vendorTotal = calculateVendorTotal(items);
                         const totalQuantity = items.reduce((sum, item) => {
                           const quantityKg = orderListMode === 'shortage'
                             ? (item.shortage / 1000)
@@ -1270,7 +1299,7 @@ export default function SKUManagement() {
                         return (
                           <div key={vendorName} className="border-2 border-gray-300 rounded-lg p-4 print:break-inside-avoid">
                             <div className="flex justify-between items-center mb-4 pb-2 border-b-2 border-gray-400">
-                              <h4 className="text-lg font-bold text-gray-900">Vendor: {vendorName}</h4>
+                              <h4 className="text-xl font-bold text-gray-900">Order List</h4>
                               <div className="text-sm text-gray-600">
                                 {items.length} ingredient{items.length !== 1 ? 's' : ''}
                               </div>
@@ -1282,8 +1311,6 @@ export default function SKUManagement() {
                                   <th className="text-left p-2">#</th>
                                   <th className="text-left p-2">Ingredient</th>
                                   <th className="text-right p-2">Quantity (Kg)</th>
-                                  <th className="text-right p-2">Unit Price</th>
-                                  <th className="text-right p-2">Total Cost</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -1291,8 +1318,6 @@ export default function SKUManagement() {
                                   const quantityKg = orderListMode === 'shortage'
                                     ? (item.shortage / 1000)
                                     : parseFloat(item.totalKg);
-                                  const unitPrice = item.vendorPrice || 0;
-                                  const itemTotal = quantityKg * unitPrice;
 
                                   return (
                                     <tr key={idx} className="border-b hover:bg-gray-50">
@@ -1300,16 +1325,6 @@ export default function SKUManagement() {
                                       <td className="p-2 font-medium">{item.ingredientName}</td>
                                       <td className="p-2 text-right font-semibold">
                                         {quantityKg.toFixed(2)} kg
-                                      </td>
-                                      <td className="p-2 text-right">
-                                        {item.vendorPrice && item.vendorUnit ? (
-                                          <span>₹{item.vendorPrice.toFixed(2)} / {item.vendorUnit}</span>
-                                        ) : (
-                                          <span className="text-gray-400">N/A</span>
-                                        )}
-                                      </td>
-                                      <td className="p-2 text-right font-semibold text-green-700">
-                                        {itemTotal > 0 ? `₹${itemTotal.toFixed(2)}` : 'N/A'}
                                       </td>
                                     </tr>
                                   );
@@ -1319,20 +1334,16 @@ export default function SKUManagement() {
                                 <tr className="bg-gray-100 font-bold border-t-2 border-gray-400">
                                   <td colSpan="2" className="p-2">Total</td>
                                   <td className="p-2 text-right">{totalQuantity.toFixed(2)} kg</td>
-                                  <td className="p-2 text-right">-</td>
-                                  <td className="p-2 text-right text-green-700">
-                                    ₹{vendorTotal.toFixed(2)}
-                                  </td>
                                 </tr>
                               </tfoot>
                             </table>
 
-                            {/* Vendor Contact Info (if available) */}
+                            {/* Vendor Contact Info (if available) - Only show in print */}
                             {(() => {
                               const vendor = vendors.find(v => v.name === vendorName);
                               if (vendor && (vendor.phone || vendor.email || vendor.location)) {
                                 return (
-                                  <div className="text-xs text-gray-600 pt-2 border-t border-gray-300">
+                                  <div className="hidden print:block text-xs text-gray-600 pt-2 border-t border-gray-300">
                                     {vendor.phone && <div>Phone: {vendor.phone}</div>}
                                     {vendor.email && <div>Email: {vendor.email}</div>}
                                     {vendor.location && <div>Location: {vendor.location}</div>}
@@ -1350,32 +1361,6 @@ export default function SKUManagement() {
                           {orderListMode === 'shortage'
                             ? 'No shortage items to order'
                             : 'No ingredients to order'}
-                        </div>
-                      )}
-
-                      {/* Grand Total */}
-                      {Object.keys(vendorGroups).length > 0 && (
-                        <div className="bg-primary-50 p-4 rounded-lg border-2 border-primary-300">
-                          <div className="flex justify-between items-center">
-                            <span className="text-lg font-bold text-gray-900">Grand Total</span>
-                            <div className="text-right">
-                              <div className="text-sm text-gray-600">
-                                {Object.values(vendorGroups).reduce((sum, items) => {
-                                  return sum + items.reduce((s, item) => {
-                                    const qty = orderListMode === 'shortage'
-                                      ? (item.shortage / 1000)
-                                      : parseFloat(item.totalKg);
-                                    return s + qty;
-                                  }, 0);
-                                }, 0).toFixed(2)} kg total
-                              </div>
-                              <div className="text-2xl font-bold text-primary-700">
-                                ₹{Object.values(vendorGroups).reduce((sum, items) => {
-                                  return sum + calculateVendorTotal(items);
-                                }, 0).toFixed(2)}
-                              </div>
-                            </div>
-                          </div>
                         </div>
                       )}
                     </div>

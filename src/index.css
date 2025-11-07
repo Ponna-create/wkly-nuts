@@ -182,6 +182,27 @@
 
 /* Print styles for Ingredients Order List */
 @media print {
+  /* Hide everything except order list */
+  body * {
+    visibility: hidden;
+  }
+  
+  .order-list-print,
+  .order-list-print * {
+    visibility: visible;
+  }
+  
+  .order-list-print {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 20px;
+    margin: 0;
+    border: none;
+    box-shadow: none;
+  }
+
   /* Hide non-essential elements when printing */
   .no-print {
     display: none !important;
@@ -189,6 +210,16 @@
   
   body {
     background: white;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* Hide sidebar, header, and other page elements */
+  aside,
+  header,
+  nav,
+  .no-print {
+    display: none !important;
   }
 
   /* Ensure order list sections don't break across pages */
@@ -209,11 +240,25 @@
   /* Ensure tables print properly */
   table {
     border-collapse: collapse;
+    width: 100%;
   }
 
   /* Remove shadows and borders that don't print well */
   .shadow-md,
   .shadow-lg {
     box-shadow: none !important;
+  }
+
+  /* Show print-only elements */
+  .print\\:flex {
+    display: flex !important;
+  }
+
+  .print\\:block {
+    display: block !important;
+  }
+
+  .print\\:hidden {
+    display: none !important;
   }
 }
