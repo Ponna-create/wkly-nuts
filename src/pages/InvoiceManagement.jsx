@@ -269,11 +269,37 @@ export default function InvoiceManagement() {
       if (editingInvoice) {
         invoiceData.id = editingInvoice.id;
         invoiceData.invoiceNumber = editingInvoice.invoiceNumber;
-        dispatch({ type: 'UPDATE_INVOICE', payload: invoiceData });
+        
+        // Save to database
+        if (isSupabaseAvailable()) {
+          const updateResult = await dbService.updateInvoice(invoiceData);
+          if (updateResult.error) {
+            console.error('Error updating invoice:', updateResult.error);
+            showToast('Error updating invoice', 'error');
+            return;
+          }
+          // Update with database response
+          dispatch({ type: 'UPDATE_INVOICE', payload: updateResult.data });
+        } else {
+          dispatch({ type: 'UPDATE_INVOICE', payload: invoiceData });
+        }
         showToast('Invoice updated successfully', 'success');
       } else {
-        dispatch({ type: 'ADD_INVOICE', payload: { ...invoiceData, id: Date.now() + Math.random() } });
-        showToast('Invoice created successfully', 'success');
+        // Create new invoice - save to database first
+        if (isSupabaseAvailable()) {
+          const createResult = await dbService.createInvoice(invoiceData);
+          if (createResult.error) {
+            console.error('Error creating invoice:', createResult.error);
+            showToast('Error creating invoice', 'error');
+            return;
+          }
+          // Use the database ID from the response
+          dispatch({ type: 'ADD_INVOICE', payload: createResult.data });
+          showToast('Invoice created successfully', 'success');
+        } else {
+          dispatch({ type: 'ADD_INVOICE', payload: { ...invoiceData, id: Date.now() + Math.random() } });
+          showToast('Invoice created successfully', 'success');
+        }
         
         // Stock will be reduced only when invoice status changes to "paid"
         // (Moved to handleStatusChange function)
@@ -320,21 +346,49 @@ export default function InvoiceManagement() {
       ...invoice,
       status: newStatus,
       paymentDate: newStatus === 'paid' ? new Date().toISOString().split('T')[0] : invoice.paymentDate,
+      // Update balance due to 0 when status is paid
+      balanceDue: newStatus === 'paid' ? 0 : invoice.balanceDue,
     };
 
     // Generate invoice number and reduce stock only when status changes to "paid"
     if (newStatus === 'paid') {
       // Generate invoice number if not already generated
-      if (!invoice.invoiceNumber || invoice.invoiceNumber === 'N/A' || invoice.invoiceNumber === null) {
+      if (!invoice.invoiceNumber || invoice.invoiceNumber === 'N/A' || invoice.invoiceNumber === null || invoice.invoiceNumber === undefined) {
         const year = new Date().getFullYear();
-        // Count all invoices that have a real invoice number (not N/A or null)
-        const existingPaidInvoices = invoices.filter(inv => {
-          const invNum = inv.invoiceNumber || inv.invoice_number;
-          return invNum && invNum !== 'N/A' && invNum !== null && invNum.startsWith(`INV-${year}`);
-        });
-        const invoiceCount = existingPaidInvoices.length + 1;
+        
+        // Get accurate count from database if available
+        let invoiceCount = 1;
+        if (isSupabaseAvailable()) {
+          try {
+            // Query database for all invoices with invoice numbers for this year
+            const allInvoicesRes = await dbService.getInvoices();
+            if (allInvoicesRes.data) {
+              const existingPaidInvoices = allInvoicesRes.data.filter(inv => {
+                const invNum = inv.invoiceNumber || inv.invoice_number;
+                return invNum && invNum !== 'N/A' && invNum !== null && invNum !== undefined && invNum.startsWith(`INV-${year}`);
+              });
+              invoiceCount = existingPaidInvoices.length + 1;
+            }
+          } catch (error) {
+            console.error('Error counting invoices from database, using local count:', error);
+            // Fallback to local count
+            const existingPaidInvoices = invoices.filter(inv => {
+              const invNum = inv.invoiceNumber || inv.invoice_number;
+              return invNum && invNum !== 'N/A' && invNum !== null && invNum !== undefined && invNum.startsWith(`INV-${year}`);
+            });
+            invoiceCount = existingPaidInvoices.length + 1;
+          }
+        } else {
+          // Fallback to local count
+          const existingPaidInvoices = invoices.filter(inv => {
+            const invNum = inv.invoiceNumber || inv.invoice_number;
+            return invNum && invNum !== 'N/A' && invNum !== null && invNum !== undefined && invNum.startsWith(`INV-${year}`);
+          });
+          invoiceCount = existingPaidInvoices.length + 1;
+        }
+        
         updatedInvoice.invoiceNumber = `INV-${year}-${String(invoiceCount).padStart(5, '0')}`;
-        console.log('Generated invoice number:', updatedInvoice.invoiceNumber, 'for invoice:', invoice.id);
+        console.log('Generated invoice number:', updatedInvoice.invoiceNumber, 'for invoice:', invoice.id, 'count:', invoiceCount);
       } else {
         console.log('Invoice already has number:', invoice.invoiceNumber);
       }
