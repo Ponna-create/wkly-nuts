@@ -12,6 +12,7 @@ import SalesRevenue from './pages/SalesRevenue';
 import VendorComparison from './pages/VendorComparison';
 import CustomerManagement from './pages/CustomerManagement';
 import InventoryManagement from './pages/InventoryManagement';
+import InvoiceManagement from './pages/InvoiceManagement';
 
 function App() {
   return (
@@ -28,6 +29,7 @@ function App() {
               <Route path="/vendor-comparison" element={<VendorComparison />} />
               <Route path="/customers" element={<CustomerManagement />} />
               <Route path="/inventory" element={<InventoryManagement />} />
+              <Route path="/invoices" element={<InvoiceManagement />} />
             </Routes>
           </Layout>
           <Toast />

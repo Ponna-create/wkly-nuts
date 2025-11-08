@@ -11,7 +11,8 @@ import {
   X,
   LogOut,
   UserCircle,
-  Warehouse
+  Warehouse,
+  Receipt
 } from 'lucide-react';
 import { logout } from './Auth';
 import logo from '../assets/wkly-nuts-logo.png';
@@ -25,6 +26,7 @@ const navigation = [
   { name: 'Vendor Comparison', href: '/vendor-comparison', icon: BarChart3 },
   { name: 'Customer Management', href: '/customers', icon: UserCircle },
   { name: 'Inventory Management', href: '/inventory', icon: Warehouse },
+  { name: 'Invoice Management', href: '/invoices', icon: Receipt },
 ];
 
 export default function Layout({ children }) {
