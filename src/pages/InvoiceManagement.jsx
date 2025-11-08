@@ -339,8 +339,21 @@ export default function InvoiceManagement() {
   };
 
   const handleStatusChange = async (invoiceId, newStatus) => {
+    console.log('=== handleStatusChange START ===');
+    console.log('Invoice ID:', invoiceId);
+    console.log('New Status:', newStatus);
+    
     const invoice = invoices.find(inv => inv.id === invoiceId);
-    if (!invoice) return;
+    if (!invoice) {
+      console.error('Invoice not found in local state! ID:', invoiceId);
+      return;
+    }
+    
+    console.log('Found invoice:', {
+      id: invoice.id,
+      currentInvoiceNumber: invoice.invoiceNumber,
+      currentStatus: invoice.status
+    });
 
     const updatedInvoice = {
       ...invoice,
@@ -352,8 +365,18 @@ export default function InvoiceManagement() {
 
     // Generate invoice number and reduce stock only when status changes to "paid"
     if (newStatus === 'paid') {
+      console.log('Status is "paid", checking if invoice number needs to be generated...');
+      console.log('Current invoice number value:', invoice.invoiceNumber);
+      console.log('Invoice number check:', {
+        isFalsy: !invoice.invoiceNumber,
+        isNA: invoice.invoiceNumber === 'N/A',
+        isNull: invoice.invoiceNumber === null,
+        isUndefined: invoice.invoiceNumber === undefined
+      });
+      
       // Generate invoice number if not already generated
       if (!invoice.invoiceNumber || invoice.invoiceNumber === 'N/A' || invoice.invoiceNumber === null || invoice.invoiceNumber === undefined) {
+        console.log('Invoice number needs to be generated');
         const year = new Date().getFullYear();
         
         // Get accurate count from database if available
@@ -388,9 +411,15 @@ export default function InvoiceManagement() {
         }
         
         updatedInvoice.invoiceNumber = `INV-${year}-${String(invoiceCount).padStart(5, '0')}`;
-        console.log('Generated invoice number:', updatedInvoice.invoiceNumber, 'for invoice:', invoice.id, 'count:', invoiceCount);
+        console.log('✅ Generated invoice number:', updatedInvoice.invoiceNumber, 'for invoice:', invoice.id, 'count:', invoiceCount);
+        console.log('Updated invoice object:', {
+          id: updatedInvoice.id,
+          invoiceNumber: updatedInvoice.invoiceNumber,
+          status: updatedInvoice.status
+        });
       } else {
-        console.log('Invoice already has number:', invoice.invoiceNumber);
+        console.log('⚠️ Invoice already has number:', invoice.invoiceNumber);
+        console.log('Skipping invoice number generation');
       }
       
       // Reduce stock only when invoice is marked as paid
@@ -418,46 +447,70 @@ export default function InvoiceManagement() {
     }
 
     // Save to database first (before updating local state) to ensure persistence
+    console.log('=== Saving to database ===');
     try {
       if (isSupabaseAvailable()) {
-        console.log('Updating invoice in database:', {
+        console.log('Supabase is available, proceeding with database save');
+        console.log('Invoice data to save:', {
           id: updatedInvoice.id,
           invoiceNumber: updatedInvoice.invoiceNumber,
-          status: updatedInvoice.status
+          status: updatedInvoice.status,
+          customerId: updatedInvoice.customerId,
+          totalAmount: updatedInvoice.totalAmount
         });
         
         // First, check if invoice exists in database by trying to fetch it
+        console.log('Checking if invoice exists in database...');
         const allInvoicesRes = await dbService.getInvoices();
+        console.log('Fetched invoices from database:', allInvoicesRes.data?.length || 0, 'invoices');
+        
+        if (allInvoicesRes.error) {
+          console.error('Error fetching invoices:', allInvoicesRes.error);
+        }
+        
         const invoiceExists = allInvoicesRes.data?.some(inv => inv.id === invoiceId);
+        console.log('Invoice exists in database?', invoiceExists);
         
         if (!invoiceExists) {
-          console.log('Invoice not found in database, creating it first...');
+          console.log('📝 Invoice not found in database, creating it first...');
           // Invoice doesn't exist in database, create it first
           // Remove the local ID so database can generate a new UUID
           const invoiceToCreate = { ...updatedInvoice };
           // Only keep the ID if it's a valid UUID format, otherwise let DB generate it
           if (!invoiceToCreate.id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(invoiceToCreate.id)) {
+            console.log('Removing invalid ID, letting database generate UUID');
             delete invoiceToCreate.id; // Let database generate UUID
           }
+          console.log('Creating invoice with data:', {
+            invoiceNumber: invoiceToCreate.invoiceNumber,
+            status: invoiceToCreate.status
+          });
           const createResult = await dbService.createInvoice(invoiceToCreate);
           if (createResult.error) {
-            console.error('Error creating invoice in database:', createResult.error);
+            console.error('❌ Error creating invoice in database:', createResult.error);
             showToast('Error saving invoice to database', 'error');
             return;
           }
-          console.log('Invoice created in database:', createResult.data.id);
+          console.log('✅ Invoice created in database:', {
+            id: createResult.data.id,
+            invoiceNumber: createResult.data.invoiceNumber,
+            status: createResult.data.status
+          });
           // Update the invoice ID in local state to match database
           updatedInvoice = { ...createResult.data, id: createResult.data.id };
         } else {
+          console.log('📝 Invoice exists in database, updating it...');
           // Invoice exists, update it
+          console.log('Updating invoice with invoice number:', updatedInvoice.invoiceNumber);
           const updateResult = await dbService.updateInvoice(updatedInvoice);
           if (updateResult.error) {
-            console.error('Error updating invoice in database:', updateResult.error);
+            console.error('❌ Error updating invoice in database:', updateResult.error);
+            console.error('Error details:', JSON.stringify(updateResult.error, null, 2));
             showToast('Error saving invoice to database', 'error');
             return;
           }
           
-          console.log('Invoice updated in database successfully:', {
+          console.log('✅ Invoice updated in database successfully:', {
             id: updateResult.data.id,
             invoiceNumber: updateResult.data.invoiceNumber,
             status: updateResult.data.status
@@ -466,31 +519,54 @@ export default function InvoiceManagement() {
           // Use the data returned from database (which has the correct invoice number)
           updatedInvoice = updateResult.data;
         }
+      } else {
+        console.log('⚠️ Supabase is not available, skipping database save');
       }
     } catch (error) {
-      console.error('Error saving invoice to database:', error);
+      console.error('❌ Exception while saving invoice to database:', error);
+      console.error('Error stack:', error.stack);
       showToast('Error saving invoice to database', 'error');
       return;
     }
     
     // Update local state with the database response
+    console.log('=== Updating local state ===');
+    console.log('Updated invoice before dispatch:', {
+      id: updatedInvoice.id,
+      invoiceNumber: updatedInvoice.invoiceNumber,
+      status: updatedInvoice.status
+    });
     dispatch({ type: 'UPDATE_INVOICE', payload: updatedInvoice });
+    console.log('✅ Local state updated');
     
     // Reload invoices from database to ensure UI is in sync
+    console.log('=== Reloading invoices from database ===');
     try {
       // Give a small delay for the database sync to complete
+      console.log('Waiting 500ms for database sync...');
       await new Promise(resolve => setTimeout(resolve, 500));
       
       const invoicesRes = await dbService.getInvoices();
       if (invoicesRes.data) {
+        console.log('Reloaded', invoicesRes.data.length, 'invoices from database');
         dispatch({ type: 'LOAD_INVOICES', payload: invoicesRes.data });
         const reloadedInvoice = invoicesRes.data.find(inv => inv.id === invoiceId);
-        console.log('Invoices reloaded. Invoice number:', reloadedInvoice?.invoiceNumber, 'Status:', reloadedInvoice?.status);
+        console.log('✅ Invoice reloaded from database:', {
+          id: reloadedInvoice?.id,
+          invoiceNumber: reloadedInvoice?.invoiceNumber,
+          status: reloadedInvoice?.status
+        });
+        
+        if (!reloadedInvoice) {
+          console.error('❌ Invoice not found after reload! ID:', invoiceId);
+        } else if (!reloadedInvoice.invoiceNumber || reloadedInvoice.invoiceNumber === 'N/A') {
+          console.error('❌ Invoice number still missing after reload!');
+        }
       } else if (invoicesRes.error) {
-        console.error('Error reloading invoices:', invoicesRes.error);
+        console.error('❌ Error reloading invoices:', invoicesRes.error);
       }
     } catch (error) {
-      console.error('Error reloading invoices:', error);
+      console.error('❌ Exception while reloading invoices:', error);
       // Don't show error toast here as the update might have succeeded
     }
     
@@ -498,6 +574,8 @@ export default function InvoiceManagement() {
       ? ` - Invoice number ${updatedInvoice.invoiceNumber} generated and stock reduced` 
       : '';
     showToast(`Invoice marked as ${newStatus}${invoiceNumberMsg}`, 'success');
+    console.log('=== handleStatusChange END ===');
+    console.log('Final invoice number:', updatedInvoice.invoiceNumber);
   };
 
   // Generate PDF Invoice - Simple & Clean Layout
