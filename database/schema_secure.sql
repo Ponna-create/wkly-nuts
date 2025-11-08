@@ -88,7 +88,7 @@ CREATE TABLE IF NOT EXISTS customers (
 -- Invoices Table
 CREATE TABLE IF NOT EXISTS invoices (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  invoice_number VARCHAR(50) UNIQUE NOT NULL,
+  invoice_number VARCHAR(50) UNIQUE, -- Allow NULL initially, will be generated when status is 'paid'
   customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
   invoice_date DATE NOT NULL DEFAULT CURRENT_DATE,
   due_date DATE,

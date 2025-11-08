@@ -355,7 +355,23 @@ export default function InvoiceManagement() {
       }
     }
 
+    // Update local state first
     dispatch({ type: 'UPDATE_INVOICE', payload: updatedInvoice });
+    
+    // Wait for database sync, then reload invoices to ensure we have the latest data
+    try {
+      // Give a small delay for the database sync to complete
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Reload invoices from database to ensure we have the latest data
+      const invoicesRes = await dbService.getInvoices();
+      if (invoicesRes.data) {
+        dispatch({ type: 'LOAD_INVOICES', payload: invoicesRes.data });
+      }
+    } catch (error) {
+      console.error('Error reloading invoices:', error);
+    }
+    
     showToast(`Invoice marked as ${newStatus}${newStatus === 'paid' && (!invoice.invoiceNumber || invoice.invoiceNumber === 'N/A') ? ' - Invoice number generated and stock reduced' : ''}`, 'success');
   };
 
@@ -367,6 +383,16 @@ export default function InvoiceManagement() {
         showToast('Invalid invoice data', 'error');
         return;
       }
+      
+      // Get the latest invoice data from state to ensure we have the most up-to-date information
+      const latestInvoice = invoices.find(inv => inv.id === invoice.id) || invoice;
+      if (!latestInvoice) {
+        showToast('Invoice not found', 'error');
+        return;
+      }
+      
+      // Use the latest invoice data
+      invoice = latestInvoice;
 
       // Check if invoice has items
       if (!invoice.items || !Array.isArray(invoice.items) || invoice.items.length === 0) {

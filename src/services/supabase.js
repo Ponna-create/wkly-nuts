@@ -785,7 +785,7 @@ export const dbService = {
       const { data, error } = await supabase
         .from('invoices')
         .insert({
-          invoice_number: invoice.invoiceNumber || null, // Will be auto-generated if null
+          invoice_number: invoice.invoiceNumber || 'N/A', // Use 'N/A' as placeholder until invoice is paid
           customer_id: invoice.customerId || null,
           invoice_date: invoice.invoiceDate || new Date().toISOString().split('T')[0],
           due_date: invoice.dueDate || null,
