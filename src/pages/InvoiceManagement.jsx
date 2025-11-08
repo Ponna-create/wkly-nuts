@@ -304,6 +304,187 @@ export default function InvoiceManagement() {
     showToast(`Invoice marked as ${newStatus}`, 'success');
   };
 
+  // Generate PDF Invoice
+  const generatePDF = (invoice) => {
+    try {
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const margin = 20;
+      let yPos = margin;
+
+      // Company Header with Logo (Text-based for now, can add image later)
+      doc.setFontSize(20);
+      doc.setTextColor(34, 197, 94); // Green color
+      doc.setFont(undefined, 'bold');
+      doc.text('WKLY Nuts', margin, yPos);
+      
+      doc.setFontSize(10);
+      doc.setTextColor(100, 100, 100);
+      doc.setFont(undefined, 'normal');
+      doc.text('Production Management System', margin, yPos + 7);
+      
+      // Invoice Title (Right aligned)
+      doc.setFontSize(18);
+      doc.setTextColor(0, 0, 0);
+      doc.setFont(undefined, 'bold');
+      doc.text('INVOICE', pageWidth - margin, yPos, { align: 'right' });
+      
+      yPos += 20;
+
+      // Invoice Details (Left side)
+      doc.setFontSize(10);
+      doc.setTextColor(0, 0, 0);
+      doc.setFont(undefined, 'normal');
+      doc.text(`Invoice Number: ${invoice.invoiceNumber || 'N/A'}`, margin, yPos);
+      doc.text(`Invoice Date: ${invoice.invoiceDate ? new Date(invoice.invoiceDate).toLocaleDateString('en-IN') : 'N/A'}`, margin, yPos + 6);
+      if (invoice.dueDate) {
+        doc.text(`Due Date: ${new Date(invoice.dueDate).toLocaleDateString('en-IN')}`, margin, yPos + 12);
+        yPos += 6;
+      }
+      yPos += 12;
+
+      // Customer Details
+      if (invoice.customer) {
+        doc.setFontSize(12);
+        doc.setFont(undefined, 'bold');
+        doc.text('Bill To:', margin, yPos);
+        doc.setFont(undefined, 'normal');
+        doc.setFontSize(10);
+        yPos += 6;
+        doc.text(invoice.customer.name || '', margin, yPos);
+        yPos += 5;
+        if (invoice.customer.address) {
+          doc.text(invoice.customer.address, margin, yPos);
+          yPos += 5;
+        }
+        if (invoice.customer.city || invoice.customer.state) {
+          const addressLine = [invoice.customer.city, invoice.customer.state, invoice.customer.pincode].filter(Boolean).join(', ');
+          if (addressLine) {
+            doc.text(addressLine, margin, yPos);
+            yPos += 5;
+          }
+        }
+        if (invoice.customer.phone) {
+          doc.text(`Phone: ${invoice.customer.phone}`, margin, yPos);
+          yPos += 5;
+        }
+        if (invoice.customer.email) {
+          doc.text(`Email: ${invoice.customer.email}`, margin, yPos);
+          yPos += 5;
+        }
+        if (invoice.customer.gstin) {
+          doc.text(`GSTIN: ${invoice.customer.gstin}`, margin, yPos);
+          yPos += 5;
+        }
+        yPos += 5;
+      }
+
+      // Items Table
+      const tableData = invoice.items.map((item, index) => [
+        index + 1,
+        item.skuName,
+        item.packType.charAt(0).toUpperCase() + item.packType.slice(1),
+        item.quantity.toString(),
+        `₹${item.unitPrice.toFixed(2)}`,
+        `₹${item.total.toFixed(2)}`,
+      ]);
+
+      doc.autoTable({
+        startY: yPos,
+        head: [['#', 'SKU Name', 'Pack Type', 'Quantity', 'Unit Price (₹)', 'Total (₹)']],
+        body: tableData,
+        theme: 'striped',
+        headStyles: { fillColor: [34, 197, 94], textColor: 255, fontStyle: 'bold' },
+        styles: { fontSize: 9 },
+        columnStyles: {
+          0: { cellWidth: 15 },
+          1: { cellWidth: 60 },
+          2: { cellWidth: 30 },
+          3: { cellWidth: 25, halign: 'right' },
+          4: { cellWidth: 30, halign: 'right' },
+          5: { cellWidth: 30, halign: 'right' },
+        },
+      });
+
+      yPos = doc.lastAutoTable.finalY + 15;
+
+      // Totals Section (Right aligned)
+      const totalsX = pageWidth - margin - 60;
+      doc.setFontSize(10);
+      doc.text('Subtotal:', totalsX, yPos);
+      doc.text(`₹${invoice.subtotal?.toFixed(2) || '0.00'}`, pageWidth - margin, yPos, { align: 'right' });
+      yPos += 6;
+      
+      if (invoice.taxRate > 0) {
+        doc.text(`Tax (${invoice.taxRate}%):`, totalsX, yPos);
+        doc.text(`₹${invoice.taxAmount?.toFixed(2) || '0.00'}`, pageWidth - margin, yPos, { align: 'right' });
+        yPos += 6;
+      }
+      
+      if (invoice.discountAmount > 0) {
+        doc.text('Discount:', totalsX, yPos);
+        doc.text(`-₹${invoice.discountAmount?.toFixed(2) || '0.00'}`, pageWidth - margin, yPos, { align: 'right' });
+        yPos += 6;
+      }
+      
+      // Total line
+      doc.setDrawColor(200, 200, 200);
+      doc.line(totalsX, yPos - 2, pageWidth - margin, yPos - 2);
+      yPos += 4;
+      
+      doc.setFontSize(12);
+      doc.setFont(undefined, 'bold');
+      doc.text('Total Amount:', totalsX, yPos);
+      doc.text(`₹${invoice.totalAmount?.toFixed(2) || '0.00'}`, pageWidth - margin, yPos, { align: 'right' });
+      yPos += 10;
+
+      // Payment Terms and Notes
+      if (invoice.terms) {
+        doc.setFontSize(10);
+        doc.setFont(undefined, 'bold');
+        doc.text('Payment Terms:', margin, yPos);
+        doc.setFont(undefined, 'normal');
+        const termsLines = doc.splitTextToSize(invoice.terms, pageWidth - 2 * margin);
+        doc.text(termsLines, margin, yPos + 6);
+        yPos += 6 + (termsLines.length * 5);
+      }
+
+      if (invoice.notes) {
+        doc.setFont(undefined, 'bold');
+        doc.text('Notes:', margin, yPos);
+        doc.setFont(undefined, 'normal');
+        const notesLines = doc.splitTextToSize(invoice.notes, pageWidth - 2 * margin);
+        doc.text(notesLines, margin, yPos + 6);
+        yPos += 6 + (notesLines.length * 5);
+      }
+
+      // Footer
+      yPos = doc.internal.pageSize.getHeight() - 30;
+      doc.setFontSize(8);
+      doc.setTextColor(150, 150, 150);
+      doc.text('Thank you for your business!', pageWidth / 2, yPos, { align: 'center' });
+      doc.text('WKLY Nuts - Quality Nuts, Weekly Delivered', pageWidth / 2, yPos + 5, { align: 'center' });
+      
+      // Page number
+      const pageCount = doc.internal.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setTextColor(150, 150, 150);
+        doc.text(`Page ${i} of ${pageCount}`, pageWidth / 2, doc.internal.pageSize.getHeight() - 10, { align: 'center' });
+      }
+
+      // Save PDF
+      const fileName = `Invoice-${invoice.invoiceNumber || invoice.id}-${new Date().toISOString().split('T')[0]}.pdf`;
+      doc.save(fileName);
+      
+      showToast('PDF generated successfully', 'success');
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      showToast('Error generating PDF', 'error');
+    }
+  };
+
   // Filter invoices
   const filteredInvoices = useMemo(() => {
     let filtered = invoices;
