@@ -495,7 +495,7 @@ export default function InvoiceManagement() {
         head: [['#', 'Item', 'Description', 'Qty', 'Rate', 'Amount']],
         body: tableData,
         theme: 'striped',
-        headStyles: { fillColor: [255, 193, 7], textColor: 0, fontStyle: 'bold' },
+        headStyles: { fillColor: [34, 197, 94], textColor: 255, fontStyle: 'bold' }, // Green to match logo theme
         styles: { fontSize: 9, cellPadding: 3 },
         columnStyles: {
           0: { cellWidth: 12, halign: 'center' },
