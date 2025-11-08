@@ -517,70 +517,72 @@ export default function InvoiceManagement() {
           console.log('✅ Invoice number locked in:', updatedInvoice.invoiceNumber);
         }
         
-        // First, check if invoice exists in database by trying to fetch it
-        console.log('Checking if invoice exists in database...');
-        const allInvoicesRes = await dbService.getInvoices();
-        console.log('Fetched invoices from database:', allInvoicesRes.data?.length || 0, 'invoices');
+        // CRITICAL: If invoice has an ID (UUID format), it MUST exist in database - always UPDATE, never CREATE
+        const hasValidUUID = updatedInvoice.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(updatedInvoice.id);
+        console.log('Invoice has valid UUID?', hasValidUUID, 'ID:', updatedInvoice.id);
         
-        if (allInvoicesRes.error) {
-          console.error('Error fetching invoices:', allInvoicesRes.error);
-        }
+        let invoiceExists = false;
         
-        // Check if invoice exists by ID
-        let invoiceExists = allInvoicesRes.data?.some(inv => inv.id === invoiceId);
-        
-        // Also check if invoice exists by customer and date (in case ID doesn't match)
-        // IMPORTANT: Preserve the generated invoice number before checking for existing invoices
-        const generatedInvoiceNumber = updatedInvoice.invoiceNumber;
-        console.log('Preserving generated invoice number:', generatedInvoiceNumber);
-        
-        if (!invoiceExists && updatedInvoice.customerId && updatedInvoice.invoiceDate) {
-          invoiceExists = allInvoicesRes.data?.some(inv => 
-            inv.customerId === updatedInvoice.customerId && 
-            inv.invoiceDate === updatedInvoice.invoiceDate &&
-            (!inv.invoiceNumber || inv.invoiceNumber === 'N/A')
-          );
-          if (invoiceExists) {
-            console.log('Found existing invoice by customer and date, will update it');
-            // Get the existing invoice ID
-            const existingInvoice = allInvoicesRes.data.find(inv => 
+        if (hasValidUUID) {
+          // If we have a valid UUID, check if it exists in database
+          console.log('Checking if invoice exists in database by ID...');
+          const allInvoicesRes = await dbService.getInvoices();
+          console.log('Fetched invoices from database:', allInvoicesRes.data?.length || 0, 'invoices');
+          
+          if (allInvoicesRes.error) {
+            console.error('Error fetching invoices:', allInvoicesRes.error);
+          }
+          
+          // Check if invoice exists by ID
+          invoiceExists = allInvoicesRes.data?.some(inv => inv.id === invoiceId);
+          console.log('Invoice exists in database by ID?', invoiceExists);
+          
+          // If not found by ID, try to find by customer and date
+          if (!invoiceExists && updatedInvoice.customerId && updatedInvoice.invoiceDate) {
+            const existingInvoice = allInvoicesRes.data?.find(inv => 
               inv.customerId === updatedInvoice.customerId && 
-              inv.invoiceDate === updatedInvoice.invoiceDate &&
-              (!inv.invoiceNumber || inv.invoiceNumber === 'N/A')
+              inv.invoiceDate === updatedInvoice.invoiceDate
             );
             if (existingInvoice) {
+              console.log('Found existing invoice by customer and date, using its ID');
               updatedInvoice.id = existingInvoice.id;
               invoiceId = existingInvoice.id;
-              // CRITICAL: Preserve the generated invoice number!
-              updatedInvoice.invoiceNumber = generatedInvoiceNumber;
-              console.log('Using existing invoice ID:', invoiceId);
-              console.log('Preserved invoice number:', updatedInvoice.invoiceNumber);
+              invoiceExists = true;
             }
           }
+        } else {
+          // No valid UUID - invoice doesn't exist in database, will need to create
+          console.log('No valid UUID - invoice will be created in database');
+          invoiceExists = false;
         }
         
-        // Ensure generated invoice number is preserved
-        if (generatedInvoiceNumber && generatedInvoiceNumber !== 'N/A') {
-          updatedInvoice.invoiceNumber = generatedInvoiceNumber;
-          console.log('Ensuring invoice number is set:', updatedInvoice.invoiceNumber);
-        }
-        
-        console.log('Invoice exists in database?', invoiceExists);
+        console.log('Final decision - Invoice exists in database?', invoiceExists);
         
         if (!invoiceExists) {
           console.log('📝 Invoice not found in database, creating it first...');
           // Invoice doesn't exist in database, create it first
-          // Remove the local ID so database can generate a new UUID
           const invoiceToCreate = { ...updatedInvoice };
-          // Only keep the ID if it's a valid UUID format, otherwise let DB generate it
+          
+          // CRITICAL: Ensure invoice number is set before creating
+          if (!invoiceToCreate.invoiceNumber || invoiceToCreate.invoiceNumber === 'N/A') {
+            console.error('❌ CRITICAL: Cannot create invoice without invoice number!');
+            console.error('Invoice number is:', invoiceToCreate.invoiceNumber);
+            showToast('Error: Invoice number not generated. Cannot create invoice.', 'error');
+            return;
+          }
+          
+          // Remove the local ID so database can generate a new UUID
           if (!invoiceToCreate.id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(invoiceToCreate.id)) {
             console.log('Removing invalid ID, letting database generate UUID');
             delete invoiceToCreate.id; // Let database generate UUID
           }
+          
           console.log('Creating invoice with data:', {
             invoiceNumber: invoiceToCreate.invoiceNumber,
-            status: invoiceToCreate.status
+            status: invoiceToCreate.status,
+            customerId: invoiceToCreate.customerId
           });
+          
           const createResult = await dbService.createInvoice(invoiceToCreate);
           if (createResult.error) {
             // Handle duplicate key error - invoice number already exists
