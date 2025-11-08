@@ -1,13 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { Lock } from 'lucide-react';
+import { Lock, User } from 'lucide-react';
 import logo from '../assets/wkly-nuts-logo.png';
 
 // Simple password authentication for internal use
-// Password is stored in environment variable or localStorage
-const APP_PASSWORD = import.meta.env.VITE_APP_PASSWORD || 'wklynuts2025'; // Change this!
+// Password is stored in Vercel environment variable: VITE_APP_PASSWORD
+// Username is optional, stored in: VITE_APP_USERNAME (default: 'admin')
+const APP_PASSWORD = import.meta.env.VITE_APP_PASSWORD || '';
+const APP_USERNAME = import.meta.env.VITE_APP_USERNAME || 'admin';
 
 export default function Auth({ children }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
@@ -25,6 +28,21 @@ export default function Auth({ children }) {
     e.preventDefault();
     setError('');
 
+    // Check if password is configured
+    if (!APP_PASSWORD) {
+      setError('Password not configured. Please set VITE_APP_PASSWORD in Vercel environment variables.');
+      return;
+    }
+
+    // Validate username (if configured)
+    if (APP_USERNAME && username.trim().toLowerCase() !== APP_USERNAME.toLowerCase()) {
+      setError('Incorrect username. Please try again.');
+      setUsername('');
+      setPassword('');
+      return;
+    }
+
+    // Validate password
     if (password === APP_PASSWORD) {
       localStorage.setItem('wklyNutsAuth', 'authenticated');
       setIsAuthenticated(true);
@@ -70,20 +88,43 @@ export default function Auth({ children }) {
           </div>
 
           <form onSubmit={handleLogin} className="space-y-4">
+            {APP_USERNAME && (
+              <div>
+                <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-2">
+                  Username
+                </label>
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <input
+                    id="username"
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    className="input-field w-full pl-10"
+                    placeholder="Enter username"
+                    autoFocus
+                    required
+                  />
+                </div>
+              </div>
+            )}
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
-                Enter Password
+                Password
               </label>
-              <input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="input-field w-full"
-                placeholder="Enter app password"
-                autoFocus
-                required
-              />
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="input-field w-full pl-10"
+                  placeholder="Enter password"
+                  autoFocus={!APP_USERNAME}
+                  required
+                />
+              </div>
             </div>
 
             {error && (
@@ -103,6 +144,12 @@ export default function Auth({ children }) {
           <div className="mt-6 text-center text-xs text-gray-500">
             <p>Internal Use Only</p>
             <p className="mt-1">Contact administrator for access</p>
+            {!APP_PASSWORD && (
+              <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded text-yellow-800">
+                <p className="font-semibold">⚠️ Password Not Configured</p>
+                <p className="mt-1">Set VITE_APP_PASSWORD in Vercel environment variables</p>
+              </div>
+            )}
           </div>
         </div>
       </div>
