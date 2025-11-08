@@ -417,34 +417,56 @@ export default function InvoiceManagement() {
       }
     }
 
-    // Update local state first
-    dispatch({ type: 'UPDATE_INVOICE', payload: updatedInvoice });
-    
-    // Wait for database sync, then reload invoices to ensure we have the latest data
+    // Save to database first (before updating local state) to ensure persistence
     try {
-      // Explicitly save to database first to ensure invoice number is persisted
       if (isSupabaseAvailable()) {
+        console.log('Updating invoice in database:', {
+          id: updatedInvoice.id,
+          invoiceNumber: updatedInvoice.invoiceNumber,
+          status: updatedInvoice.status
+        });
+        
         const updateResult = await dbService.updateInvoice(updatedInvoice);
         if (updateResult.error) {
           console.error('Error updating invoice in database:', updateResult.error);
           showToast('Error saving invoice to database', 'error');
           return;
         }
-        console.log('Invoice updated in database:', updateResult.data);
+        
+        console.log('Invoice updated in database successfully:', {
+          id: updateResult.data.id,
+          invoiceNumber: updateResult.data.invoiceNumber,
+          status: updateResult.data.status
+        });
+        
+        // Use the data returned from database (which has the correct invoice number)
+        updatedInvoice = updateResult.data;
       }
-      
+    } catch (error) {
+      console.error('Error updating invoice in database:', error);
+      showToast('Error saving invoice to database', 'error');
+      return;
+    }
+    
+    // Update local state with the database response
+    dispatch({ type: 'UPDATE_INVOICE', payload: updatedInvoice });
+    
+    // Reload invoices from database to ensure UI is in sync
+    try {
       // Give a small delay for the database sync to complete
-      await new Promise(resolve => setTimeout(resolve, 300));
+      await new Promise(resolve => setTimeout(resolve, 500));
       
-      // Reload invoices from database to ensure we have the latest data
       const invoicesRes = await dbService.getInvoices();
       if (invoicesRes.data) {
         dispatch({ type: 'LOAD_INVOICES', payload: invoicesRes.data });
-        console.log('Invoices reloaded, invoice number should be:', updatedInvoice.invoiceNumber);
+        const reloadedInvoice = invoicesRes.data.find(inv => inv.id === invoiceId);
+        console.log('Invoices reloaded. Invoice number:', reloadedInvoice?.invoiceNumber, 'Status:', reloadedInvoice?.status);
+      } else if (invoicesRes.error) {
+        console.error('Error reloading invoices:', invoicesRes.error);
       }
     } catch (error) {
       console.error('Error reloading invoices:', error);
-      showToast('Error reloading invoices', 'error');
+      // Don't show error toast here as the update might have succeeded
     }
     
     const invoiceNumberMsg = newStatus === 'paid' && (!invoice.invoiceNumber || invoice.invoiceNumber === 'N/A') 

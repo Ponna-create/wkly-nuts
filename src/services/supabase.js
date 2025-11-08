@@ -859,29 +859,43 @@ export const dbService = {
     if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
     
     try {
+      // Prepare update data - explicitly handle invoice_number
+      const updateData = {
+        customer_id: invoice.customerId,
+        invoice_date: invoice.invoiceDate,
+        due_date: invoice.dueDate,
+        items: invoice.items,
+        subtotal: invoice.subtotal,
+        gst_rate: invoice.gstRate,
+        gst_amount: invoice.gstAmount,
+        discount_percent: invoice.discountPercent,
+        discount_amount: invoice.discountAmount,
+        shipping_charge: invoice.shippingCharge,
+        advance_paid: invoice.advancePaid,
+        total_amount: invoice.totalAmount,
+        balance_due: invoice.balanceDue,
+        status: invoice.status,
+        payment_method: invoice.paymentMethod,
+        payment_date: invoice.paymentDate,
+        notes: invoice.notes,
+        terms: invoice.terms,
+      };
+      
+      // Only update invoice_number if it's provided and not null/undefined
+      // If it's 'N/A', we still want to update it to the new number
+      if (invoice.invoiceNumber !== undefined && invoice.invoiceNumber !== null) {
+        updateData.invoice_number = invoice.invoiceNumber;
+      }
+      
+      console.log('Updating invoice in database:', {
+        id: invoice.id,
+        invoice_number: updateData.invoice_number,
+        status: updateData.status
+      });
+      
       const { data, error } = await supabase
         .from('invoices')
-        .update({
-          invoice_number: invoice.invoiceNumber || null, // Update invoice number if provided
-          customer_id: invoice.customerId,
-          invoice_date: invoice.invoiceDate,
-          due_date: invoice.dueDate,
-          items: invoice.items,
-          subtotal: invoice.subtotal,
-          gst_rate: invoice.gstRate,
-          gst_amount: invoice.gstAmount,
-          discount_percent: invoice.discountPercent,
-          discount_amount: invoice.discountAmount,
-          shipping_charge: invoice.shippingCharge,
-          advance_paid: invoice.advancePaid,
-          total_amount: invoice.totalAmount,
-          balance_due: invoice.balanceDue,
-          status: invoice.status,
-          payment_method: invoice.paymentMethod,
-          payment_date: invoice.paymentDate,
-          notes: invoice.notes,
-          terms: invoice.terms,
-        })
+        .update(updateData)
         .eq('id', invoice.id)
         .select(`
           *,
@@ -896,7 +910,14 @@ export const dbService = {
         `)
         .single();
       
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase update error:', error);
+        throw error;
+      }
+      
+      if (!data) {
+        throw new Error('No data returned from update - invoice may not exist');
+      }
       
       return { 
         data: {
@@ -915,15 +936,20 @@ export const dbService = {
           dueDate: data.due_date,
           items: data.items || [],
           subtotal: parseFloat(data.subtotal || 0),
-          taxRate: parseFloat(data.tax_rate || 0),
-          taxAmount: parseFloat(data.tax_amount || 0),
+          gstRate: parseFloat(data.gst_rate || 0),
+          gstAmount: parseFloat(data.gst_amount || 0),
+          discountPercent: parseFloat(data.discount_percent || 0),
           discountAmount: parseFloat(data.discount_amount || 0),
+          shippingCharge: parseFloat(data.shipping_charge || 0),
+          advancePaid: parseFloat(data.advance_paid || 0),
           totalAmount: parseFloat(data.total_amount || 0),
+          balanceDue: parseFloat(data.balance_due || 0),
           status: data.status,
           paymentMethod: data.payment_method,
           paymentDate: data.payment_date,
           notes: data.notes,
           terms: data.terms,
+          createdAt: data.created_at,
         }, 
         error: null 
       };
