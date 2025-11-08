@@ -3,8 +3,18 @@ import { Plus, Edit, Trash2, Search, X, FileText, CheckCircle, AlertCircle, Cloc
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 import logo from '../assets/wkly-nuts-logo.png';
+
+// Extend jsPDF type to include autoTable
+declare module 'jspdf' {
+  interface jsPDF {
+    autoTable: (options: any) => jsPDF;
+    lastAutoTable: {
+      finalY: number;
+    };
+  }
+}
 
 export default function InvoiceManagement() {
   const { state, dispatch, showToast } = useApp();
@@ -495,7 +505,8 @@ export default function InvoiceManagement() {
         `₹${(item.total || 0).toFixed(2)}`,
       ]);
 
-      doc.autoTable({
+      // Use autoTable - try both methods for compatibility
+      const autoTableOptions = {
         startY: yPos,
         head: [['#', 'Item', 'Description', 'Qty', 'Rate', 'Amount']],
         body: tableData,
@@ -510,9 +521,24 @@ export default function InvoiceManagement() {
           4: { cellWidth: 25, halign: 'right' },
           5: { cellWidth: 25, halign: 'right' },
         },
-      });
+      };
 
-      yPos = doc.lastAutoTable.finalY + 15;
+      // Try doc.autoTable first, fallback to autoTable function
+      if (typeof doc.autoTable === 'function') {
+        doc.autoTable(autoTableOptions);
+      } else if (typeof autoTable === 'function') {
+        autoTable(doc, autoTableOptions);
+      } else {
+        throw new Error('autoTable plugin is not available. Please ensure jspdf-autotable is properly installed.');
+      }
+
+      // Get final Y position after table
+      if (doc.lastAutoTable && doc.lastAutoTable.finalY) {
+        yPos = doc.lastAutoTable.finalY + 15;
+      } else {
+        // Fallback: estimate position based on rows
+        yPos += (tableData.length * 7) + 20;
+      }
 
       // Summary Section (Right aligned, matching reference layout)
       const summaryX = pageWidth - margin - 60;
