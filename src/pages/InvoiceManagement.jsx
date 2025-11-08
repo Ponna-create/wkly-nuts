@@ -812,7 +812,7 @@ export default function InvoiceManagement() {
             </div>
 
             {/* Items List */}
-            {formData.items.length > 0 && (
+            {formData.items.length > 0 ? (
               <div className="mt-4 border rounded-lg overflow-hidden">
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50">
@@ -851,6 +851,18 @@ export default function InvoiceManagement() {
                   </tbody>
                 </table>
               </div>
+            ) : (
+              <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-yellow-800">No items added yet</p>
+                    <p className="text-xs text-yellow-700 mt-1">
+                      Fill in the fields above (SKU, Pack Type, Quantity, Unit Price) and click the <strong>"+ Add"</strong> button to add items to this invoice.
+                    </p>
+                  </div>
+                </div>
+              </div>
             )}
           </div>
 
@@ -860,15 +872,27 @@ export default function InvoiceManagement() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-4">
                   <div>
-                    <label className="label">Tax Rate (%)</label>
+                    <label className="label">GST Rate (%)</label>
                     <input
                       type="number"
                       min="0"
                       step="0.01"
-                      value={formData.taxRate}
-                      onChange={(e) => setFormData({ ...formData, taxRate: e.target.value })}
+                      value={formData.gstRate}
+                      onChange={(e) => setFormData({ ...formData, gstRate: e.target.value })}
                       className="input-field"
-                      placeholder="18"
+                      placeholder="5"
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Discount Percent (%)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={formData.discountPercent}
+                      onChange={(e) => setFormData({ ...formData, discountPercent: e.target.value, discountAmount: 0 })}
+                      className="input-field"
+                      placeholder="0.00"
                     />
                   </div>
                   <div>
@@ -878,7 +902,31 @@ export default function InvoiceManagement() {
                       min="0"
                       step="0.01"
                       value={formData.discountAmount}
-                      onChange={(e) => setFormData({ ...formData, discountAmount: e.target.value })}
+                      onChange={(e) => setFormData({ ...formData, discountAmount: e.target.value, discountPercent: 0 })}
+                      className="input-field"
+                      placeholder="0.00"
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Shipping Charge (₹)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={formData.shippingCharge}
+                      onChange={(e) => setFormData({ ...formData, shippingCharge: e.target.value })}
+                      className="input-field"
+                      placeholder="0.00"
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Advance Paid (₹)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={formData.advancePaid}
+                      onChange={(e) => setFormData({ ...formData, advancePaid: e.target.value })}
                       className="input-field"
                       placeholder="0.00"
                     />
@@ -889,18 +937,46 @@ export default function InvoiceManagement() {
                     <span className="text-gray-600">Subtotal:</span>
                     <span className="font-medium">₹{subtotal.toFixed(2)}</span>
                   </div>
+                  {discount > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">
+                        Discount{formData.discountPercent > 0 ? ` (${formData.discountPercent}%)` : ''}:
+                      </span>
+                      <span className="font-medium text-red-600">-₹{discount.toFixed(2)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Tax ({formData.taxRate}%):</span>
-                    <span className="font-medium">₹{taxAmount.toFixed(2)}</span>
+                    <span className="text-gray-600">After Discount:</span>
+                    <span className="font-medium">₹{afterDiscount.toFixed(2)}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Discount:</span>
-                    <span className="font-medium text-red-600">-₹{discount.toFixed(2)}</span>
-                  </div>
+                  {gstAmount > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">GST ({formData.gstRate}%):</span>
+                      <span className="font-medium">₹{gstAmount.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {shipping > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Shipping:</span>
+                      <span className="font-medium">₹{shipping.toFixed(2)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between pt-2 border-t border-gray-300">
                     <span className="text-lg font-bold text-gray-900">Total:</span>
                     <span className="text-lg font-bold text-primary-600">₹{total.toFixed(2)}</span>
                   </div>
+                  {advance > 0 && (
+                    <>
+                      <div className="flex justify-between pt-2">
+                        <span className="text-gray-600">Advance Paid:</span>
+                        <span className="font-medium text-green-600">-₹{advance.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between pt-2 border-t border-gray-300">
+                        <span className="text-lg font-bold text-gray-900">Balance Due:</span>
+                        <span className="text-lg font-bold text-orange-600">₹{balanceDue.toFixed(2)}</span>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
