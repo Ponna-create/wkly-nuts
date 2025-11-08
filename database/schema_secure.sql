@@ -94,10 +94,14 @@ CREATE TABLE IF NOT EXISTS invoices (
   due_date DATE,
   items JSONB NOT NULL DEFAULT '[]'::jsonb, -- Array of {sku_id, sku_name, pack_type, quantity, unit_price, total}
   subtotal NUMERIC(10, 2) NOT NULL DEFAULT 0,
-  tax_rate NUMERIC(5, 2) DEFAULT 0, -- Tax percentage (e.g., 18 for 18% GST)
-  tax_amount NUMERIC(10, 2) DEFAULT 0,
-  discount_amount NUMERIC(10, 2) DEFAULT 0,
+  gst_rate NUMERIC(5, 2) DEFAULT 5, -- GST percentage (5% or 12%)
+  gst_amount NUMERIC(10, 2) DEFAULT 0,
+  discount_percent NUMERIC(5, 2) DEFAULT 0, -- Discount percentage
+  discount_amount NUMERIC(10, 2) DEFAULT 0, -- Discount fixed amount
+  shipping_charge NUMERIC(10, 2) DEFAULT 0,
+  advance_paid NUMERIC(10, 2) DEFAULT 0,
   total_amount NUMERIC(10, 2) NOT NULL DEFAULT 0,
+  balance_due NUMERIC(10, 2) DEFAULT 0,
   status VARCHAR(50) DEFAULT 'draft', -- draft, sent, paid, overdue, cancelled
   payment_method VARCHAR(50), -- cash, bank_transfer, upi, cheque, etc.
   payment_date DATE,

@@ -19,8 +19,11 @@ export default function InvoiceManagement() {
     invoiceDate: new Date().toISOString().split('T')[0],
     dueDate: '',
     items: [],
-    taxRate: 18, // Default GST 18%
+    gstRate: 5, // GST Rate: 5% or 12%
     discountAmount: 0,
+    discountPercent: 0,
+    shippingCharge: 0,
+    advancePaid: 0,
     notes: '',
     terms: 'Payment due within 15 days',
     status: 'draft',
@@ -168,14 +171,36 @@ export default function InvoiceManagement() {
   // Calculate totals
   const calculateTotals = () => {
     const subtotal = formData.items.reduce((sum, item) => sum + item.total, 0);
-    const taxAmount = (subtotal * parseFloat(formData.taxRate || 0)) / 100;
-    const discount = parseFloat(formData.discountAmount || 0);
-    const total = subtotal + taxAmount - discount;
+    
+    // Calculate discount (can be percentage or fixed amount)
+    let discount = 0;
+    if (formData.discountPercent > 0) {
+      discount = (subtotal * parseFloat(formData.discountPercent || 0)) / 100;
+    } else {
+      discount = parseFloat(formData.discountAmount || 0);
+    }
+    
+    const afterDiscount = subtotal - discount;
+    
+    // Calculate GST
+    const gstAmount = (afterDiscount * parseFloat(formData.gstRate || 0)) / 100;
+    
+    // Shipping charge
+    const shipping = parseFloat(formData.shippingCharge || 0);
+    
+    // Total amount
+    const total = afterDiscount + gstAmount + shipping;
+    
+    // Advance paid
+    const advance = parseFloat(formData.advancePaid || 0);
+    
+    // Balance due
+    const balanceDue = total - advance;
 
-    return { subtotal, taxAmount, discount, total };
+    return { subtotal, discount, afterDiscount, gstAmount, shipping, total, advance, balanceDue };
   };
 
-  const { subtotal, taxAmount, discount, total } = calculateTotals();
+  const { subtotal, discount, afterDiscount, gstAmount, shipping, total, advance, balanceDue } = calculateTotals();
 
   const resetForm = () => {
     setFormData({
@@ -183,8 +208,11 @@ export default function InvoiceManagement() {
       invoiceDate: new Date().toISOString().split('T')[0],
       dueDate: '',
       items: [],
-      taxRate: 18,
+      gstRate: 5,
       discountAmount: 0,
+      discountPercent: 0,
+      shippingCharge: 0,
+      advancePaid: 0,
       notes: '',
       terms: 'Payment due within 15 days',
       status: 'draft',
@@ -224,10 +252,14 @@ export default function InvoiceManagement() {
         total: item.total,
       })),
       subtotal,
-      taxRate: parseFloat(formData.taxRate || 0),
-      taxAmount,
+      gstRate: parseFloat(formData.gstRate || 0),
+      gstAmount,
       discountAmount: discount,
+      discountPercent: parseFloat(formData.discountPercent || 0),
+      shippingCharge: shipping,
+      advancePaid: advance,
       totalAmount: total,
+      balanceDue,
       status: formData.status,
       notes: formData.notes || null,
       terms: formData.terms || null,
@@ -273,8 +305,11 @@ export default function InvoiceManagement() {
       invoiceDate: invoice.invoiceDate || new Date().toISOString().split('T')[0],
       dueDate: invoice.dueDate || '',
       items: invoice.items || [],
-      taxRate: invoice.taxRate || 18,
+      gstRate: invoice.gstRate || 5,
       discountAmount: invoice.discountAmount || 0,
+      discountPercent: invoice.discountPercent || 0,
+      shippingCharge: invoice.shippingCharge || 0,
+      advancePaid: invoice.advancePaid || 0,
       notes: invoice.notes || '',
       terms: invoice.terms || 'Payment due within 15 days',
       status: invoice.status || 'draft',
@@ -309,81 +344,103 @@ export default function InvoiceManagement() {
     try {
       const doc = new jsPDF();
       const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
       const margin = 20;
       let yPos = margin;
 
-      // Company Header with Logo (Text-based for now, can add image later)
-      doc.setFontSize(20);
-      doc.setTextColor(34, 197, 94); // Green color
-      doc.setFont(undefined, 'bold');
-      doc.text('WKLY Nuts', margin, yPos);
-      
-      doc.setFontSize(10);
-      doc.setTextColor(100, 100, 100);
-      doc.setFont(undefined, 'normal');
-      doc.text('Production Management System', margin, yPos + 7);
-      
-      // Invoice Title (Right aligned)
-      doc.setFontSize(18);
-      doc.setTextColor(0, 0, 0);
-      doc.setFont(undefined, 'bold');
-      doc.text('INVOICE', pageWidth - margin, yPos, { align: 'right' });
-      
-      yPos += 20;
-
-      // Invoice Details (Left side)
-      doc.setFontSize(10);
-      doc.setTextColor(0, 0, 0);
-      doc.setFont(undefined, 'normal');
-      doc.text(`Invoice Number: ${invoice.invoiceNumber || 'N/A'}`, margin, yPos);
-      doc.text(`Invoice Date: ${invoice.invoiceDate ? new Date(invoice.invoiceDate).toLocaleDateString('en-IN') : 'N/A'}`, margin, yPos + 6);
-      if (invoice.dueDate) {
-        doc.text(`Due Date: ${new Date(invoice.dueDate).toLocaleDateString('en-IN')}`, margin, yPos + 12);
-        yPos += 6;
-      }
-      yPos += 12;
-
-      // Customer Details
-      if (invoice.customer) {
-        doc.setFontSize(12);
+      // Try to add logo (top left)
+      try {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.src = logo;
+        
+        // Add logo (40x40 size, top left)
+        doc.addImage(img, 'PNG', margin, yPos, 40, 40);
+      } catch (error) {
+        // If logo fails, use text branding
+        doc.setFontSize(20);
+        doc.setTextColor(34, 197, 94);
         doc.setFont(undefined, 'bold');
-        doc.text('Bill To:', margin, yPos);
-        doc.setFont(undefined, 'normal');
+        doc.text('WKLY Nuts', margin, yPos + 10);
+      }
+
+      // Company Details (Top Right)
+      const companyX = pageWidth - margin - 60;
+      doc.setFontSize(12);
+      doc.setTextColor(0, 0, 0);
+      doc.setFont(undefined, 'bold');
+      doc.text('WKLY Nuts', companyX, yPos, { align: 'right' });
+      doc.setFont(undefined, 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(100, 100, 100);
+      // Add company address here if available
+      doc.text('Production Management System', companyX, yPos + 6, { align: 'right' });
+      
+      yPos += 25;
+
+      // Invoice Details Section (Right side, below company)
+      const invoiceDetailsX = pageWidth - margin - 60;
+      doc.setFontSize(16);
+      doc.setTextColor(0, 0, 0);
+      doc.setFont(undefined, 'bold');
+      doc.text('INVOICE', pageWidth / 2, yPos, { align: 'center' });
+      yPos += 8;
+      
+      doc.setFontSize(9);
+      doc.setFont(undefined, 'normal');
+      doc.text(`Invoice#: ${invoice.invoiceNumber || 'N/A'}`, invoiceDetailsX, yPos, { align: 'right' });
+      yPos += 5;
+      doc.text(`Invoice Date: ${invoice.invoiceDate ? new Date(invoice.invoiceDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A'}`, invoiceDetailsX, yPos, { align: 'right' });
+      yPos += 5;
+      if (invoice.terms) {
+        doc.text(`Terms: ${invoice.terms}`, invoiceDetailsX, yPos, { align: 'right' });
+        yPos += 5;
+      }
+      if (invoice.dueDate) {
+        doc.text(`Due Date: ${new Date(invoice.dueDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`, invoiceDetailsX, yPos, { align: 'right' });
+        yPos += 5;
+      }
+      
+      yPos += 5;
+
+      // Bill To Section (Left side)
+      if (invoice.customer) {
+        doc.setFontSize(11);
+        doc.setFont(undefined, 'bold');
+        doc.text('Bill To', margin, yPos);
+        doc.setFont(undefined, 'bold');
         doc.setFontSize(10);
         yPos += 6;
         doc.text(invoice.customer.name || '', margin, yPos);
+        doc.setFont(undefined, 'normal');
         yPos += 5;
         if (invoice.customer.address) {
           doc.text(invoice.customer.address, margin, yPos);
-          yPos += 5;
+          yPos += 4;
         }
         if (invoice.customer.city || invoice.customer.state) {
           const addressLine = [invoice.customer.city, invoice.customer.state, invoice.customer.pincode].filter(Boolean).join(', ');
           if (addressLine) {
             doc.text(addressLine, margin, yPos);
-            yPos += 5;
+            yPos += 4;
           }
         }
         if (invoice.customer.phone) {
-          doc.text(`Phone: ${invoice.customer.phone}`, margin, yPos);
-          yPos += 5;
-        }
-        if (invoice.customer.email) {
-          doc.text(`Email: ${invoice.customer.email}`, margin, yPos);
-          yPos += 5;
+          doc.text(invoice.customer.phone, margin, yPos);
+          yPos += 4;
         }
         if (invoice.customer.gstin) {
           doc.text(`GSTIN: ${invoice.customer.gstin}`, margin, yPos);
-          yPos += 5;
+          yPos += 4;
         }
         yPos += 5;
       }
 
-      // Items Table
+      // Items Table (matching reference layout)
       const tableData = invoice.items.map((item, index) => [
         index + 1,
         item.skuName,
-        item.packType.charAt(0).toUpperCase() + item.packType.slice(1),
+        `${item.packType.charAt(0).toUpperCase() + item.packType.slice(1)} Pack`, // Description
         item.quantity.toString(),
         `₹${item.unitPrice.toFixed(2)}`,
         `₹${item.total.toFixed(2)}`,
@@ -391,79 +448,112 @@ export default function InvoiceManagement() {
 
       doc.autoTable({
         startY: yPos,
-        head: [['#', 'SKU Name', 'Pack Type', 'Quantity', 'Unit Price (₹)', 'Total (₹)']],
+        head: [['#', 'Item', 'Description', 'Qty', 'Rate', 'Amount']],
         body: tableData,
         theme: 'striped',
-        headStyles: { fillColor: [34, 197, 94], textColor: 255, fontStyle: 'bold' },
+        headStyles: { fillColor: [255, 193, 7], textColor: 0, fontStyle: 'bold' }, // Yellow header like reference
         styles: { fontSize: 9 },
         columnStyles: {
-          0: { cellWidth: 15 },
-          1: { cellWidth: 60 },
-          2: { cellWidth: 30 },
-          3: { cellWidth: 25, halign: 'right' },
-          4: { cellWidth: 30, halign: 'right' },
-          5: { cellWidth: 30, halign: 'right' },
+          0: { cellWidth: 15, halign: 'center' },
+          1: { cellWidth: 50 },
+          2: { cellWidth: 50 },
+          3: { cellWidth: 20, halign: 'right' },
+          4: { cellWidth: 25, halign: 'right' },
+          5: { cellWidth: 25, halign: 'right' },
         },
       });
 
       yPos = doc.lastAutoTable.finalY + 15;
 
-      // Totals Section (Right aligned)
-      const totalsX = pageWidth - margin - 60;
+      // Summary Section (Right aligned, matching reference layout)
+      const summaryX = pageWidth - margin - 60;
       doc.setFontSize(10);
-      doc.text('Subtotal:', totalsX, yPos);
+      doc.setFont(undefined, 'normal');
+      
+      // Sub Total
+      doc.text('Sub Total:', summaryX, yPos);
       doc.text(`₹${invoice.subtotal?.toFixed(2) || '0.00'}`, pageWidth - margin, yPos, { align: 'right' });
       yPos += 6;
       
-      if (invoice.taxRate > 0) {
-        doc.text(`Tax (${invoice.taxRate}%):`, totalsX, yPos);
-        doc.text(`₹${invoice.taxAmount?.toFixed(2) || '0.00'}`, pageWidth - margin, yPos, { align: 'right' });
+      // Discount
+      if (invoice.discountAmount > 0 || invoice.discountPercent > 0) {
+        const discountLabel = invoice.discountPercent > 0 
+          ? `Discount(${invoice.discountPercent.toFixed(2)}%):`
+          : 'Discount:';
+        doc.text(discountLabel, summaryX, yPos);
+        doc.text(`(-)₹${(invoice.discountAmount || 0).toFixed(2)}`, pageWidth - margin, yPos, { align: 'right' });
         yPos += 6;
       }
       
-      if (invoice.discountAmount > 0) {
-        doc.text('Discount:', totalsX, yPos);
-        doc.text(`-₹${invoice.discountAmount?.toFixed(2) || '0.00'}`, pageWidth - margin, yPos, { align: 'right' });
+      // Shipping charge
+      if (invoice.shippingCharge > 0) {
+        doc.text('Shipping charge:', summaryX, yPos);
+        doc.text(`₹${invoice.shippingCharge.toFixed(2)}`, pageWidth - margin, yPos, { align: 'right' });
         yPos += 6;
       }
       
-      // Total line
+      // GST
+      if (invoice.gstRate > 0 && invoice.gstAmount > 0) {
+        doc.text(`GST(${invoice.gstRate}%):`, summaryX, yPos);
+        doc.text(`₹${invoice.gstAmount?.toFixed(2) || '0.00'}`, pageWidth - margin, yPos, { align: 'right' });
+        yPos += 6;
+      }
+      
+      // Advance paid
+      if (invoice.advancePaid > 0) {
+        doc.text('Advance paid:', summaryX, yPos);
+        doc.text(`(-)₹${invoice.advancePaid.toFixed(2)}`, pageWidth - margin, yPos, { align: 'right' });
+        yPos += 6;
+      }
+      
+      // Separator line
       doc.setDrawColor(200, 200, 200);
-      doc.line(totalsX, yPos - 2, pageWidth - margin, yPos - 2);
-      yPos += 4;
+      doc.line(summaryX, yPos, pageWidth - margin, yPos);
+      yPos += 6;
       
-      doc.setFontSize(12);
+      // Total
+      doc.setFontSize(11);
       doc.setFont(undefined, 'bold');
-      doc.text('Total Amount:', totalsX, yPos);
+      doc.text('Total:', summaryX, yPos);
       doc.text(`₹${invoice.totalAmount?.toFixed(2) || '0.00'}`, pageWidth - margin, yPos, { align: 'right' });
-      yPos += 10;
-
-      // Payment Terms and Notes
-      if (invoice.terms) {
-        doc.setFontSize(10);
+      yPos += 8;
+      
+      // Balance Due (if advance paid)
+      if (invoice.advancePaid > 0) {
+        // Thicker line
+        doc.setDrawColor(150, 150, 150);
+        doc.setLineWidth(0.5);
+        doc.line(summaryX, yPos, pageWidth - margin, yPos);
+        yPos += 6;
+        doc.setFontSize(11);
         doc.setFont(undefined, 'bold');
-        doc.text('Payment Terms:', margin, yPos);
-        doc.setFont(undefined, 'normal');
-        const termsLines = doc.splitTextToSize(invoice.terms, pageWidth - 2 * margin);
-        doc.text(termsLines, margin, yPos + 6);
-        yPos += 6 + (termsLines.length * 5);
+        const balanceDue = (invoice.totalAmount || 0) - (invoice.advancePaid || 0);
+        doc.text('Balance Due:', summaryX, yPos);
+        doc.text(`₹${balanceDue.toFixed(2)}`, pageWidth - margin, yPos, { align: 'right' });
+        yPos += 10;
+      } else {
+        yPos += 5;
       }
 
-      if (invoice.notes) {
-        doc.setFont(undefined, 'bold');
-        doc.text('Notes:', margin, yPos);
-        doc.setFont(undefined, 'normal');
-        const notesLines = doc.splitTextToSize(invoice.notes, pageWidth - 2 * margin);
-        doc.text(notesLines, margin, yPos + 6);
-        yPos += 6 + (notesLines.length * 5);
+      // Footer Message (Left side, below items)
+      if (yPos < pageHeight - 40) {
+        doc.setFontSize(9);
+        doc.setTextColor(100, 100, 100);
+        doc.setFont(undefined, 'italic');
+        doc.text('Thanks for your business.', margin, yPos);
       }
 
-      // Footer
-      yPos = doc.internal.pageSize.getHeight() - 30;
-      doc.setFontSize(8);
-      doc.setTextColor(150, 150, 150);
-      doc.text('Thank you for your business!', pageWidth / 2, yPos, { align: 'center' });
-      doc.text('WKLY Nuts - Quality Nuts, Weekly Delivered', pageWidth / 2, yPos + 5, { align: 'center' });
+      // Payment Terms and Notes (if space available)
+      if (yPos < pageHeight - 50) {
+        if (invoice.notes) {
+          yPos += 8;
+          doc.setFontSize(8);
+          doc.setFont(undefined, 'normal');
+          doc.setTextColor(100, 100, 100);
+          const notesLines = doc.splitTextToSize(invoice.notes, pageWidth - 2 * margin);
+          doc.text(notesLines, margin, yPos);
+        }
+      }
       
       // Page number
       const pageCount = doc.internal.getNumberOfPages();
