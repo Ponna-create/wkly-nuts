@@ -886,16 +886,20 @@ export const dbService = {
         terms: invoice.terms,
       };
       
-      // Only update invoice_number if it's provided and not null/undefined
-      // If it's 'N/A', we still want to update it to the new number
+      // ALWAYS update invoice_number if it's provided (even if it was 'N/A' before)
+      // This ensures generated invoice numbers are saved
       if (invoice.invoiceNumber !== undefined && invoice.invoiceNumber !== null) {
         updateData.invoice_number = invoice.invoiceNumber;
+        console.log('Setting invoice_number in update:', invoice.invoiceNumber);
+      } else {
+        console.log('WARNING: invoiceNumber is undefined or null, not updating invoice_number field');
       }
       
       console.log('Updating invoice in database:', {
         id: invoice.id,
         invoice_number: updateData.invoice_number,
-        status: updateData.status
+        status: updateData.status,
+        full_invoice_number: invoice.invoiceNumber
       });
       
       const { data, error } = await supabase

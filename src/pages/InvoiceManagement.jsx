@@ -498,6 +498,10 @@ export default function InvoiceManagement() {
         let invoiceExists = allInvoicesRes.data?.some(inv => inv.id === invoiceId);
         
         // Also check if invoice exists by customer and date (in case ID doesn't match)
+        // IMPORTANT: Preserve the generated invoice number before checking for existing invoices
+        const generatedInvoiceNumber = updatedInvoice.invoiceNumber;
+        console.log('Preserving generated invoice number:', generatedInvoiceNumber);
+        
         if (!invoiceExists && updatedInvoice.customerId && updatedInvoice.invoiceDate) {
           invoiceExists = allInvoicesRes.data?.some(inv => 
             inv.customerId === updatedInvoice.customerId && 
@@ -515,9 +519,18 @@ export default function InvoiceManagement() {
             if (existingInvoice) {
               updatedInvoice.id = existingInvoice.id;
               invoiceId = existingInvoice.id;
+              // CRITICAL: Preserve the generated invoice number!
+              updatedInvoice.invoiceNumber = generatedInvoiceNumber;
               console.log('Using existing invoice ID:', invoiceId);
+              console.log('Preserved invoice number:', updatedInvoice.invoiceNumber);
             }
           }
+        }
+        
+        // Ensure generated invoice number is preserved
+        if (generatedInvoiceNumber && generatedInvoiceNumber !== 'N/A') {
+          updatedInvoice.invoiceNumber = generatedInvoiceNumber;
+          console.log('Ensuring invoice number is set:', updatedInvoice.invoiceNumber);
         }
         
         console.log('Invoice exists in database?', invoiceExists);
@@ -582,6 +595,13 @@ export default function InvoiceManagement() {
           console.log('📝 Invoice exists in database, updating it...');
           // Invoice exists, update it
           console.log('Updating invoice with invoice number:', updatedInvoice.invoiceNumber);
+          console.log('Full invoice data being sent:', {
+            id: updatedInvoice.id,
+            invoiceNumber: updatedInvoice.invoiceNumber,
+            status: updatedInvoice.status,
+            customerId: updatedInvoice.customerId
+          });
+          
           const updateResult = await dbService.updateInvoice(updatedInvoice);
           if (updateResult.error) {
             console.error('❌ Error updating invoice in database:', updateResult.error);
@@ -595,6 +615,12 @@ export default function InvoiceManagement() {
             invoiceNumber: updateResult.data.invoiceNumber,
             status: updateResult.data.status
           });
+          
+          // Verify the invoice number was saved
+          if (!updateResult.data.invoiceNumber || updateResult.data.invoiceNumber === 'N/A') {
+            console.error('❌ WARNING: Invoice number was not saved! Expected:', updatedInvoice.invoiceNumber);
+            console.error('Database returned:', updateResult.data.invoiceNumber);
+          }
           
           // Use the data returned from database (which has the correct invoice number)
           updatedInvoice = updateResult.data;
