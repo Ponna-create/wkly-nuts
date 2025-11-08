@@ -349,10 +349,14 @@ export default function InvoiceManagement() {
       return;
     }
     
+    // Handle both camelCase and snake_case for invoice number
+    const currentInvoiceNumber = invoice.invoiceNumber || invoice.invoice_number;
     console.log('Found invoice:', {
       id: invoice.id,
-      currentInvoiceNumber: invoice.invoiceNumber,
-      currentStatus: invoice.status
+      currentInvoiceNumber: currentInvoiceNumber,
+      currentStatus: invoice.status,
+      invoiceNumber_camel: invoice.invoiceNumber,
+      invoice_number_snake: invoice.invoice_number
     });
 
     const updatedInvoice = {
@@ -361,21 +365,32 @@ export default function InvoiceManagement() {
       paymentDate: newStatus === 'paid' ? new Date().toISOString().split('T')[0] : invoice.paymentDate,
       // Update balance due to 0 when status is paid
       balanceDue: newStatus === 'paid' ? 0 : invoice.balanceDue,
+      // Ensure invoiceNumber is set (handle both formats)
+      invoiceNumber: currentInvoiceNumber || 'N/A',
     };
 
     // Generate invoice number and reduce stock only when status changes to "paid"
     if (newStatus === 'paid') {
-      console.log('Status is "paid", checking if invoice number needs to be generated...');
-      console.log('Current invoice number value:', invoice.invoiceNumber);
+      console.log('✅ Status is "paid", checking if invoice number needs to be generated...');
+      console.log('Current invoice number value:', currentInvoiceNumber);
       console.log('Invoice number check:', {
-        isFalsy: !invoice.invoiceNumber,
-        isNA: invoice.invoiceNumber === 'N/A',
-        isNull: invoice.invoiceNumber === null,
-        isUndefined: invoice.invoiceNumber === undefined
+        isFalsy: !currentInvoiceNumber,
+        isNA: currentInvoiceNumber === 'N/A',
+        isNull: currentInvoiceNumber === null,
+        isUndefined: currentInvoiceNumber === undefined,
+        isEmpty: currentInvoiceNumber === ''
       });
       
       // Generate invoice number if not already generated
-      if (!invoice.invoiceNumber || invoice.invoiceNumber === 'N/A' || invoice.invoiceNumber === null || invoice.invoiceNumber === undefined) {
+      // Check both formats and also check for empty string
+      const needsGeneration = !currentInvoiceNumber || 
+                              currentInvoiceNumber === 'N/A' || 
+                              currentInvoiceNumber === null || 
+                              currentInvoiceNumber === undefined ||
+                              currentInvoiceNumber === '';
+      
+      if (needsGeneration) {
+        console.log('🔢 Invoice number needs to be generated!');
         console.log('Invoice number needs to be generated');
         const year = new Date().getFullYear();
         
@@ -437,15 +452,21 @@ export default function InvoiceManagement() {
         }));
         
         updatedInvoice.invoiceNumber = generatedNumber;
-        console.log('✅ Generated invoice number:', updatedInvoice.invoiceNumber, 'for invoice:', invoice.id, 'count:', invoiceCount);
-        console.log('Updated invoice object:', {
+        // Also set invoice_number for consistency
+        updatedInvoice.invoice_number = generatedNumber;
+        console.log('✅✅✅ Generated invoice number:', updatedInvoice.invoiceNumber, 'for invoice:', invoice.id, 'count:', invoiceCount);
+        console.log('Updated invoice object BEFORE stock reduction:', {
           id: updatedInvoice.id,
           invoiceNumber: updatedInvoice.invoiceNumber,
+          invoice_number: updatedInvoice.invoice_number,
           status: updatedInvoice.status
         });
       } else {
-        console.log('⚠️ Invoice already has number:', invoice.invoiceNumber);
+        console.log('⚠️ Invoice already has number:', currentInvoiceNumber);
         console.log('Skipping invoice number generation');
+        // Ensure it's set in both formats
+        updatedInvoice.invoiceNumber = currentInvoiceNumber;
+        updatedInvoice.invoice_number = currentInvoiceNumber;
       }
       
       // Reduce stock only when invoice is marked as paid
