@@ -1481,20 +1481,6 @@ export default function SKUManagement() {
                               );
                             })()}
 
-                            {/* Vendor Contact Info (if available) - Only show in print */}
-                            {(() => {
-                              const vendor = vendors.find(v => v.name === vendorName);
-                              if (vendor && (vendor.phone || vendor.email || vendor.location)) {
-                                return (
-                                  <div className="hidden print:block text-xs print:text-xs text-gray-600 pt-1 print:pt-1 border-t border-gray-300">
-                                    {vendor.phone && <div>Phone: {vendor.phone}</div>}
-                                    {vendor.email && <div>Email: {vendor.email}</div>}
-                                    {vendor.location && <div>Location: {vendor.location}</div>}
-                                  </div>
-                                );
-                              }
-                              return null;
-                            })()}
                           </div>
                         );
                       })}
