@@ -1022,22 +1022,29 @@ export default function SKUManagement() {
                   <button onClick={exportToCSV} className="btn-secondary text-sm">
                     Export CSV
                   </button>
-                  {!showPurchaseView && (
+                  {/* View Toggle Buttons - Always visible */}
+                  <div className="flex gap-2 bg-gray-100 p-1 rounded-lg">
+                    <button 
+                      onClick={() => setShowPurchaseView(false)} 
+                      className={`px-4 py-1 rounded text-sm font-medium transition-colors ${
+                        !showPurchaseView
+                          ? 'bg-primary-600 text-white'
+                          : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200'
+                      }`}
+                    >
+                      Requirements
+                    </button>
                     <button 
                       onClick={() => setShowPurchaseView(true)} 
-                      className="btn-primary text-sm"
+                      className={`px-4 py-1 rounded text-sm font-medium transition-colors ${
+                        showPurchaseView
+                          ? 'bg-primary-600 text-white'
+                          : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200'
+                      }`}
                     >
                       Purchase
                     </button>
-                  )}
-                  {showPurchaseView && (
-                    <button 
-                      onClick={() => setShowPurchaseView(false)} 
-                      className="btn-secondary text-sm"
-                    >
-                      Back to Requirements
-                    </button>
-                  )}
+                  </div>
                 </div>
               </div>
 
