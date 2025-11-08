@@ -1181,6 +1181,47 @@ export default function SKUManagement() {
                     </div>
                   ))}
                 </div>
+                
+                {/* Weekly Summary - 3 Details */}
+                {(() => {
+                  // Calculate totals across all 7 days
+                  let totalGramsPerWeek = 0;
+                  let totalCostPerWeek = 0;
+                  let totalSachets = 0;
+                  
+                  DAYS.forEach((day) => {
+                    productionRequirements.dayBreakdown[day].forEach((item) => {
+                      totalGramsPerWeek += item.gramsPerSachet;
+                      totalCostPerWeek += item.pricePerSachet || 0;
+                    });
+                    totalSachets += 1; // One sachet per day
+                  });
+                  
+                  const averageSachetPrice = totalSachets > 0 ? totalCostPerWeek / totalSachets : 0;
+                  
+                  return (
+                    <div className="mt-6 bg-gradient-to-r from-primary-50 to-accent-50 p-6 rounded-lg border-2 border-primary-200">
+                      <h4 className="font-bold text-gray-900 mb-4 text-center">Weekly Summary</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="bg-white p-4 rounded-lg border border-gray-200 text-center">
+                          <p className="text-sm text-gray-600 mb-1">Grams per Week</p>
+                          <p className="text-2xl font-bold text-primary-700">{totalGramsPerWeek.toFixed(0)}g</p>
+                          <p className="text-xs text-gray-500 mt-1">Total</p>
+                        </div>
+                        <div className="bg-white p-4 rounded-lg border border-gray-200 text-center">
+                          <p className="text-sm text-gray-600 mb-1">Cost per Week (7 days)</p>
+                          <p className="text-2xl font-bold text-green-700">₹{totalCostPerWeek.toFixed(2)}</p>
+                          <p className="text-xs text-gray-500 mt-1">Total</p>
+                        </div>
+                        <div className="bg-white p-4 rounded-lg border border-gray-200 text-center">
+                          <p className="text-sm text-gray-600 mb-1">Average Sachet Price</p>
+                          <p className="text-2xl font-bold text-accent-700">₹{averageSachetPrice.toFixed(2)}</p>
+                          <p className="text-xs text-gray-500 mt-1">Avg Price</p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </details>
 
               {/* Ingredients Order List (Expandable) - Always visible */}
