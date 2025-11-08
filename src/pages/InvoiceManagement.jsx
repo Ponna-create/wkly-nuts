@@ -530,83 +530,83 @@ export default function InvoiceManagement() {
         yPos += (tableData.length * 7) + 20;
       }
 
-      // Summary Section (Right aligned, matching reference layout)
+      // Summary Section (Right aligned, matching reference layout exactly)
       const summaryX = pageWidth - margin - 60;
       doc.setFontSize(10);
       doc.setFont(undefined, 'normal');
       
-      // Sub Total
+      // Get all values
       const subtotal = parseFloat(invoice.subtotal || 0);
+      const discountAmount = parseFloat(invoice.discountAmount || invoice.discount_amount || 0);
+      const discountPercent = parseFloat(invoice.discountPercent || invoice.discount_percent || 0);
+      const shippingCharge = parseFloat(invoice.shippingCharge || invoice.shipping_charge || 0);
+      const gstRate = parseFloat(invoice.gstRate || invoice.gst_rate || 0);
+      const gstAmount = parseFloat(invoice.gstAmount || invoice.gst_amount || 0);
+      const advancePaid = parseFloat(invoice.advancePaid || invoice.advance_paid || 0);
+      const totalAmount = parseFloat(invoice.totalAmount || invoice.total_amount || 0);
+      const balanceDue = totalAmount - advancePaid;
+      
+      // Sub Total (always show)
       doc.text('Sub Total:', summaryX, yPos);
       doc.text(`₹${subtotal.toFixed(2)}`, pageWidth - margin, yPos, { align: 'right' });
       yPos += 6;
       
-      // Discount
-      const discountAmount = parseFloat(invoice.discountAmount || invoice.discount_amount || 0);
-      const discountPercent = parseFloat(invoice.discountPercent || invoice.discount_percent || 0);
-      if (discountAmount > 0 || discountPercent > 0) {
-        const discountLabel = discountPercent > 0 
-          ? `Discount(${discountPercent.toFixed(2)}%):`
-          : 'Discount:';
-        doc.text(discountLabel, summaryX, yPos);
+      // Discount (always show, even if 0)
+      const discountLabel = discountPercent > 0 
+        ? `Discount(${discountPercent.toFixed(2)}%):`
+        : 'Discount:';
+      doc.text(discountLabel, summaryX, yPos);
+      if (discountAmount > 0) {
         doc.text(`(-)₹${discountAmount.toFixed(2)}`, pageWidth - margin, yPos, { align: 'right' });
-        yPos += 6;
+      } else {
+        doc.text(`₹0.00`, pageWidth - margin, yPos, { align: 'right' });
       }
+      yPos += 6;
       
-      // Shipping charge
-      const shippingCharge = parseFloat(invoice.shippingCharge || invoice.shipping_charge || 0);
-      if (shippingCharge > 0) {
-        doc.text('Shipping charge:', summaryX, yPos);
-        doc.text(`₹${shippingCharge.toFixed(2)}`, pageWidth - margin, yPos, { align: 'right' });
-        yPos += 6;
-      }
+      // Shipping charge (always show, even if 0)
+      doc.text('Shipping charge:', summaryX, yPos);
+      doc.text(`₹${shippingCharge.toFixed(2)}`, pageWidth - margin, yPos, { align: 'right' });
+      yPos += 6;
       
-      // GST
-      const gstRate = parseFloat(invoice.gstRate || invoice.gst_rate || 0);
-      const gstAmount = parseFloat(invoice.gstAmount || invoice.gst_amount || 0);
-      if (gstRate > 0 && gstAmount > 0) {
+      // GST (always show if rate is set, even if 0)
+      if (gstRate > 0) {
         doc.text(`GST(${gstRate}%):`, summaryX, yPos);
         doc.text(`₹${gstAmount.toFixed(2)}`, pageWidth - margin, yPos, { align: 'right' });
         yPos += 6;
       }
       
-      // Advance paid
-      const advancePaid = parseFloat(invoice.advancePaid || invoice.advance_paid || 0);
+      // Advance paid (always show, even if 0)
+      doc.text('Advance paid:', summaryX, yPos);
       if (advancePaid > 0) {
-        doc.text('Advance paid:', summaryX, yPos);
         doc.text(`(-)₹${advancePaid.toFixed(2)}`, pageWidth - margin, yPos, { align: 'right' });
-        yPos += 6;
+      } else {
+        doc.text(`₹0.00`, pageWidth - margin, yPos, { align: 'right' });
       }
+      yPos += 6;
       
       // Separator line
       doc.setDrawColor(200, 200, 200);
       doc.line(summaryX, yPos, pageWidth - margin, yPos);
       yPos += 6;
       
-      // Total
-      const totalAmount = parseFloat(invoice.totalAmount || invoice.total_amount || 0);
+      // Total (always show)
       doc.setFontSize(11);
       doc.setFont(undefined, 'bold');
       doc.text('Total:', summaryX, yPos);
       doc.text(`₹${totalAmount.toFixed(2)}`, pageWidth - margin, yPos, { align: 'right' });
       yPos += 8;
       
-      // Balance Due (if advance paid)
-      if (advancePaid > 0) {
-        // Thicker line
-        doc.setDrawColor(150, 150, 150);
-        doc.setLineWidth(0.5);
-        doc.line(summaryX, yPos, pageWidth - margin, yPos);
-        yPos += 6;
-        doc.setFontSize(11);
-        doc.setFont(undefined, 'bold');
-        const balanceDue = totalAmount - advancePaid;
-        doc.text('Balance Due:', summaryX, yPos);
-        doc.text(`₹${balanceDue.toFixed(2)}`, pageWidth - margin, yPos, { align: 'right' });
-        yPos += 10;
-      } else {
-        yPos += 5;
-      }
+      // Balance Due (always show, matching reference layout)
+      // Thicker line
+      doc.setDrawColor(150, 150, 150);
+      doc.setLineWidth(0.5);
+      doc.line(summaryX, yPos, pageWidth - margin, yPos);
+      yPos += 6;
+      doc.setFontSize(11);
+      doc.setFont(undefined, 'bold');
+      doc.text('Balance Due:', summaryX, yPos);
+      doc.text(`₹${balanceDue.toFixed(2)}`, pageWidth - margin, yPos, { align: 'right' });
+      yPos += 10;
 
       // Footer Message (Left side, below items)
       if (yPos < pageHeight - 40) {
