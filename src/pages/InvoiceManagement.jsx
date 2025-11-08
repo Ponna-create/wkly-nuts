@@ -1,7 +1,10 @@
 import React, { useState, useMemo } from 'react';
-import { Plus, Edit, Trash2, Search, X, FileText, CheckCircle, AlertCircle, Clock, DollarSign, Package, User, Save, Printer } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, X, FileText, CheckCircle, AlertCircle, Clock, DollarSign, Package, User, Save, Printer, Download } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
+import logo from '../assets/wkly-nuts-logo.png';
 
 export default function InvoiceManagement() {
   const { state, dispatch, showToast } = useApp();
@@ -728,6 +731,13 @@ export default function InvoiceManagement() {
                           </td>
                           <td className="py-4 px-4">
                             <div className="flex justify-end gap-2">
+                              <button
+                                onClick={() => generatePDF(invoice)}
+                                className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                                title="Download PDF"
+                              >
+                                <Download className="w-4 h-4" />
+                              </button>
                               {invoice.status !== 'paid' && (
                                 <button
                                   onClick={() => handleStatusChange(invoice.id, 'paid')}
