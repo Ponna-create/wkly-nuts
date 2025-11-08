@@ -111,6 +111,23 @@ CREATE TABLE IF NOT EXISTS invoices (
 CREATE SEQUENCE IF NOT EXISTS invoice_number_seq START 1;
 
 -- ============================================================================
+-- INVENTORY/STOCK MANAGEMENT TABLE
+-- ============================================================================
+
+-- Inventory Table (tracks stock levels for each SKU)
+CREATE TABLE IF NOT EXISTS inventory (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  sku_id UUID REFERENCES skus(id) ON DELETE CASCADE,
+  weekly_packs_available NUMERIC(10, 2) DEFAULT 0,
+  monthly_packs_available NUMERIC(10, 2) DEFAULT 0,
+  last_updated TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  notes TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(sku_id) -- One inventory record per SKU
+);
+
+-- ============================================================================
 -- SECURITY: ROW LEVEL SECURITY (RLS)
 -- ============================================================================
 
@@ -121,6 +138,7 @@ ALTER TABLE pricing_strategies ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sales_targets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE invoices ENABLE ROW LEVEL SECURITY;
+ALTER TABLE inventory ENABLE ROW LEVEL SECURITY;
 
 -- ============================================================================
 -- RLS POLICIES: For Internal Use with Simple Authentication
@@ -178,6 +196,9 @@ CREATE POLICY "Allow all operations on customers" ON customers
 CREATE POLICY "Allow all operations on invoices" ON invoices
   FOR ALL USING (true) WITH CHECK (true);
 
+CREATE POLICY "Allow all operations on inventory" ON inventory
+  FOR ALL USING (true) WITH CHECK (true);
+
 -- ============================================================================
 -- INDEXES FOR PERFORMANCE
 -- ============================================================================
@@ -192,6 +213,7 @@ CREATE INDEX IF NOT EXISTS idx_invoices_customer_id ON invoices(customer_id);
 CREATE INDEX IF NOT EXISTS idx_invoices_invoice_number ON invoices(invoice_number);
 CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
 CREATE INDEX IF NOT EXISTS idx_invoices_date ON invoices(invoice_date);
+CREATE INDEX IF NOT EXISTS idx_inventory_sku_id ON inventory(sku_id);
 
 -- ============================================================================
 -- FUNCTIONS AND TRIGGERS
@@ -225,6 +247,7 @@ DROP TRIGGER IF EXISTS update_pricing_strategies_updated_at ON pricing_strategie
 DROP TRIGGER IF EXISTS update_sales_targets_updated_at ON sales_targets;
 DROP TRIGGER IF EXISTS update_customers_updated_at ON customers;
 DROP TRIGGER IF EXISTS update_invoices_updated_at ON invoices;
+DROP TRIGGER IF EXISTS update_inventory_updated_at ON inventory;
 DROP TRIGGER IF EXISTS generate_invoice_number_trigger ON invoices;
 
 -- Triggers for updated_at
@@ -244,6 +267,9 @@ CREATE TRIGGER update_customers_updated_at BEFORE UPDATE ON customers
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_invoices_updated_at BEFORE UPDATE ON invoices
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_inventory_updated_at BEFORE UPDATE ON inventory
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- Trigger for auto-generating invoice numbers

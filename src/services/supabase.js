@@ -936,5 +936,245 @@ export const dbService = {
       return { error };
     }
   },
+
+  // ============================================================================
+  // INVENTORY/STOCK MANAGEMENT
+  // ============================================================================
+
+  async getInventory() {
+    if (!isSupabaseAvailable()) return { data: [], error: null };
+    
+    try {
+      const { data, error } = await supabase
+        .from('inventory')
+        .select(`
+          *,
+          skus (
+            id,
+            name,
+            description
+          )
+        `)
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      
+      const inventory = (data || []).map(item => ({
+        id: item.id,
+        skuId: item.sku_id,
+        sku: item.skus ? {
+          id: item.skus.id,
+          name: item.skus.name,
+          description: item.skus.description,
+        } : null,
+        weeklyPacksAvailable: parseFloat(item.weekly_packs_available || 0),
+        monthlyPacksAvailable: parseFloat(item.monthly_packs_available || 0),
+        lastUpdated: item.last_updated,
+        notes: item.notes,
+        createdAt: item.created_at,
+      }));
+      
+      return { data: inventory, error: null };
+    } catch (error) {
+      console.error('Error fetching inventory:', error);
+      return { data: [], error };
+    }
+  },
+
+  async getInventoryBySkuId(skuId) {
+    if (!isSupabaseAvailable()) return { data: null, error: null };
+    
+    try {
+      const { data, error } = await supabase
+        .from('inventory')
+        .select(`
+          *,
+          skus (
+            id,
+            name,
+            description
+          )
+        `)
+        .eq('sku_id', skuId)
+        .single();
+      
+      if (error && error.code !== 'PGRST116') throw error; // PGRST116 = not found
+      
+      if (!data) return { data: null, error: null };
+      
+      return { 
+        data: {
+          id: data.id,
+          skuId: data.sku_id,
+          sku: data.skus ? {
+            id: data.skus.id,
+            name: data.skus.name,
+            description: data.skus.description,
+          } : null,
+          weeklyPacksAvailable: parseFloat(data.weekly_packs_available || 0),
+          monthlyPacksAvailable: parseFloat(data.monthly_packs_available || 0),
+          lastUpdated: data.last_updated,
+          notes: data.notes,
+        }, 
+        error: null 
+      };
+    } catch (error) {
+      console.error('Error fetching inventory by SKU:', error);
+      return { data: null, error };
+    }
+  },
+
+  async createInventory(inventory) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    
+    try {
+      const { data, error } = await supabase
+        .from('inventory')
+        .insert({
+          sku_id: inventory.skuId,
+          weekly_packs_available: inventory.weeklyPacksAvailable || 0,
+          monthly_packs_available: inventory.monthlyPacksAvailable || 0,
+          notes: inventory.notes || null,
+          last_updated: new Date().toISOString(),
+        })
+        .select(`
+          *,
+          skus (
+            id,
+            name,
+            description
+          )
+        `)
+        .single();
+      
+      if (error) throw error;
+      
+      return { 
+        data: {
+          id: data.id,
+          skuId: data.sku_id,
+          sku: data.skus ? {
+            id: data.skus.id,
+            name: data.skus.name,
+            description: data.skus.description,
+          } : null,
+          weeklyPacksAvailable: parseFloat(data.weekly_packs_available || 0),
+          monthlyPacksAvailable: parseFloat(data.monthly_packs_available || 0),
+          lastUpdated: data.last_updated,
+          notes: data.notes,
+        }, 
+        error: null 
+      };
+    } catch (error) {
+      console.error('Error creating inventory:', error);
+      return { data: null, error };
+    }
+  },
+
+  async updateInventory(inventory) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    
+    try {
+      const { data, error } = await supabase
+        .from('inventory')
+        .update({
+          weekly_packs_available: inventory.weeklyPacksAvailable || 0,
+          monthly_packs_available: inventory.monthlyPacksAvailable || 0,
+          notes: inventory.notes || null,
+          last_updated: new Date().toISOString(),
+        })
+        .eq('id', inventory.id)
+        .select(`
+          *,
+          skus (
+            id,
+            name,
+            description
+          )
+        `)
+        .single();
+      
+      if (error) throw error;
+      
+      return { 
+        data: {
+          id: data.id,
+          skuId: data.sku_id,
+          sku: data.skus ? {
+            id: data.skus.id,
+            name: data.skus.name,
+            description: data.skus.description,
+          } : null,
+          weeklyPacksAvailable: parseFloat(data.weekly_packs_available || 0),
+          monthlyPacksAvailable: parseFloat(data.monthly_packs_available || 0),
+          lastUpdated: data.last_updated,
+          notes: data.notes,
+        }, 
+        error: null 
+      };
+    } catch (error) {
+      console.error('Error updating inventory:', error);
+      return { data: null, error };
+    }
+  },
+
+  async updateInventoryStock(skuId, packType, quantity, operation = 'subtract') {
+    // operation: 'add' or 'subtract'
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    
+    try {
+      // First get current inventory
+      const currentRes = await this.getInventoryBySkuId(skuId);
+      if (currentRes.error) throw currentRes.error;
+      
+      const current = currentRes.data;
+      if (!current) {
+        // Create new inventory record if doesn't exist
+        return await this.createInventory({
+          skuId,
+          weeklyPacksAvailable: packType === 'weekly' ? (operation === 'add' ? quantity : -quantity) : 0,
+          monthlyPacksAvailable: packType === 'monthly' ? (operation === 'add' ? quantity : -quantity) : 0,
+        });
+      }
+      
+      const field = packType === 'weekly' ? 'weekly_packs_available' : 'monthly_packs_available';
+      const currentValue = packType === 'weekly' 
+        ? current.weeklyPacksAvailable 
+        : current.monthlyPacksAvailable;
+      
+      const newValue = operation === 'add' 
+        ? currentValue + quantity 
+        : Math.max(0, currentValue - quantity); // Don't go below 0
+      
+      const updateData = {
+        id: current.id,
+        weeklyPacksAvailable: packType === 'weekly' ? newValue : current.weeklyPacksAvailable,
+        monthlyPacksAvailable: packType === 'monthly' ? newValue : current.monthlyPacksAvailable,
+        notes: current.notes,
+      };
+      
+      return await this.updateInventory(updateData);
+    } catch (error) {
+      console.error('Error updating inventory stock:', error);
+      return { data: null, error };
+    }
+  },
+
+  async deleteInventory(inventoryId) {
+    if (!isSupabaseAvailable()) return { error: new Error('Supabase not configured') };
+    
+    try {
+      const { error } = await supabase
+        .from('inventory')
+        .delete()
+        .eq('id', inventoryId);
+      
+      if (error) throw error;
+      return { error: null };
+    } catch (error) {
+      console.error('Error deleting inventory:', error);
+      return { error };
+    }
+  },
 };
 
