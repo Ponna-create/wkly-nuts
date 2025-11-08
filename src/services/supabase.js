@@ -862,6 +862,7 @@ export const dbService = {
       const { data, error } = await supabase
         .from('invoices')
         .update({
+          invoice_number: invoice.invoiceNumber || null, // Update invoice number if provided
           customer_id: invoice.customerId,
           invoice_date: invoice.invoiceDate,
           due_date: invoice.dueDate,

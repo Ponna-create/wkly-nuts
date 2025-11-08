@@ -335,8 +335,16 @@ export default function InvoiceManagement() {
       paymentDate: newStatus === 'paid' ? new Date().toISOString().split('T')[0] : invoice.paymentDate,
     };
 
+    // Generate invoice number only when status changes to "paid"
+    if (newStatus === 'paid' && (!invoice.invoiceNumber || invoice.invoiceNumber === 'N/A')) {
+      // Generate invoice number: INV-YYYY-XXXXX format
+      const year = new Date().getFullYear();
+      const invoiceCount = invoices.filter(inv => inv.status === 'paid' || inv.invoiceNumber).length + 1;
+      updatedInvoice.invoiceNumber = `INV-${year}-${String(invoiceCount).padStart(5, '0')}`;
+    }
+
     dispatch({ type: 'UPDATE_INVOICE', payload: updatedInvoice });
-    showToast(`Invoice marked as ${newStatus}`, 'success');
+    showToast(`Invoice marked as ${newStatus}${newStatus === 'paid' && !invoice.invoiceNumber ? ' - Invoice number generated' : ''}`, 'success');
   };
 
   // Generate PDF Invoice - Simple & Clean Layout
@@ -442,30 +450,30 @@ export default function InvoiceManagement() {
         doc.setFont(undefined, 'bold');
         doc.setTextColor(0, 0, 0);
         doc.text('Bill To:', margin, yPos);
-        yPos += 7; // Increased spacing
+        yPos += 8; // Increased spacing significantly
         doc.setFontSize(10);
         doc.setFont(undefined, 'bold');
         doc.text(customerData.name || 'No Name', margin, yPos);
         doc.setFont(undefined, 'normal');
-        yPos += 6; // Increased spacing to prevent overlap
+        yPos += 7; // Increased spacing significantly to prevent overlap
         if (customerData.address) {
           doc.text(customerData.address, margin, yPos);
-          yPos += 5; // Increased spacing
+          yPos += 6; // Increased spacing significantly
         }
         if (customerData.city || customerData.state) {
           const addressLine = [customerData.city, customerData.state, customerData.pincode].filter(Boolean).join(', ');
           if (addressLine) {
             doc.text(addressLine, margin, yPos);
-            yPos += 5; // Increased spacing
+            yPos += 6; // Increased spacing significantly
           }
         }
         if (customerData.phone) {
           doc.text(customerData.phone, margin, yPos);
-          yPos += 5; // Increased spacing
+          yPos += 6; // Increased spacing significantly
         }
         if (customerData.gstin) {
           doc.text(`GSTIN: ${customerData.gstin}`, margin, yPos);
-          yPos += 5; // Increased spacing
+          yPos += 6; // Increased spacing significantly
         }
       }
       
