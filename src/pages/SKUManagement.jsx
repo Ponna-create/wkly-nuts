@@ -1005,7 +1005,7 @@ export default function SKUManagement() {
 
           {/* Production Requirements Display */}
           {productionRequirements && (
-            <div>
+            <div className="production-requirements-container">
               {/* Header with CSV Export - Always visible */}
               <div className="flex justify-between items-center mb-4">
                 <div>
