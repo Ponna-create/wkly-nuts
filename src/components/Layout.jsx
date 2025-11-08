@@ -8,8 +8,10 @@ import {
   TrendingUp,
   BarChart3,
   Menu,
-  X
+  X,
+  LogOut
 } from 'lucide-react';
+import { logout } from './Auth';
 import logo from '../assets/wkly-nuts-logo.png';
 
 const navigation = [
@@ -111,6 +113,14 @@ export default function Layout({ children }) {
                   day: 'numeric' 
                 })}
               </div>
+              <button
+                onClick={logout}
+                className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Logout"
+              >
+                <LogOut className="w-4 h-4" />
+                <span className="hidden sm:inline">Logout</span>
+              </button>
             </div>
           </div>
         </header>

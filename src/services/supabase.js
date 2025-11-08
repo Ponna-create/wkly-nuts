@@ -568,5 +568,373 @@ export const dbService = {
       return { error };
     }
   },
+
+  // ============================================================================
+  // CUSTOMERS
+  // ============================================================================
+
+  async getCustomers() {
+    if (!isSupabaseAvailable()) return { data: [], error: null };
+    
+    try {
+      const { data, error } = await supabase
+        .from('customers')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      
+      const customers = (data || []).map(customer => ({
+        id: customer.id,
+        name: customer.name,
+        email: customer.email,
+        phone: customer.phone,
+        address: customer.address,
+        city: customer.city,
+        state: customer.state,
+        pincode: customer.pincode,
+        gstin: customer.gstin,
+        customerType: customer.customer_type,
+        notes: customer.notes,
+        createdAt: customer.created_at,
+      }));
+      
+      return { data: customers, error: null };
+    } catch (error) {
+      console.error('Error fetching customers:', error);
+      return { data: [], error };
+    }
+  },
+
+  async createCustomer(customer) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    
+    try {
+      const { data, error } = await supabase
+        .from('customers')
+        .insert({
+          name: customer.name,
+          email: customer.email,
+          phone: customer.phone,
+          address: customer.address,
+          city: customer.city,
+          state: customer.state,
+          pincode: customer.pincode,
+          gstin: customer.gstin,
+          customer_type: customer.customerType || 'individual',
+          notes: customer.notes,
+        })
+        .select()
+        .single();
+      
+      if (error) throw error;
+      
+      return { 
+        data: {
+          id: data.id,
+          name: data.name,
+          email: data.email,
+          phone: data.phone,
+          address: data.address,
+          city: data.city,
+          state: data.state,
+          pincode: data.pincode,
+          gstin: data.gstin,
+          customerType: data.customer_type,
+          notes: data.notes,
+        }, 
+        error: null 
+      };
+    } catch (error) {
+      console.error('Error creating customer:', error);
+      return { data: null, error };
+    }
+  },
+
+  async updateCustomer(customer) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    
+    try {
+      const { data, error } = await supabase
+        .from('customers')
+        .update({
+          name: customer.name,
+          email: customer.email,
+          phone: customer.phone,
+          address: customer.address,
+          city: customer.city,
+          state: customer.state,
+          pincode: customer.pincode,
+          gstin: customer.gstin,
+          customer_type: customer.customerType,
+          notes: customer.notes,
+        })
+        .eq('id', customer.id)
+        .select()
+        .single();
+      
+      if (error) throw error;
+      
+      return { 
+        data: {
+          id: data.id,
+          name: data.name,
+          email: data.email,
+          phone: data.phone,
+          address: data.address,
+          city: data.city,
+          state: data.state,
+          pincode: data.pincode,
+          gstin: data.gstin,
+          customerType: data.customer_type,
+          notes: data.notes,
+        }, 
+        error: null 
+      };
+    } catch (error) {
+      console.error('Error updating customer:', error);
+      return { data: null, error };
+    }
+  },
+
+  async deleteCustomer(customerId) {
+    if (!isSupabaseAvailable()) return { error: new Error('Supabase not configured') };
+    
+    try {
+      const { error } = await supabase
+        .from('customers')
+        .delete()
+        .eq('id', customerId);
+      
+      if (error) throw error;
+      return { error: null };
+    } catch (error) {
+      console.error('Error deleting customer:', error);
+      return { error };
+    }
+  },
+
+  // ============================================================================
+  // INVOICES
+  // ============================================================================
+
+  async getInvoices() {
+    if (!isSupabaseAvailable()) return { data: [], error: null };
+    
+    try {
+      const { data, error } = await supabase
+        .from('invoices')
+        .select(`
+          *,
+          customers (
+            id,
+            name,
+            email,
+            phone,
+            address,
+            gstin
+          )
+        `)
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      
+      const invoices = (data || []).map(invoice => ({
+        id: invoice.id,
+        invoiceNumber: invoice.invoice_number,
+        customerId: invoice.customer_id,
+        customer: invoice.customers ? {
+          id: invoice.customers.id,
+          name: invoice.customers.name,
+          email: invoice.customers.email,
+          phone: invoice.customers.phone,
+          address: invoice.customers.address,
+          gstin: invoice.customers.gstin,
+        } : null,
+        invoiceDate: invoice.invoice_date,
+        dueDate: invoice.due_date,
+        items: invoice.items || [],
+        subtotal: parseFloat(invoice.subtotal || 0),
+        taxRate: parseFloat(invoice.tax_rate || 0),
+        taxAmount: parseFloat(invoice.tax_amount || 0),
+        discountAmount: parseFloat(invoice.discount_amount || 0),
+        totalAmount: parseFloat(invoice.total_amount || 0),
+        status: invoice.status,
+        paymentMethod: invoice.payment_method,
+        paymentDate: invoice.payment_date,
+        notes: invoice.notes,
+        terms: invoice.terms,
+        createdAt: invoice.created_at,
+      }));
+      
+      return { data: invoices, error: null };
+    } catch (error) {
+      console.error('Error fetching invoices:', error);
+      return { data: [], error };
+    }
+  },
+
+  async createInvoice(invoice) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    
+    try {
+      const { data, error } = await supabase
+        .from('invoices')
+        .insert({
+          invoice_number: invoice.invoiceNumber || null, // Will be auto-generated if null
+          customer_id: invoice.customerId || null,
+          invoice_date: invoice.invoiceDate || new Date().toISOString().split('T')[0],
+          due_date: invoice.dueDate || null,
+          items: invoice.items || [],
+          subtotal: invoice.subtotal || 0,
+          tax_rate: invoice.taxRate || 0,
+          tax_amount: invoice.taxAmount || 0,
+          discount_amount: invoice.discountAmount || 0,
+          total_amount: invoice.totalAmount || 0,
+          status: invoice.status || 'draft',
+          payment_method: invoice.paymentMethod || null,
+          payment_date: invoice.paymentDate || null,
+          notes: invoice.notes || null,
+          terms: invoice.terms || null,
+        })
+        .select(`
+          *,
+          customers (
+            id,
+            name,
+            email,
+            phone,
+            address,
+            gstin
+          )
+        `)
+        .single();
+      
+      if (error) throw error;
+      
+      return { 
+        data: {
+          id: data.id,
+          invoiceNumber: data.invoice_number,
+          customerId: data.customer_id,
+          customer: data.customers ? {
+            id: data.customers.id,
+            name: data.customers.name,
+            email: data.customers.email,
+            phone: data.customers.phone,
+            address: data.customers.address,
+            gstin: data.customers.gstin,
+          } : null,
+          invoiceDate: data.invoice_date,
+          dueDate: data.due_date,
+          items: data.items || [],
+          subtotal: parseFloat(data.subtotal || 0),
+          taxRate: parseFloat(data.tax_rate || 0),
+          taxAmount: parseFloat(data.tax_amount || 0),
+          discountAmount: parseFloat(data.discount_amount || 0),
+          totalAmount: parseFloat(data.total_amount || 0),
+          status: data.status,
+          paymentMethod: data.payment_method,
+          paymentDate: data.payment_date,
+          notes: data.notes,
+          terms: data.terms,
+        }, 
+        error: null 
+      };
+    } catch (error) {
+      console.error('Error creating invoice:', error);
+      return { data: null, error };
+    }
+  },
+
+  async updateInvoice(invoice) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    
+    try {
+      const { data, error } = await supabase
+        .from('invoices')
+        .update({
+          customer_id: invoice.customerId,
+          invoice_date: invoice.invoiceDate,
+          due_date: invoice.dueDate,
+          items: invoice.items,
+          subtotal: invoice.subtotal,
+          tax_rate: invoice.taxRate,
+          tax_amount: invoice.taxAmount,
+          discount_amount: invoice.discountAmount,
+          total_amount: invoice.totalAmount,
+          status: invoice.status,
+          payment_method: invoice.paymentMethod,
+          payment_date: invoice.paymentDate,
+          notes: invoice.notes,
+          terms: invoice.terms,
+        })
+        .eq('id', invoice.id)
+        .select(`
+          *,
+          customers (
+            id,
+            name,
+            email,
+            phone,
+            address,
+            gstin
+          )
+        `)
+        .single();
+      
+      if (error) throw error;
+      
+      return { 
+        data: {
+          id: data.id,
+          invoiceNumber: data.invoice_number,
+          customerId: data.customer_id,
+          customer: data.customers ? {
+            id: data.customers.id,
+            name: data.customers.name,
+            email: data.customers.email,
+            phone: data.customers.phone,
+            address: data.customers.address,
+            gstin: data.customers.gstin,
+          } : null,
+          invoiceDate: data.invoice_date,
+          dueDate: data.due_date,
+          items: data.items || [],
+          subtotal: parseFloat(data.subtotal || 0),
+          taxRate: parseFloat(data.tax_rate || 0),
+          taxAmount: parseFloat(data.tax_amount || 0),
+          discountAmount: parseFloat(data.discount_amount || 0),
+          totalAmount: parseFloat(data.total_amount || 0),
+          status: data.status,
+          paymentMethod: data.payment_method,
+          paymentDate: data.payment_date,
+          notes: data.notes,
+          terms: data.terms,
+        }, 
+        error: null 
+      };
+    } catch (error) {
+      console.error('Error updating invoice:', error);
+      return { data: null, error };
+    }
+  },
+
+  async deleteInvoice(invoiceId) {
+    if (!isSupabaseAvailable()) return { error: new Error('Supabase not configured') };
+    
+    try {
+      const { error } = await supabase
+        .from('invoices')
+        .delete()
+        .eq('id', invoiceId);
+      
+      if (error) throw error;
+      return { error: null };
+    } catch (error) {
+      console.error('Error deleting invoice:', error);
+      return { error };
+    }
+  },
 };
 
