@@ -399,44 +399,44 @@ export default function InvoiceManagement() {
         doc.text('WKLY Nuts', margin, yPos + 8);
       }
 
-      // Company Name and Address (Center) - Dhanish Enterprises
+      // Invoice Title (Center)
       const centerX = pageWidth / 2;
-      doc.setFontSize(16);
-      doc.setTextColor(0, 0, 0);
-      doc.setFont(undefined, 'bold');
-      doc.text('Dhanish Enterprises', centerX, yPos, { align: 'center' });
-      yPos += 6;
-      doc.setFontSize(10);
-      doc.setFont(undefined, 'normal');
-      doc.setTextColor(60, 60, 60);
-      doc.text('No.1, Chelliamman koil,', centerX, yPos, { align: 'center' });
-      yPos += 5;
-      doc.text('Ambattur, Chennai,', centerX, yPos, { align: 'center' });
-      yPos += 5;
-      doc.text('TamilNadu - 600058', centerX, yPos, { align: 'center' });
-      
-      // Invoice Title (Below company address)
-      yPos += 8;
       doc.setFontSize(20);
       doc.setFont(undefined, 'bold');
       doc.setTextColor(0, 0, 0);
       doc.text('INVOICE', centerX, yPos, { align: 'center' });
       
-      // Invoice Number and Date (Right side)
+      // Company Name and Address (Right side, top)
+      const rightX = pageWidth - margin;
+      let companyY = margin;
+      doc.setFontSize(16);
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(0, 0, 0);
+      doc.text('Dhanish Enterprises', rightX, companyY, { align: 'right' });
+      companyY += 6;
+      doc.setFontSize(10);
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(60, 60, 60);
+      doc.text('No.1, Chelliamman koil,', rightX, companyY, { align: 'right' });
+      companyY += 5;
+      doc.text('Ambattur, Chennai,', rightX, companyY, { align: 'right' });
+      companyY += 5;
+      doc.text('TamilNadu - 600058', rightX, companyY, { align: 'right' });
+      
+      // Invoice Number and Date (Right side, below company address)
       const invoiceDate = invoice.invoiceDate || invoice.invoice_date;
       const invoiceNum = invoice.invoiceNumber || invoice.invoice_number || 'N/A';
       const dateStr = invoiceDate ? new Date(invoiceDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A';
       
-      // Reset yPos to align with top
-      yPos = margin + 5;
+      companyY += 8;
       doc.setFontSize(10);
       doc.setFont(undefined, 'normal');
       doc.setTextColor(0, 0, 0);
-      doc.text(`Invoice#: ${invoiceNum}`, pageWidth - margin, yPos, { align: 'right' });
-      yPos += 5;
-      doc.text(`Date: ${dateStr}`, pageWidth - margin, yPos, { align: 'right' });
+      doc.text(`Invoice#: ${invoiceNum}`, rightX, companyY, { align: 'right' });
+      companyY += 5;
+      doc.text(`Date: ${dateStr}`, rightX, companyY, { align: 'right' });
       
-      // Move yPos to after company address and invoice title
+      // Move yPos down for Bill To section
       yPos = margin + 50;
 
       // Bill To Section (Left side) - Simple
@@ -479,32 +479,33 @@ export default function InvoiceManagement() {
       
       yPos += 10;
 
-      // Items Table (matching reference layout)
+      // Items Table - Fixed column widths to prevent overflow
       const tableData = invoice.items.map((item, index) => [
-        index + 1,
+        (index + 1).toString(),
         item.skuName || 'Unknown SKU',
-        item.packType ? `${item.packType.charAt(0).toUpperCase() + item.packType.slice(1)} Pack` : 'N/A', // Description
-        (item.quantity || 0).toString(),
+        item.packType ? `${item.packType.charAt(0).toUpperCase() + item.packType.slice(1)} Pack` : 'N/A',
+        (item.quantity || 0).toFixed(2),
         `₹${(item.unitPrice || 0).toFixed(2)}`,
         `₹${(item.total || 0).toFixed(2)}`,
       ]);
 
-      // Use autoTable - try both methods for compatibility
+      // Use autoTable - Fixed widths to prevent overflow
       const autoTableOptions = {
         startY: yPos,
         head: [['#', 'Item', 'Description', 'Qty', 'Rate', 'Amount']],
         body: tableData,
         theme: 'striped',
-        headStyles: { fillColor: [255, 193, 7], textColor: 0, fontStyle: 'bold' }, // Yellow header like reference
-        styles: { fontSize: 9 },
+        headStyles: { fillColor: [255, 193, 7], textColor: 0, fontStyle: 'bold' },
+        styles: { fontSize: 9, cellPadding: 3 },
         columnStyles: {
-          0: { cellWidth: 15, halign: 'center' },
-          1: { cellWidth: 50 },
-          2: { cellWidth: 50 },
-          3: { cellWidth: 20, halign: 'right' },
+          0: { cellWidth: 12, halign: 'center' },
+          1: { cellWidth: 45, halign: 'left' },
+          2: { cellWidth: 45, halign: 'left' },
+          3: { cellWidth: 18, halign: 'right' },
           4: { cellWidth: 25, halign: 'right' },
-          5: { cellWidth: 25, halign: 'right' },
+          5: { cellWidth: 25, halign: 'right', cellPadding: { right: 5 } },
         },
+        margin: { left: margin, right: margin },
       };
 
       // Try doc.autoTable first, fallback to autoTable function
@@ -540,9 +541,12 @@ export default function InvoiceManagement() {
       const totalAmount = parseFloat(invoice.totalAmount || invoice.total_amount || 0);
       const balanceDue = totalAmount - advancePaid;
       
+      // Summary Section - Fixed to prevent stray characters
+      const summaryRightX = pageWidth - margin;
+      
       // Sub Total (always show)
       doc.text('Sub Total:', summaryX, yPos);
-      doc.text(`₹${subtotal.toFixed(2)}`, pageWidth - margin, yPos, { align: 'right' });
+      doc.text(`₹${subtotal.toFixed(2)}`, summaryRightX, yPos, { align: 'right' });
       yPos += 6;
       
       // Discount (always show, even if 0)
@@ -551,55 +555,55 @@ export default function InvoiceManagement() {
         : 'Discount:';
       doc.text(discountLabel, summaryX, yPos);
       if (discountAmount > 0) {
-        doc.text(`(-)₹${discountAmount.toFixed(2)}`, pageWidth - margin, yPos, { align: 'right' });
+        doc.text(`(-)₹${discountAmount.toFixed(2)}`, summaryRightX, yPos, { align: 'right' });
       } else {
-        doc.text(`₹0.00`, pageWidth - margin, yPos, { align: 'right' });
+        doc.text(`₹0.00`, summaryRightX, yPos, { align: 'right' });
       }
       yPos += 6;
       
       // Shipping charge (always show, even if 0)
       doc.text('Shipping charge:', summaryX, yPos);
-      doc.text(`₹${shippingCharge.toFixed(2)}`, pageWidth - margin, yPos, { align: 'right' });
+      doc.text(`₹${shippingCharge.toFixed(2)}`, summaryRightX, yPos, { align: 'right' });
       yPos += 6;
       
       // GST (always show if rate is set, even if 0)
       if (gstRate > 0) {
         doc.text(`GST(${gstRate}%):`, summaryX, yPos);
-        doc.text(`₹${gstAmount.toFixed(2)}`, pageWidth - margin, yPos, { align: 'right' });
+        doc.text(`₹${gstAmount.toFixed(2)}`, summaryRightX, yPos, { align: 'right' });
         yPos += 6;
       }
       
       // Advance paid (always show, even if 0)
       doc.text('Advance paid:', summaryX, yPos);
       if (advancePaid > 0) {
-        doc.text(`(-)₹${advancePaid.toFixed(2)}`, pageWidth - margin, yPos, { align: 'right' });
+        doc.text(`(-)₹${advancePaid.toFixed(2)}`, summaryRightX, yPos, { align: 'right' });
       } else {
-        doc.text(`₹0.00`, pageWidth - margin, yPos, { align: 'right' });
+        doc.text(`₹0.00`, summaryRightX, yPos, { align: 'right' });
       }
       yPos += 6;
       
       // Separator line
       doc.setDrawColor(200, 200, 200);
-      doc.line(summaryX, yPos, pageWidth - margin, yPos);
+      doc.line(summaryX, yPos, summaryRightX, yPos);
       yPos += 6;
       
       // Total (always show)
       doc.setFontSize(11);
       doc.setFont(undefined, 'bold');
       doc.text('Total:', summaryX, yPos);
-      doc.text(`₹${totalAmount.toFixed(2)}`, pageWidth - margin, yPos, { align: 'right' });
+      doc.text(`₹${totalAmount.toFixed(2)}`, summaryRightX, yPos, { align: 'right' });
       yPos += 8;
       
-      // Balance Due (always show, matching reference layout)
+      // Balance Due (always show)
       // Thicker line
       doc.setDrawColor(150, 150, 150);
       doc.setLineWidth(0.5);
-      doc.line(summaryX, yPos, pageWidth - margin, yPos);
+      doc.line(summaryX, yPos, summaryRightX, yPos);
       yPos += 6;
       doc.setFontSize(11);
       doc.setFont(undefined, 'bold');
       doc.text('Balance Due:', summaryX, yPos);
-      doc.text(`₹${balanceDue.toFixed(2)}`, pageWidth - margin, yPos, { align: 'right' });
+      doc.text(`₹${balanceDue.toFixed(2)}`, summaryRightX, yPos, { align: 'right' });
       yPos += 10;
 
       // Simple Footer
