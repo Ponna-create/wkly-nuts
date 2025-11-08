@@ -340,7 +340,7 @@ export default function InvoiceManagement() {
   };
 
   // Generate PDF Invoice
-  const generatePDF = (invoice) => {
+  const generatePDF = async (invoice) => {
     try {
       const doc = new jsPDF();
       const pageWidth = doc.internal.pageSize.getWidth();
@@ -348,16 +348,34 @@ export default function InvoiceManagement() {
       const margin = 20;
       let yPos = margin;
 
-      // Try to add logo (top left)
-      try {
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        img.src = logo;
-        
-        // Add logo (40x40 size, top left)
-        doc.addImage(img, 'PNG', margin, yPos, 40, 40);
-      } catch (error) {
-        // If logo fails, use text branding
+      // Try to add logo (top left) - async loading
+      const loadLogo = () => {
+        return new Promise((resolve) => {
+          try {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => {
+              try {
+                doc.addImage(img, 'PNG', margin, yPos, 40, 40);
+                resolve(true);
+              } catch (e) {
+                resolve(false);
+              }
+            };
+            img.onerror = () => resolve(false);
+            img.src = logo;
+            // Timeout after 1 second
+            setTimeout(() => resolve(false), 1000);
+          } catch (error) {
+            resolve(false);
+          }
+        });
+      };
+      
+      // Try to load logo, fallback to text
+      const logoLoaded = await loadLogo();
+      if (!logoLoaded) {
+        // Fallback to text branding
         doc.setFontSize(20);
         doc.setTextColor(34, 197, 94);
         doc.setFont(undefined, 'bold');
