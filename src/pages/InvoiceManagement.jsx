@@ -394,7 +394,7 @@ export default function InvoiceManagement() {
         doc.text('WKLY Nuts', margin, yPos + 10);
       }
 
-      // Company Details (Top Right) - Matching reference layout
+      // Company Details (Top Right) - Matching reference layout EXACTLY
       const companyX = pageWidth - margin - 60;
       const companyStartY = yPos;
       doc.setFontSize(12);
@@ -404,15 +404,22 @@ export default function InvoiceManagement() {
       doc.setFont(undefined, 'normal');
       doc.setFontSize(9);
       doc.setTextColor(100, 100, 100);
-      // Company address lines (matching reference format)
+      // Company address lines (matching reference - 4 lines like Zylker)
       let companyY = companyStartY + 6;
-      doc.text('Production Management System', companyX, companyY, { align: 'right' });
+      // Line 1: Street address (add your actual address here)
+      doc.text('Your Street Address', companyX, companyY, { align: 'right' });
       companyY += 4;
-      // Add more company details if needed (address, phone, email, GSTIN)
-      // For now, keeping it simple to match reference spacing
+      // Line 2: Area/Locality
+      doc.text('Your Area, Locality', companyX, companyY, { align: 'right' });
+      companyY += 4;
+      // Line 3: City, State, Pincode
+      doc.text('Your City, State, Pincode', companyX, companyY, { align: 'right' });
+      companyY += 4;
+      // Line 4: Country (optional, or GSTIN)
+      doc.text('India', companyX, companyY, { align: 'right' });
       
       // Adjust yPos to align with logo height or minimum spacing
-      yPos = Math.max(companyStartY + 25, margin + 40);
+      yPos = Math.max(companyStartY + 30, margin + 40);
 
       // Invoice Title (Centered) - Matching reference layout
       doc.setFontSize(16);
@@ -421,7 +428,8 @@ export default function InvoiceManagement() {
       doc.text('INVOICE', pageWidth / 2, yPos, { align: 'center' });
       yPos += 10;
       
-      // Invoice Details Section (Right side) - Matching reference layout
+      // Invoice Details Section (Right side) - Matching reference layout EXACTLY
+      // In reference: Invoice#, Date, Terms, Due Date (all in same block)
       const invoiceDetailsX = pageWidth - margin - 60;
       doc.setFontSize(9);
       doc.setFont(undefined, 'normal');
@@ -431,10 +439,9 @@ export default function InvoiceManagement() {
       const invoiceDate = invoice.invoiceDate || invoice.invoice_date;
       doc.text(`Invoice Date: ${invoiceDate ? new Date(invoiceDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A'}`, invoiceDetailsX, yPos, { align: 'right' });
       yPos += 5;
-      if (invoice.terms) {
-        doc.text(`Terms: ${invoice.terms}`, invoiceDetailsX, yPos, { align: 'right' });
-        yPos += 5;
-      }
+      // Terms MUST be in Invoice Details block (matching reference)
+      doc.text(`Terms: ${invoice.terms || 'Payment due within 15 days'}`, invoiceDetailsX, yPos, { align: 'right' });
+      yPos += 5;
       const dueDate = invoice.dueDate || invoice.due_date;
       if (dueDate) {
         doc.text(`Due Date: ${new Date(dueDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`, invoiceDetailsX, yPos, { align: 'right' });
