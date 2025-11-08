@@ -442,30 +442,30 @@ export default function InvoiceManagement() {
         doc.setFont(undefined, 'bold');
         doc.setTextColor(0, 0, 0);
         doc.text('Bill To:', margin, yPos);
-        yPos += 6;
+        yPos += 7; // Increased spacing
         doc.setFontSize(10);
         doc.setFont(undefined, 'bold');
         doc.text(customerData.name || 'No Name', margin, yPos);
         doc.setFont(undefined, 'normal');
-        yPos += 5;
+        yPos += 6; // Increased spacing to prevent overlap
         if (customerData.address) {
           doc.text(customerData.address, margin, yPos);
-          yPos += 4;
+          yPos += 5; // Increased spacing
         }
         if (customerData.city || customerData.state) {
           const addressLine = [customerData.city, customerData.state, customerData.pincode].filter(Boolean).join(', ');
           if (addressLine) {
             doc.text(addressLine, margin, yPos);
-            yPos += 4;
+            yPos += 5; // Increased spacing
           }
         }
         if (customerData.phone) {
           doc.text(customerData.phone, margin, yPos);
-          yPos += 4;
+          yPos += 5; // Increased spacing
         }
         if (customerData.gstin) {
           doc.text(`GSTIN: ${customerData.gstin}`, margin, yPos);
-          yPos += 4;
+          yPos += 5; // Increased spacing
         }
       }
       
@@ -525,8 +525,15 @@ export default function InvoiceManagement() {
         yPos += (tableData.length * 7) + 20;
       }
 
-      // Summary Section (Right aligned, matching reference layout exactly)
-      const summaryX = pageWidth - margin - 60;
+      // Calculate table right edge to align summary with Amount column
+      // Table columns: #(12) + Item(45) + Description(45) + Qty(18) + Rate(25) + Amount(25) = 170mm
+      // Table starts at margin, so right edge is at margin + 170
+      const tableRightEdge = margin + 12 + 45 + 45 + 18 + 25 + 25; // Sum of all column widths
+      
+      // Summary Section - Aligned with table's Amount column
+      const summaryX = pageWidth - margin - 60; // Left side of summary labels
+      const summaryRightX = tableRightEdge; // Align with Amount column right edge
+      
       doc.setFontSize(10);
       doc.setFont(undefined, 'normal');
       
@@ -540,9 +547,6 @@ export default function InvoiceManagement() {
       const advancePaid = parseFloat(invoice.advancePaid || invoice.advance_paid || 0);
       const totalAmount = parseFloat(invoice.totalAmount || invoice.total_amount || 0);
       const balanceDue = totalAmount - advancePaid;
-      
-      // Summary Section - Fixed to prevent stray characters
-      const summaryRightX = pageWidth - margin;
       
       // Sub Total (always show) - Using Rs. instead of ₹ to prevent rendering issues
       doc.text('Sub Total:', summaryX, yPos);
