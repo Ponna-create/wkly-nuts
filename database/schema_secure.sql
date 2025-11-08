@@ -218,7 +218,13 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
--- Drop existing triggers if they exist
+-- Drop existing triggers if they exist (to avoid errors on re-run)
+DROP TRIGGER IF EXISTS update_vendors_updated_at ON vendors;
+DROP TRIGGER IF EXISTS update_skus_updated_at ON skus;
+DROP TRIGGER IF EXISTS update_pricing_strategies_updated_at ON pricing_strategies;
+DROP TRIGGER IF EXISTS update_sales_targets_updated_at ON sales_targets;
+DROP TRIGGER IF EXISTS update_customers_updated_at ON customers;
+DROP TRIGGER IF EXISTS update_invoices_updated_at ON invoices;
 DROP TRIGGER IF EXISTS generate_invoice_number_trigger ON invoices;
 
 -- Triggers for updated_at
