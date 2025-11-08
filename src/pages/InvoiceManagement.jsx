@@ -399,13 +399,6 @@ export default function InvoiceManagement() {
         doc.text('WKLY Nuts', margin, yPos + 8);
       }
 
-      // Invoice Title (Center)
-      const centerX = pageWidth / 2;
-      doc.setFontSize(20);
-      doc.setFont(undefined, 'bold');
-      doc.setTextColor(0, 0, 0);
-      doc.text('INVOICE', centerX, yPos, { align: 'center' });
-      
       // Company Name and Address (Right side, top)
       const rightX = pageWidth - margin;
       let companyY = margin;
@@ -436,10 +429,9 @@ export default function InvoiceManagement() {
       companyY += 5;
       doc.text(`Date: ${dateStr}`, rightX, companyY, { align: 'right' });
       
-      // Move yPos down for Bill To section
-      yPos = margin + 50;
-
-      // Bill To Section (Left side) - Simple
+      // Bill To Section (Left side) - Aligned with company details
+      const billToStartY = margin;
+      yPos = billToStartY;
       let customerData = invoice.customer;
       if (!customerData && invoice.customerId) {
         customerData = customers.find(c => String(c.id) === String(invoice.customerId));
@@ -477,16 +469,24 @@ export default function InvoiceManagement() {
         }
       }
       
-      yPos += 10;
+      // Invoice Title (Center) - Moved down after header sections
+      const centerX = pageWidth / 2;
+      const invoiceTitleY = Math.max(yPos, companyY) + 10;
+      doc.setFontSize(20);
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(0, 0, 0);
+      doc.text('INVOICE', centerX, invoiceTitleY, { align: 'center' });
+      
+      yPos = invoiceTitleY + 15;
 
-      // Items Table - Fixed column widths to prevent overflow
+      // Items Table - Fixed column widths, using Rs. instead of ₹ to prevent rendering issues
       const tableData = invoice.items.map((item, index) => [
         (index + 1).toString(),
         item.skuName || 'Unknown SKU',
         item.packType ? `${item.packType.charAt(0).toUpperCase() + item.packType.slice(1)} Pack` : 'N/A',
         (item.quantity || 0).toFixed(2),
-        `₹${(item.unitPrice || 0).toFixed(2)}`,
-        `₹${(item.total || 0).toFixed(2)}`,
+        `Rs. ${(item.unitPrice || 0).toFixed(2)}`, // Using Rs. instead of ₹
+        `Rs. ${(item.total || 0).toFixed(2)}`, // Using Rs. instead of ₹
       ]);
 
       // Use autoTable - Fixed widths to prevent overflow
@@ -503,7 +503,7 @@ export default function InvoiceManagement() {
           2: { cellWidth: 45, halign: 'left' },
           3: { cellWidth: 18, halign: 'right' },
           4: { cellWidth: 25, halign: 'right' },
-          5: { cellWidth: 25, halign: 'right', cellPadding: { right: 5 } },
+          5: { cellWidth: 25, halign: 'right' },
         },
         margin: { left: margin, right: margin },
       };
@@ -544,9 +544,9 @@ export default function InvoiceManagement() {
       // Summary Section - Fixed to prevent stray characters
       const summaryRightX = pageWidth - margin;
       
-      // Sub Total (always show)
+      // Sub Total (always show) - Using Rs. instead of ₹ to prevent rendering issues
       doc.text('Sub Total:', summaryX, yPos);
-      doc.text(`₹${subtotal.toFixed(2)}`, summaryRightX, yPos, { align: 'right' });
+      doc.text(`Rs. ${subtotal.toFixed(2)}`, summaryRightX, yPos, { align: 'right' });
       yPos += 6;
       
       // Discount (always show, even if 0)
@@ -555,30 +555,30 @@ export default function InvoiceManagement() {
         : 'Discount:';
       doc.text(discountLabel, summaryX, yPos);
       if (discountAmount > 0) {
-        doc.text(`(-)₹${discountAmount.toFixed(2)}`, summaryRightX, yPos, { align: 'right' });
+        doc.text(`(-)Rs. ${discountAmount.toFixed(2)}`, summaryRightX, yPos, { align: 'right' });
       } else {
-        doc.text(`₹0.00`, summaryRightX, yPos, { align: 'right' });
+        doc.text(`Rs. 0.00`, summaryRightX, yPos, { align: 'right' });
       }
       yPos += 6;
       
       // Shipping charge (always show, even if 0)
       doc.text('Shipping charge:', summaryX, yPos);
-      doc.text(`₹${shippingCharge.toFixed(2)}`, summaryRightX, yPos, { align: 'right' });
+      doc.text(`Rs. ${shippingCharge.toFixed(2)}`, summaryRightX, yPos, { align: 'right' });
       yPos += 6;
       
       // GST (always show if rate is set, even if 0)
       if (gstRate > 0) {
         doc.text(`GST(${gstRate}%):`, summaryX, yPos);
-        doc.text(`₹${gstAmount.toFixed(2)}`, summaryRightX, yPos, { align: 'right' });
+        doc.text(`Rs. ${gstAmount.toFixed(2)}`, summaryRightX, yPos, { align: 'right' });
         yPos += 6;
       }
       
       // Advance paid (always show, even if 0)
       doc.text('Advance paid:', summaryX, yPos);
       if (advancePaid > 0) {
-        doc.text(`(-)₹${advancePaid.toFixed(2)}`, summaryRightX, yPos, { align: 'right' });
+        doc.text(`(-)Rs. ${advancePaid.toFixed(2)}`, summaryRightX, yPos, { align: 'right' });
       } else {
-        doc.text(`₹0.00`, summaryRightX, yPos, { align: 'right' });
+        doc.text(`Rs. 0.00`, summaryRightX, yPos, { align: 'right' });
       }
       yPos += 6;
       
@@ -591,7 +591,7 @@ export default function InvoiceManagement() {
       doc.setFontSize(11);
       doc.setFont(undefined, 'bold');
       doc.text('Total:', summaryX, yPos);
-      doc.text(`₹${totalAmount.toFixed(2)}`, summaryRightX, yPos, { align: 'right' });
+      doc.text(`Rs. ${totalAmount.toFixed(2)}`, summaryRightX, yPos, { align: 'right' });
       yPos += 8;
       
       // Balance Due (always show)
@@ -603,7 +603,7 @@ export default function InvoiceManagement() {
       doc.setFontSize(11);
       doc.setFont(undefined, 'bold');
       doc.text('Balance Due:', summaryX, yPos);
-      doc.text(`₹${balanceDue.toFixed(2)}`, summaryRightX, yPos, { align: 'right' });
+      doc.text(`Rs. ${balanceDue.toFixed(2)}`, summaryRightX, yPos, { align: 'right' });
       yPos += 10;
 
       // Simple Footer
