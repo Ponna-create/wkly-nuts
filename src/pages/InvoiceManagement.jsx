@@ -275,21 +275,8 @@ export default function InvoiceManagement() {
         dispatch({ type: 'ADD_INVOICE', payload: { ...invoiceData, id: Date.now() + Math.random() } });
         showToast('Invoice created successfully', 'success');
         
-        // Reduce stock for each item
-        for (const item of formData.items) {
-          await dbService.updateInventoryStock(
-            item.skuId,
-            item.packType,
-            item.quantity,
-            'subtract'
-          );
-        }
-        
-        // Reload inventory to reflect changes
-        const inventoryRes = await dbService.getInventory();
-        if (inventoryRes.data) {
-          dispatch({ type: 'LOAD_INVENTORY', payload: inventoryRes.data });
-        }
+        // Stock will be reduced only when invoice status changes to "paid"
+        // (Moved to handleStatusChange function)
       }
       
       resetForm();
@@ -335,16 +322,41 @@ export default function InvoiceManagement() {
       paymentDate: newStatus === 'paid' ? new Date().toISOString().split('T')[0] : invoice.paymentDate,
     };
 
-    // Generate invoice number only when status changes to "paid"
-    if (newStatus === 'paid' && (!invoice.invoiceNumber || invoice.invoiceNumber === 'N/A')) {
-      // Generate invoice number: INV-YYYY-XXXXX format
-      const year = new Date().getFullYear();
-      const invoiceCount = invoices.filter(inv => inv.status === 'paid' || inv.invoiceNumber).length + 1;
-      updatedInvoice.invoiceNumber = `INV-${year}-${String(invoiceCount).padStart(5, '0')}`;
+    // Generate invoice number and reduce stock only when status changes to "paid"
+    if (newStatus === 'paid') {
+      // Generate invoice number if not already generated
+      if (!invoice.invoiceNumber || invoice.invoiceNumber === 'N/A') {
+        const year = new Date().getFullYear();
+        const invoiceCount = invoices.filter(inv => inv.status === 'paid' || (inv.invoiceNumber && inv.invoiceNumber !== 'N/A')).length + 1;
+        updatedInvoice.invoiceNumber = `INV-${year}-${String(invoiceCount).padStart(5, '0')}`;
+      }
+      
+      // Reduce stock only when invoice is marked as paid
+      if (invoice.items && invoice.items.length > 0) {
+        try {
+          for (const item of invoice.items) {
+            await dbService.updateInventoryStock(
+              item.skuId,
+              item.packType,
+              item.quantity,
+              'subtract'
+            );
+          }
+          
+          // Reload inventory to reflect changes
+          const inventoryRes = await dbService.getInventory();
+          if (inventoryRes.data) {
+            dispatch({ type: 'LOAD_INVENTORY', payload: inventoryRes.data });
+          }
+        } catch (error) {
+          console.error('Error reducing stock:', error);
+          showToast('Error reducing stock', 'error');
+        }
+      }
     }
 
     dispatch({ type: 'UPDATE_INVOICE', payload: updatedInvoice });
-    showToast(`Invoice marked as ${newStatus}${newStatus === 'paid' && !invoice.invoiceNumber ? ' - Invoice number generated' : ''}`, 'success');
+    showToast(`Invoice marked as ${newStatus}${newStatus === 'paid' && (!invoice.invoiceNumber || invoice.invoiceNumber === 'N/A') ? ' - Invoice number generated and stock reduced' : ''}`, 'success');
   };
 
   // Generate PDF Invoice - Simple & Clean Layout
@@ -437,8 +449,9 @@ export default function InvoiceManagement() {
       companyY += 5;
       doc.text(`Date: ${dateStr}`, rightX, companyY, { align: 'right' });
       
-      // Bill To Section (Left side) - Aligned with company details
-      const billToStartY = margin;
+      // Bill To Section (Left side) - Moved down to balance layout
+      // Start Bill To section lower to balance with company details on right
+      const billToStartY = companyY + 5; // Start below company details to balance
       yPos = billToStartY;
       let customerData = invoice.customer;
       if (!customerData && invoice.customerId) {
