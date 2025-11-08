@@ -6,16 +6,6 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import logo from '../assets/wkly-nuts-logo.png';
 
-// Extend jsPDF type to include autoTable
-declare module 'jspdf' {
-  interface jsPDF {
-    autoTable: (options: any) => jsPDF;
-    lastAutoTable: {
-      finalY: number;
-    };
-  }
-}
-
 export default function InvoiceManagement() {
   const { state, dispatch, showToast } = useApp();
   const { invoices, customers, skus, pricingStrategies, inventory } = state;
