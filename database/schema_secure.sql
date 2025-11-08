@@ -175,6 +175,9 @@ DROP POLICY IF EXISTS "Allow all operations on vendors" ON vendors;
 DROP POLICY IF EXISTS "Allow all operations on skus" ON skus;
 DROP POLICY IF EXISTS "Allow all operations on pricing_strategies" ON pricing_strategies;
 DROP POLICY IF EXISTS "Allow all operations on sales_targets" ON sales_targets;
+DROP POLICY IF EXISTS "Allow all operations on customers" ON customers;
+DROP POLICY IF EXISTS "Allow all operations on invoices" ON invoices;
+DROP POLICY IF EXISTS "Allow all operations on inventory" ON inventory;
 
 -- Create policies for existing tables
 CREATE POLICY "Allow all operations on vendors" ON vendors
@@ -189,7 +192,7 @@ CREATE POLICY "Allow all operations on pricing_strategies" ON pricing_strategies
 CREATE POLICY "Allow all operations on sales_targets" ON sales_targets
   FOR ALL USING (true) WITH CHECK (true);
 
--- Create policies for new tables (customers and invoices)
+-- Create policies for new tables (customers, invoices, and inventory)
 CREATE POLICY "Allow all operations on customers" ON customers
   FOR ALL USING (true) WITH CHECK (true);
 
