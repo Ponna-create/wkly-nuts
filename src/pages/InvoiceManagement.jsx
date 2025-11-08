@@ -342,6 +342,18 @@ export default function InvoiceManagement() {
   // Generate PDF Invoice
   const generatePDF = async (invoice) => {
     try {
+      // Validate invoice data
+      if (!invoice) {
+        showToast('Invalid invoice data', 'error');
+        return;
+      }
+
+      // Check if invoice has items
+      if (!invoice.items || !Array.isArray(invoice.items) || invoice.items.length === 0) {
+        showToast('Invoice has no items. Cannot generate PDF.', 'error');
+        return;
+      }
+
       const doc = new jsPDF();
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
@@ -406,62 +418,81 @@ export default function InvoiceManagement() {
       
       doc.setFontSize(9);
       doc.setFont(undefined, 'normal');
-      doc.text(`Invoice#: ${invoice.invoiceNumber || 'N/A'}`, invoiceDetailsX, yPos, { align: 'right' });
+      doc.text(`Invoice#: ${invoice.invoiceNumber || invoice.invoice_number || 'N/A'}`, invoiceDetailsX, yPos, { align: 'right' });
       yPos += 5;
-      doc.text(`Invoice Date: ${invoice.invoiceDate ? new Date(invoice.invoiceDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A'}`, invoiceDetailsX, yPos, { align: 'right' });
+      const invoiceDate = invoice.invoiceDate || invoice.invoice_date;
+      doc.text(`Invoice Date: ${invoiceDate ? new Date(invoiceDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A'}`, invoiceDetailsX, yPos, { align: 'right' });
       yPos += 5;
       if (invoice.terms) {
         doc.text(`Terms: ${invoice.terms}`, invoiceDetailsX, yPos, { align: 'right' });
         yPos += 5;
       }
-      if (invoice.dueDate) {
-        doc.text(`Due Date: ${new Date(invoice.dueDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`, invoiceDetailsX, yPos, { align: 'right' });
+      const dueDate = invoice.dueDate || invoice.due_date;
+      if (dueDate) {
+        doc.text(`Due Date: ${new Date(dueDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`, invoiceDetailsX, yPos, { align: 'right' });
         yPos += 5;
       }
       
       yPos += 5;
 
       // Bill To Section (Left side)
-      if (invoice.customer) {
+      // Handle customer - could be object or just ID
+      let customerData = invoice.customer;
+      if (!customerData && invoice.customerId) {
+        // Try to find customer from state
+        customerData = customers.find(c => String(c.id) === String(invoice.customerId));
+      }
+      
+      if (customerData) {
         doc.setFontSize(11);
         doc.setFont(undefined, 'bold');
         doc.text('Bill To', margin, yPos);
         doc.setFont(undefined, 'bold');
         doc.setFontSize(10);
         yPos += 6;
-        doc.text(invoice.customer.name || '', margin, yPos);
+        doc.text(customerData.name || 'No Name', margin, yPos);
         doc.setFont(undefined, 'normal');
         yPos += 5;
-        if (invoice.customer.address) {
-          doc.text(invoice.customer.address, margin, yPos);
+        if (customerData.address) {
+          doc.text(customerData.address, margin, yPos);
           yPos += 4;
         }
-        if (invoice.customer.city || invoice.customer.state) {
-          const addressLine = [invoice.customer.city, invoice.customer.state, invoice.customer.pincode].filter(Boolean).join(', ');
+        if (customerData.city || customerData.state) {
+          const addressLine = [customerData.city, customerData.state, customerData.pincode].filter(Boolean).join(', ');
           if (addressLine) {
             doc.text(addressLine, margin, yPos);
             yPos += 4;
           }
         }
-        if (invoice.customer.phone) {
-          doc.text(invoice.customer.phone, margin, yPos);
+        if (customerData.phone) {
+          doc.text(customerData.phone, margin, yPos);
           yPos += 4;
         }
-        if (invoice.customer.gstin) {
-          doc.text(`GSTIN: ${invoice.customer.gstin}`, margin, yPos);
+        if (customerData.gstin) {
+          doc.text(`GSTIN: ${customerData.gstin}`, margin, yPos);
           yPos += 4;
         }
         yPos += 5;
+      } else {
+        // Show placeholder if no customer
+        doc.setFontSize(11);
+        doc.setFont(undefined, 'bold');
+        doc.text('Bill To', margin, yPos);
+        doc.setFont(undefined, 'normal');
+        doc.setFontSize(10);
+        yPos += 6;
+        doc.text('No Customer Information', margin, yPos);
+        yPos += 10;
       }
 
       // Items Table (matching reference layout)
       const tableData = invoice.items.map((item, index) => [
         index + 1,
-        item.skuName,
-        `${item.packType.charAt(0).toUpperCase() + item.packType.slice(1)} Pack`, // Description
-        item.quantity.toString(),
-        `₹${item.unitPrice.toFixed(2)}`,
-        `₹${item.total.toFixed(2)}`,
+        item.skuName || 'Unknown SKU',
+        item.packType ? `${item.packType.charAt(0).toUpperCase() + item.packType.slice(1)} Pack` : 'N/A', // Description
+        (item.quantity || 0).toString(),
+        `₹${(item.unitPrice || 0).toFixed(2)}`,
+        `₹${(item.total || 0).toFixed(2)}`,
       ]);
 
       doc.autoTable({
@@ -489,38 +520,45 @@ export default function InvoiceManagement() {
       doc.setFont(undefined, 'normal');
       
       // Sub Total
+      const subtotal = parseFloat(invoice.subtotal || 0);
       doc.text('Sub Total:', summaryX, yPos);
-      doc.text(`₹${invoice.subtotal?.toFixed(2) || '0.00'}`, pageWidth - margin, yPos, { align: 'right' });
+      doc.text(`₹${subtotal.toFixed(2)}`, pageWidth - margin, yPos, { align: 'right' });
       yPos += 6;
       
       // Discount
-      if (invoice.discountAmount > 0 || invoice.discountPercent > 0) {
-        const discountLabel = invoice.discountPercent > 0 
-          ? `Discount(${invoice.discountPercent.toFixed(2)}%):`
+      const discountAmount = parseFloat(invoice.discountAmount || invoice.discount_amount || 0);
+      const discountPercent = parseFloat(invoice.discountPercent || invoice.discount_percent || 0);
+      if (discountAmount > 0 || discountPercent > 0) {
+        const discountLabel = discountPercent > 0 
+          ? `Discount(${discountPercent.toFixed(2)}%):`
           : 'Discount:';
         doc.text(discountLabel, summaryX, yPos);
-        doc.text(`(-)₹${(invoice.discountAmount || 0).toFixed(2)}`, pageWidth - margin, yPos, { align: 'right' });
+        doc.text(`(-)₹${discountAmount.toFixed(2)}`, pageWidth - margin, yPos, { align: 'right' });
         yPos += 6;
       }
       
       // Shipping charge
-      if (invoice.shippingCharge > 0) {
+      const shippingCharge = parseFloat(invoice.shippingCharge || invoice.shipping_charge || 0);
+      if (shippingCharge > 0) {
         doc.text('Shipping charge:', summaryX, yPos);
-        doc.text(`₹${invoice.shippingCharge.toFixed(2)}`, pageWidth - margin, yPos, { align: 'right' });
+        doc.text(`₹${shippingCharge.toFixed(2)}`, pageWidth - margin, yPos, { align: 'right' });
         yPos += 6;
       }
       
       // GST
-      if (invoice.gstRate > 0 && invoice.gstAmount > 0) {
-        doc.text(`GST(${invoice.gstRate}%):`, summaryX, yPos);
-        doc.text(`₹${invoice.gstAmount?.toFixed(2) || '0.00'}`, pageWidth - margin, yPos, { align: 'right' });
+      const gstRate = parseFloat(invoice.gstRate || invoice.gst_rate || 0);
+      const gstAmount = parseFloat(invoice.gstAmount || invoice.gst_amount || 0);
+      if (gstRate > 0 && gstAmount > 0) {
+        doc.text(`GST(${gstRate}%):`, summaryX, yPos);
+        doc.text(`₹${gstAmount.toFixed(2)}`, pageWidth - margin, yPos, { align: 'right' });
         yPos += 6;
       }
       
       // Advance paid
-      if (invoice.advancePaid > 0) {
+      const advancePaid = parseFloat(invoice.advancePaid || invoice.advance_paid || 0);
+      if (advancePaid > 0) {
         doc.text('Advance paid:', summaryX, yPos);
-        doc.text(`(-)₹${invoice.advancePaid.toFixed(2)}`, pageWidth - margin, yPos, { align: 'right' });
+        doc.text(`(-)₹${advancePaid.toFixed(2)}`, pageWidth - margin, yPos, { align: 'right' });
         yPos += 6;
       }
       
@@ -530,14 +568,15 @@ export default function InvoiceManagement() {
       yPos += 6;
       
       // Total
+      const totalAmount = parseFloat(invoice.totalAmount || invoice.total_amount || 0);
       doc.setFontSize(11);
       doc.setFont(undefined, 'bold');
       doc.text('Total:', summaryX, yPos);
-      doc.text(`₹${invoice.totalAmount?.toFixed(2) || '0.00'}`, pageWidth - margin, yPos, { align: 'right' });
+      doc.text(`₹${totalAmount.toFixed(2)}`, pageWidth - margin, yPos, { align: 'right' });
       yPos += 8;
       
       // Balance Due (if advance paid)
-      if (invoice.advancePaid > 0) {
+      if (advancePaid > 0) {
         // Thicker line
         doc.setDrawColor(150, 150, 150);
         doc.setLineWidth(0.5);
@@ -545,7 +584,7 @@ export default function InvoiceManagement() {
         yPos += 6;
         doc.setFontSize(11);
         doc.setFont(undefined, 'bold');
-        const balanceDue = (invoice.totalAmount || 0) - (invoice.advancePaid || 0);
+        const balanceDue = totalAmount - advancePaid;
         doc.text('Balance Due:', summaryX, yPos);
         doc.text(`₹${balanceDue.toFixed(2)}`, pageWidth - margin, yPos, { align: 'right' });
         yPos += 10;
@@ -589,7 +628,8 @@ export default function InvoiceManagement() {
       showToast('PDF generated successfully', 'success');
     } catch (error) {
       console.error('Error generating PDF:', error);
-      showToast('Error generating PDF', 'error');
+      console.error('Invoice data:', invoice);
+      showToast(`Error generating PDF: ${error.message || 'Unknown error'}`, 'error');
     }
   };
 
