@@ -1236,25 +1236,56 @@ export default function SKUManagement() {
                       </button>
                       <button
                         onClick={() => {
-                          // Find and open the details element containing the order list
+                          // Find the order list element
                           const orderListElement = document.querySelector('.order-list-print');
-                          const detailsElement = orderListElement?.closest('details');
+                          if (!orderListElement) {
+                            showToast('Order list not found', 'error');
+                            return;
+                          }
+
+                          // Remove any existing print container
+                          const existingPrintContainer = document.getElementById('print-only-container');
+                          if (existingPrintContainer) {
+                            existingPrintContainer.remove();
+                          }
+
+                          // Clone the order list content
+                          const clonedContent = orderListElement.cloneNode(true);
                           
-                          // Open the details element if it's closed
+                          // Remove no-print elements from clone
+                          const noPrintElements = clonedContent.querySelectorAll('.no-print');
+                          noPrintElements.forEach(el => el.remove());
+
+                          // Create print-only container
+                          const printContainer = document.createElement('div');
+                          printContainer.id = 'print-only-container';
+                          printContainer.style.cssText = `
+                            position: absolute;
+                            left: -9999px;
+                            top: 0;
+                            width: 210mm;
+                            padding: 20px;
+                            background: white;
+                          `;
+                          printContainer.appendChild(clonedContent);
+                          document.body.appendChild(printContainer);
+
+                          // Open details if closed
+                          const detailsElement = orderListElement.closest('details');
                           if (detailsElement && !detailsElement.open) {
                             detailsElement.open = true;
                           }
-                          
-                          // Scroll to order list
-                          if (orderListElement) {
-                            orderListElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                            // Small delay to ensure scroll completes and details opens
-                            setTimeout(() => {
-                              window.print();
-                            }, 200);
-                          } else {
+
+                          // Small delay then print
+                          setTimeout(() => {
                             window.print();
-                          }
+                            // Clean up after print
+                            setTimeout(() => {
+                              if (printContainer) {
+                                printContainer.remove();
+                              }
+                            }, 100);
+                          }, 100);
                         }}
                         className="btn-primary flex items-center gap-2"
                       >

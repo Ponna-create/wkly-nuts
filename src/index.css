@@ -182,8 +182,9 @@
 
 /* Print styles for Ingredients Order List */
 @media print {
-  /* Hide everything by default */
-  * {
+  /* Hide everything except print container */
+  body > *:not(#print-only-container) {
+    display: none !important;
     visibility: hidden !important;
   }
 
@@ -197,52 +198,24 @@
     visibility: hidden !important;
   }
 
-  /* Show body and main container */
-  body,
-  main {
-    visibility: visible !important;
-    display: block !important;
-  }
-
-  /* Hide all main children except production requirements container */
-  main > *:not(.production-requirements-container) {
-    display: none !important;
-    visibility: hidden !important;
-  }
-
-  /* Hide production requirements content except order list */
-  .production-requirements-container > *:not(details) {
-    display: none !important;
-    visibility: hidden !important;
-  }
-
-  /* Show the details element */
-  .production-requirements-container details {
-    display: block !important;
-    visibility: visible !important;
-  }
-
-  /* Force details to be open and visible */
-  details {
-    display: block !important;
-    visibility: visible !important;
+  /* Show print container */
+  #print-only-container {
     position: relative !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
     margin: 0 !important;
-    padding: 0 !important;
-    border: none !important;
+    padding: 20px !important;
     background: white !important;
-  }
-
-  /* Hide details summary */
-  details summary {
-    display: none !important;
-    visibility: hidden !important;
-  }
-
-  /* Show details content */
-  details > * {
     display: block !important;
     visibility: visible !important;
+  }
+
+  /* Show all content inside print container */
+  #print-only-container,
+  #print-only-container * {
+    visibility: visible !important;
+    display: revert !important;
   }
 
   /* Show order list container */
@@ -252,16 +225,14 @@
     position: relative !important;
     width: 100% !important;
     margin: 0 !important;
-    padding: 20px !important;
-    border: 1px solid #ccc !important;
+    padding: 0 !important;
+    border: none !important;
     background: white !important;
-    page-break-inside: avoid !important;
   }
 
   /* Show all order list children */
   .order-list-print * {
     visibility: visible !important;
-    display: revert !important;
   }
 
   /* Table display */
