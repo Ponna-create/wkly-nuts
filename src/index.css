@@ -202,11 +202,6 @@
     visibility: hidden !important;
   }
 
-  /* Hide everything by default */
-  body > * {
-    visibility: hidden !important;
-  }
-  
   /* Hide layout elements */
   aside,
   header,
@@ -214,8 +209,8 @@
     display: none !important;
   }
   
-  /* Hide main content that doesn't contain order list */
-  main > * {
+  /* Hide main content except details */
+  main > div > *:not(details) {
     display: none !important;
     visibility: hidden !important;
   }
@@ -224,11 +219,18 @@
   details {
     display: block !important;
     visibility: visible !important;
+    position: relative !important;
   }
   
   /* Hide details summary in print */
   details summary {
     display: none !important;
+  }
+  
+  /* Show details content */
+  details > *:not(summary) {
+    display: block !important;
+    visibility: visible !important;
   }
 
   /* Show order list container and ensure it's visible */
