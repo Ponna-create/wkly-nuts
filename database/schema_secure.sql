@@ -1,6 +1,9 @@
 -- WKLY Nuts Database Schema - SECURE VERSION
 -- Run this SQL in your Supabase SQL Editor to create the tables
 -- This version includes proper security and customer/invoice tables
+-- 
+-- IMPORTANT: This script is safe to run multiple times (idempotent)
+-- It will drop and recreate policies if they exist
 
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -148,6 +151,14 @@ CREATE POLICY "Authenticated users can manage invoices" ON invoices
 -- Option 2: For now, keep allow all BUT add app-level password protection
 -- This is for internal use only - the app will handle authentication
 -- TODO: Replace with proper Supabase Auth later
+
+-- Drop existing policies if they exist (to avoid errors on re-run)
+DROP POLICY IF EXISTS "Allow all operations on vendors" ON vendors;
+DROP POLICY IF EXISTS "Allow all operations on skus" ON skus;
+DROP POLICY IF EXISTS "Allow all operations on pricing_strategies" ON pricing_strategies;
+DROP POLICY IF EXISTS "Allow all operations on sales_targets" ON sales_targets;
+
+-- Create policies for existing tables
 CREATE POLICY "Allow all operations on vendors" ON vendors
   FOR ALL USING (true) WITH CHECK (true);
 
@@ -160,6 +171,7 @@ CREATE POLICY "Allow all operations on pricing_strategies" ON pricing_strategies
 CREATE POLICY "Allow all operations on sales_targets" ON sales_targets
   FOR ALL USING (true) WITH CHECK (true);
 
+-- Create policies for new tables (customers and invoices)
 CREATE POLICY "Allow all operations on customers" ON customers
   FOR ALL USING (true) WITH CHECK (true);
 
@@ -205,6 +217,9 @@ BEGIN
   RETURN NEW;
 END;
 $$ language 'plpgsql';
+
+-- Drop existing triggers if they exist
+DROP TRIGGER IF EXISTS generate_invoice_number_trigger ON invoices;
 
 -- Triggers for updated_at
 CREATE TRIGGER update_vendors_updated_at BEFORE UPDATE ON vendors
