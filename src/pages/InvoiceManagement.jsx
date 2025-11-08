@@ -426,24 +426,49 @@ export default function InvoiceManagement() {
           status: updatedInvoice.status
         });
         
-        const updateResult = await dbService.updateInvoice(updatedInvoice);
-        if (updateResult.error) {
-          console.error('Error updating invoice in database:', updateResult.error);
-          showToast('Error saving invoice to database', 'error');
-          return;
+        // First, check if invoice exists in database by trying to fetch it
+        const allInvoicesRes = await dbService.getInvoices();
+        const invoiceExists = allInvoicesRes.data?.some(inv => inv.id === invoiceId);
+        
+        if (!invoiceExists) {
+          console.log('Invoice not found in database, creating it first...');
+          // Invoice doesn't exist in database, create it first
+          // Remove the local ID so database can generate a new UUID
+          const invoiceToCreate = { ...updatedInvoice };
+          // Only keep the ID if it's a valid UUID format, otherwise let DB generate it
+          if (!invoiceToCreate.id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(invoiceToCreate.id)) {
+            delete invoiceToCreate.id; // Let database generate UUID
+          }
+          const createResult = await dbService.createInvoice(invoiceToCreate);
+          if (createResult.error) {
+            console.error('Error creating invoice in database:', createResult.error);
+            showToast('Error saving invoice to database', 'error');
+            return;
+          }
+          console.log('Invoice created in database:', createResult.data.id);
+          // Update the invoice ID in local state to match database
+          updatedInvoice = { ...createResult.data, id: createResult.data.id };
+        } else {
+          // Invoice exists, update it
+          const updateResult = await dbService.updateInvoice(updatedInvoice);
+          if (updateResult.error) {
+            console.error('Error updating invoice in database:', updateResult.error);
+            showToast('Error saving invoice to database', 'error');
+            return;
+          }
+          
+          console.log('Invoice updated in database successfully:', {
+            id: updateResult.data.id,
+            invoiceNumber: updateResult.data.invoiceNumber,
+            status: updateResult.data.status
+          });
+          
+          // Use the data returned from database (which has the correct invoice number)
+          updatedInvoice = updateResult.data;
         }
-        
-        console.log('Invoice updated in database successfully:', {
-          id: updateResult.data.id,
-          invoiceNumber: updateResult.data.invoiceNumber,
-          status: updateResult.data.status
-        });
-        
-        // Use the data returned from database (which has the correct invoice number)
-        updatedInvoice = updateResult.data;
       }
     } catch (error) {
-      console.error('Error updating invoice in database:', error);
+      console.error('Error saving invoice to database:', error);
       showToast('Error saving invoice to database', 'error');
       return;
     }
