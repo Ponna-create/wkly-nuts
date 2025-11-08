@@ -628,7 +628,15 @@ export default function InvoiceManagement() {
       doc.setFontSize(11);
       doc.setFont(undefined, 'bold');
       doc.text('Balance Due:', summaryX, yPos);
-      doc.text(`Rs. ${balanceDue.toFixed(2)}`, summaryRightX, yPos, { align: 'right' });
+      // Show "Paid" if invoice status is paid, otherwise show balance amount
+      const invoiceStatus = invoice.status || 'draft';
+      if (invoiceStatus === 'paid') {
+        doc.setTextColor(34, 197, 94); // Green color for "Paid"
+        doc.text('Paid', summaryRightX, yPos, { align: 'right' });
+      } else {
+        doc.setTextColor(0, 0, 0); // Black for balance amount
+        doc.text(`Rs. ${balanceDue.toFixed(2)}`, summaryRightX, yPos, { align: 'right' });
+      }
       yPos += 10;
 
       // Simple Footer
@@ -1034,17 +1042,19 @@ export default function InvoiceManagement() {
                     <span className="text-lg font-bold text-primary-600">₹{total.toFixed(2)}</span>
                   </div>
                   {advance > 0 && (
-                    <>
-                      <div className="flex justify-between pt-2">
-                        <span className="text-gray-600">Advance Paid:</span>
-                        <span className="font-medium text-green-600">-₹{advance.toFixed(2)}</span>
-                      </div>
-                      <div className="flex justify-between pt-2 border-t border-gray-300">
-                        <span className="text-lg font-bold text-gray-900">Balance Due:</span>
-                        <span className="text-lg font-bold text-orange-600">₹{balanceDue.toFixed(2)}</span>
-                      </div>
-                    </>
+                    <div className="flex justify-between pt-2">
+                      <span className="text-gray-600">Advance Paid:</span>
+                      <span className="font-medium text-green-600">-₹{advance.toFixed(2)}</span>
+                    </div>
                   )}
+                  <div className="flex justify-between pt-2 border-t border-gray-300">
+                    <span className="text-lg font-bold text-gray-900">Balance Due:</span>
+                    {formData.status === 'paid' ? (
+                      <span className="text-lg font-bold text-green-600">Paid</span>
+                    ) : (
+                      <span className="text-lg font-bold text-orange-600">₹{balanceDue.toFixed(2)}</span>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
