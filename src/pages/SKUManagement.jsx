@@ -1236,15 +1236,22 @@ export default function SKUManagement() {
                       </button>
                       <button
                         onClick={() => {
-                          // Focus on order list before printing
+                          // Find and open the details element containing the order list
                           const orderListElement = document.querySelector('.order-list-print');
+                          const detailsElement = orderListElement?.closest('details');
+                          
+                          // Open the details element if it's closed
+                          if (detailsElement && !detailsElement.open) {
+                            detailsElement.open = true;
+                          }
+                          
+                          // Scroll to order list
                           if (orderListElement) {
-                            // Scroll to order list
                             orderListElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                            // Small delay to ensure scroll completes
+                            // Small delay to ensure scroll completes and details opens
                             setTimeout(() => {
                               window.print();
-                            }, 100);
+                            }, 200);
                           } else {
                             window.print();
                           }
