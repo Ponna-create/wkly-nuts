@@ -81,7 +81,7 @@ export default function SKUManagement() {
   const [showCalculator, setShowCalculator] = useState(false);
   const [selectedSKU, setSelectedSKU] = useState(null);
   const [orderListMode, setOrderListMode] = useState('full'); // 'full' or 'shortage'
-  const [showPurchaseView, setShowPurchaseView] = useState(false); // Toggle between Production Requirements and Purchase view
+  const [showPurchaseList, setShowPurchaseList] = useState(false); // Toggle simplified Purchase List view (only Ingredient + Purchase Kg)
   
   const [currentStep, setCurrentStep] = useState(1); // 1 = Basic Info, 2 = Day Recipes
   const [currentDay, setCurrentDay] = useState('MON');
@@ -506,8 +506,8 @@ export default function SKUManagement() {
       selectedVendorName: selectedVendor?.name || null,
     });
 
-    // Reset purchase view when new calculation is made
-    setShowPurchaseView(false);
+    // Reset purchase list view when new calculation is made
+    setShowPurchaseList(false);
 
     showToast('Production requirements calculated', 'success');
   };
@@ -1006,50 +1006,22 @@ export default function SKUManagement() {
           {/* Production Requirements Display */}
           {productionRequirements && (
             <div>
-              {/* Header with CSV Export and Purchase button - Always visible */}
+              {/* Header with CSV Export - Always visible */}
               <div className="flex justify-between items-center mb-4">
                 <div>
-                  <h3 className="text-lg font-bold text-gray-900">
-                    {showPurchaseView ? 'Purchase List' : 'Production Requirements'}
-                  </h3>
-                  {!showPurchaseView && (
-                    <p className="text-xs text-gray-600 mt-1">
-                      Total quantities consolidated across all {DAYS.length} days ({productionRequirements.numberOfPacks} {productionRequirements.packType === 'weekly' ? 'weekly' : 'monthly'} packs = {productionRequirements.totalSachets} total sachets)
-                    </p>
-                  )}
+                  <h3 className="text-lg font-bold text-gray-900">Production Requirements</h3>
+                  <p className="text-xs text-gray-600 mt-1">
+                    Total quantities consolidated across all {DAYS.length} days ({productionRequirements.numberOfPacks} {productionRequirements.packType === 'weekly' ? 'weekly' : 'monthly'} packs = {productionRequirements.totalSachets} total sachets)
+                  </p>
                 </div>
                 <div className="flex gap-2">
                   <button onClick={exportToCSV} className="btn-secondary text-sm">
                     Export CSV
                   </button>
-                  {/* View Toggle Buttons - Always visible */}
-                  <div className="flex gap-2 bg-gray-100 p-1 rounded-lg">
-                    <button 
-                      onClick={() => setShowPurchaseView(false)} 
-                      className={`px-4 py-1 rounded text-sm font-medium transition-colors ${
-                        !showPurchaseView
-                          ? 'bg-primary-600 text-white'
-                          : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200'
-                      }`}
-                    >
-                      Requirements
-                    </button>
-                    <button 
-                      onClick={() => setShowPurchaseView(true)} 
-                      className={`px-4 py-1 rounded text-sm font-medium transition-colors ${
-                        showPurchaseView
-                          ? 'bg-primary-600 text-white'
-                          : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200'
-                      }`}
-                    >
-                      Purchase
-                    </button>
-                  </div>
                 </div>
               </div>
 
-              {/* Consolidated Ingredients Table - Hide when in Purchase view */}
-              {!showPurchaseView && (
+              {/* Consolidated Ingredients Table - Always visible */}
               <div className="overflow-x-auto mb-6">
                 <table className="w-full text-sm">
                   <thead>
@@ -1116,10 +1088,8 @@ export default function SKUManagement() {
                   </tbody>
                 </table>
               </div>
-              )}
 
-              {/* Summary - Hide when in Purchase view */}
-              {!showPurchaseView && (
+              {/* Summary - Always visible */}
               <div className="bg-primary-50 p-6 rounded-lg border border-primary-200">
                 <div className="flex justify-between items-center mb-4">
                   <h4 className="font-bold text-primary-900">Production Summary</h4>
@@ -1157,10 +1127,8 @@ export default function SKUManagement() {
                   </div>
                 </div>
               </div>
-              )}
 
-              {/* Day-by-Day Breakdown (Expandable) - Hide when in Purchase view */}
-              {!showPurchaseView && (
+              {/* Day-by-Day Breakdown (Expandable) - Always visible */}
               <details className="mt-6 bg-gray-50 p-4 rounded-lg">
                 <summary className="font-bold text-gray-900 cursor-pointer">
                   📅 Day-by-Day Breakdown (Click to expand)
@@ -1214,67 +1182,80 @@ export default function SKUManagement() {
                   ))}
                 </div>
               </details>
-              )}
 
-              {/* Purchase View - Show only when Purchase button is clicked */}
-              {showPurchaseView && (
-              <div className="bg-white p-6 rounded-lg border-2 border-gray-200 order-list-print">
-                <div className="flex justify-between items-center mb-4 no-print">
-                  <div>
-                    <h3 className="text-lg font-bold text-gray-900">Ingredients Order List</h3>
-                    <p className="text-xs text-gray-600 mt-1">
-                      Purchase list grouped by vendor - ready to send to suppliers
-                    </p>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Mode: {orderListMode === 'full' ? 'Full Order (All Ingredients)' : 'Shortage Only (Missing Items)'}
-                    </p>
-                  </div>
-                  <div className="flex gap-3 items-center">
-                    {/* Mode Toggle */}
-                    <div className="flex gap-2 bg-gray-100 p-1 rounded-lg">
+              {/* Ingredients Order List (Expandable) - Always visible */}
+              <details className="mt-6 bg-gray-50 p-4 rounded-lg">
+                <summary className="font-bold text-gray-900 cursor-pointer">
+                  📋 Ingredients Order List (Click to expand)
+                </summary>
+                <div className="mt-4 bg-white p-6 rounded-lg border-2 border-gray-200 order-list-print">
+                  <div className="flex justify-between items-center mb-4 no-print">
+                    <div>
+                      <h3 className="text-lg font-bold text-gray-900">Ingredients Order List</h3>
+                      <p className="text-xs text-gray-600 mt-1">
+                        Purchase list grouped by vendor - ready to send to suppliers
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Mode: {orderListMode === 'full' ? 'Full Order (All Ingredients)' : 'Shortage Only (Missing Items)'}
+                      </p>
+                    </div>
+                    <div className="flex gap-3 items-center">
+                      {/* Mode Toggle */}
+                      <div className="flex gap-2 bg-gray-100 p-1 rounded-lg">
+                        <button
+                          onClick={() => setOrderListMode('full')}
+                          className={`px-4 py-1 rounded text-sm font-medium transition-colors ${
+                            orderListMode === 'full'
+                              ? 'bg-primary-600 text-white'
+                              : 'text-gray-600 hover:text-gray-900'
+                          }`}
+                        >
+                          Full Order
+                        </button>
+                        <button
+                          onClick={() => setOrderListMode('shortage')}
+                          className={`px-4 py-1 rounded text-sm font-medium transition-colors ${
+                            orderListMode === 'shortage'
+                              ? 'bg-primary-600 text-white'
+                              : 'text-gray-600 hover:text-gray-900'
+                          }`}
+                        >
+                          Shortage Only
+                        </button>
+                      </div>
+                      {/* Purchase List Button */}
                       <button
-                        onClick={() => setOrderListMode('full')}
+                        onClick={() => setShowPurchaseList(!showPurchaseList)}
                         className={`px-4 py-1 rounded text-sm font-medium transition-colors ${
-                          orderListMode === 'full'
-                            ? 'bg-primary-600 text-white'
-                            : 'text-gray-600 hover:text-gray-900'
+                          showPurchaseList
+                            ? 'bg-green-600 text-white'
+                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                         }`}
                       >
-                        Full Order
+                        Purchase List
                       </button>
                       <button
-                        onClick={() => setOrderListMode('shortage')}
-                        className={`px-4 py-1 rounded text-sm font-medium transition-colors ${
-                          orderListMode === 'shortage'
-                            ? 'bg-primary-600 text-white'
-                            : 'text-gray-600 hover:text-gray-900'
-                        }`}
+                        onClick={() => {
+                          // Focus on order list before printing
+                          const orderListElement = document.querySelector('.order-list-print');
+                          if (orderListElement) {
+                            // Scroll to order list
+                            orderListElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            // Small delay to ensure scroll completes
+                            setTimeout(() => {
+                              window.print();
+                            }, 100);
+                          } else {
+                            window.print();
+                          }
+                        }}
+                        className="btn-primary flex items-center gap-2"
                       >
-                        Shortage Only
+                        <Printer size={18} />
+                        Print / Save PDF
                       </button>
                     </div>
-                    <button
-                      onClick={() => {
-                        // Focus on order list before printing
-                        const orderListElement = document.querySelector('.order-list-print');
-                        if (orderListElement) {
-                          // Scroll to order list
-                          orderListElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                          // Small delay to ensure scroll completes
-                          setTimeout(() => {
-                            window.print();
-                          }, 100);
-                        } else {
-                          window.print();
-                        }
-                      }}
-                      className="btn-primary flex items-center gap-2"
-                    >
-                      <Printer size={18} />
-                      Print / Save PDF
-                    </button>
                   </div>
-                </div>
 
                 {/* Professional Header for Print */}
                 <div className="hidden print:block print:mb-2 print:pb-2 print:border-b print:border-gray-400">
@@ -1355,10 +1336,12 @@ export default function SKUManagement() {
                             <table className="w-full text-xs print:text-xs mb-2 print:mb-2">
                               <thead>
                                 <tr className="bg-gray-100 border-b">
-                                  <th className="text-left p-1 print:p-1">#</th>
+                                  {!showPurchaseList && <th className="text-left p-1 print:p-1">#</th>}
                                   <th className="text-left p-1 print:p-1">Ingredient</th>
-                                  <th className="text-right p-1 print:p-1">Required (Kg)</th>
-                                  <th className="text-right p-1 print:p-1">Purchase (1kg packs)</th>
+                                  {!showPurchaseList && <th className="text-right p-1 print:p-1">Required (Kg)</th>}
+                                  <th className="text-right p-1 print:p-1">
+                                    {showPurchaseList ? 'Purchase (Kg)' : 'Purchase (1kg packs)'}
+                                  </th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -1371,11 +1354,14 @@ export default function SKUManagement() {
 
                                   return (
                                     <tr key={idx} className="border-b hover:bg-gray-50">
-                                      <td className="p-1 print:p-1 text-gray-600">{idx + 1}</td>
+                                      {!showPurchaseList && <td className="p-1 print:p-1 text-gray-600">{idx + 1}</td>}
                                       <td className="p-1 print:p-1 font-medium">{item.ingredientName}</td>
-                                      <td className="p-1 print:p-1 text-right">{quantityKg.toFixed(2)}</td>
+                                      {!showPurchaseList && <td className="p-1 print:p-1 text-right">{quantityKg.toFixed(2)}</td>}
                                       <td className="p-1 print:p-1 text-right font-semibold text-blue-700">
-                                        {purchasePacks} pack{purchasePacks !== 1 ? 's' : ''} ({purchaseKg} kg)
+                                        {showPurchaseList 
+                                          ? `${purchaseKg} kg`
+                                          : `${purchasePacks} pack${purchasePacks !== 1 ? 's' : ''} (${purchaseKg} kg)`
+                                        }
                                       </td>
                                     </tr>
                                   );
@@ -1383,17 +1369,20 @@ export default function SKUManagement() {
                               </tbody>
                               <tfoot>
                                 <tr className="bg-gray-100 font-bold border-t-2 border-gray-400">
-                                  <td colSpan="2" className="p-1 print:p-1">Total</td>
-                                  <td className="p-1 print:p-1 text-right">{totalQuantity.toFixed(2)} kg</td>
+                                  <td colSpan={showPurchaseList ? 1 : 2} className="p-1 print:p-1">Total</td>
+                                  {!showPurchaseList && <td className="p-1 print:p-1 text-right">{totalQuantity.toFixed(2)} kg</td>}
                                   <td className="p-1 print:p-1 text-right text-blue-700">
-                                    {Math.ceil(totalQuantity)} pack{Math.ceil(totalQuantity) !== 1 ? 's' : ''} ({Math.ceil(totalQuantity)} kg)
+                                    {showPurchaseList 
+                                      ? `${Math.ceil(totalQuantity)} kg`
+                                      : `${Math.ceil(totalQuantity)} pack${Math.ceil(totalQuantity) !== 1 ? 's' : ''} (${Math.ceil(totalQuantity)} kg)`
+                                    }
                                   </td>
                                 </tr>
                               </tfoot>
                             </table>
 
-                            {/* Purchase Suggestion & Pack Calculation */}
-                            {(() => {
+                            {/* Purchase Suggestion & Pack Calculation - Hide when Purchase List is active */}
+                            {!showPurchaseList && (() => {
                               if (!productionRequirements || !selectedSKU) return null;
 
                               // Calculate how many times we can make the current production from purchased quantities
@@ -1483,7 +1472,7 @@ export default function SKUManagement() {
                   );
                 })()}
               </div>
-              )}
+              </details>
             </div>
           )}
         </div>
