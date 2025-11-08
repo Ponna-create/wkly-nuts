@@ -371,7 +371,7 @@ export default function InvoiceManagement() {
 
     // Generate invoice number and reduce stock only when status changes to "paid"
     if (newStatus === 'paid') {
-      console.log('✅ Status is "paid", checking if invoice number needs to be generated...');
+      console.log('✅✅✅ Status is "paid" - INVOICE NUMBER GENERATION REQUIRED');
       console.log('Current invoice number value:', currentInvoiceNumber);
       console.log('Invoice number check:', {
         isFalsy: !currentInvoiceNumber,
@@ -381,7 +381,7 @@ export default function InvoiceManagement() {
         isEmpty: currentInvoiceNumber === ''
       });
       
-      // Generate invoice number if not already generated
+      // CRITICAL: ALWAYS generate invoice number when status is 'paid' if it's missing or 'N/A'
       // Check both formats and also check for empty string
       const needsGeneration = !currentInvoiceNumber || 
                               currentInvoiceNumber === 'N/A' || 
@@ -390,8 +390,7 @@ export default function InvoiceManagement() {
                               currentInvoiceNumber === '';
       
       if (needsGeneration) {
-        console.log('🔢 Invoice number needs to be generated!');
-        console.log('Invoice number needs to be generated');
+        console.log('🔢🔢🔢 Invoice number MUST be generated - starting generation process...');
         const year = new Date().getFullYear();
         
         // Get accurate count from database if available
@@ -454,13 +453,23 @@ export default function InvoiceManagement() {
         updatedInvoice.invoiceNumber = generatedNumber;
         // Also set invoice_number for consistency
         updatedInvoice.invoice_number = generatedNumber;
-        console.log('✅✅✅ Generated invoice number:', updatedInvoice.invoiceNumber, 'for invoice:', invoice.id, 'count:', invoiceCount);
-        console.log('Updated invoice object BEFORE stock reduction:', {
+        console.log('✅✅✅✅✅ SUCCESS: Generated invoice number:', updatedInvoice.invoiceNumber, 'for invoice:', invoice.id);
+        console.log('✅ Invoice count used:', invoiceCount);
+        console.log('✅ Updated invoice object BEFORE stock reduction:', {
           id: updatedInvoice.id,
           invoiceNumber: updatedInvoice.invoiceNumber,
           invoice_number: updatedInvoice.invoice_number,
           status: updatedInvoice.status
         });
+        
+        // CRITICAL VERIFICATION: Double-check the invoice number is set
+        if (!updatedInvoice.invoiceNumber || updatedInvoice.invoiceNumber === 'N/A') {
+          console.error('❌❌❌ CRITICAL ERROR: Invoice number was NOT set correctly!');
+          console.error('Expected:', generatedNumber);
+          console.error('Actual:', updatedInvoice.invoiceNumber);
+          showToast('Error: Failed to generate invoice number', 'error');
+          return;
+        }
       } else {
         console.log('⚠️ Invoice already has number:', currentInvoiceNumber);
         console.log('Skipping invoice number generation');
@@ -517,15 +526,29 @@ export default function InvoiceManagement() {
           console.log('✅ Invoice number locked in:', updatedInvoice.invoiceNumber);
         }
         
+        // CRITICAL: Verify invoice number is still set before database operations
+        console.log('🔍 VERIFICATION: Invoice number before DB check:', updatedInvoice.invoiceNumber);
+        if (!updatedInvoice.invoiceNumber || updatedInvoice.invoiceNumber === 'N/A') {
+          console.error('❌❌❌ CRITICAL: Invoice number is missing before database operations!');
+          console.error('This should NEVER happen if invoice number generation ran correctly.');
+          showToast('Error: Invoice number not generated. Please try again.', 'error');
+          return;
+        }
+        
         // CRITICAL: If invoice has an ID (UUID format), it MUST exist in database - always UPDATE, never CREATE
         const hasValidUUID = updatedInvoice.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(updatedInvoice.id);
-        console.log('Invoice has valid UUID?', hasValidUUID, 'ID:', updatedInvoice.id);
+        console.log('🔍 Invoice has valid UUID?', hasValidUUID, 'ID:', updatedInvoice.id);
         
         let invoiceExists = false;
         
         if (hasValidUUID) {
-          // If we have a valid UUID, check if it exists in database
-          console.log('Checking if invoice exists in database by ID...');
+          // If we have a valid UUID, ALWAYS try to UPDATE first - don't check existence
+          // The invoice MUST exist if it has a UUID from the database
+          console.log('✅ Valid UUID detected - will UPDATE invoice (not CREATE)');
+          invoiceExists = true; // Assume it exists if we have a valid UUID
+          
+          // But also verify it exists in database
+          console.log('Verifying invoice exists in database by ID...');
           const allInvoicesRes = await dbService.getInvoices();
           console.log('Fetched invoices from database:', allInvoicesRes.data?.length || 0, 'invoices');
           
@@ -534,29 +557,38 @@ export default function InvoiceManagement() {
           }
           
           // Check if invoice exists by ID
-          invoiceExists = allInvoicesRes.data?.some(inv => inv.id === invoiceId);
-          console.log('Invoice exists in database by ID?', invoiceExists);
+          const foundById = allInvoicesRes.data?.some(inv => inv.id === invoiceId);
+          console.log('Invoice found in database by ID?', foundById);
           
-          // If not found by ID, try to find by customer and date
-          if (!invoiceExists && updatedInvoice.customerId && updatedInvoice.invoiceDate) {
-            const existingInvoice = allInvoicesRes.data?.find(inv => 
-              inv.customerId === updatedInvoice.customerId && 
-              inv.invoiceDate === updatedInvoice.invoiceDate
-            );
-            if (existingInvoice) {
-              console.log('Found existing invoice by customer and date, using its ID');
-              updatedInvoice.id = existingInvoice.id;
-              invoiceId = existingInvoice.id;
-              invoiceExists = true;
+          if (!foundById) {
+            // Not found by ID, try to find by customer and date
+            console.log('Not found by ID, searching by customer and date...');
+            if (updatedInvoice.customerId && updatedInvoice.invoiceDate) {
+              const existingInvoice = allInvoicesRes.data?.find(inv => 
+                inv.customerId === updatedInvoice.customerId && 
+                inv.invoiceDate === updatedInvoice.invoiceDate
+              );
+              if (existingInvoice) {
+                console.log('✅ Found existing invoice by customer and date, using its ID');
+                updatedInvoice.id = existingInvoice.id;
+                invoiceId = existingInvoice.id;
+                invoiceExists = true;
+              } else {
+                console.log('⚠️ Invoice not found in database, but has UUID - will still try UPDATE');
+                // Keep invoiceExists = true to force UPDATE attempt
+              }
             }
+          } else {
+            invoiceExists = true;
           }
         } else {
           // No valid UUID - invoice doesn't exist in database, will need to create
-          console.log('No valid UUID - invoice will be created in database');
+          console.log('⚠️ No valid UUID - invoice will be created in database');
           invoiceExists = false;
         }
         
-        console.log('Final decision - Invoice exists in database?', invoiceExists);
+        console.log('🎯 Final decision - Invoice exists in database?', invoiceExists);
+        console.log('🎯 Will perform:', invoiceExists ? 'UPDATE' : 'CREATE');
         
         if (!invoiceExists) {
           console.log('📝 Invoice not found in database, creating it first...');
