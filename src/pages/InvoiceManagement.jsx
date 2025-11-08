@@ -366,28 +366,78 @@ export default function InvoiceManagement() {
       const margin = 15;
       let yPos = margin;
 
-      // Simple Header - Company Name Only (No logo to reduce file size)
-      doc.setFontSize(18);
-      doc.setTextColor(34, 197, 94);
-      doc.setFont(undefined, 'bold');
-      doc.text('WKLY Nuts', margin, yPos);
+      // Company Logo (Top Left)
+      const loadLogo = () => {
+        return new Promise((resolve) => {
+          try {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => {
+              try {
+                // Compress logo size to reduce PDF file size
+                doc.addImage(img, 'PNG', margin, yPos, 30, 30, undefined, 'FAST');
+                resolve(true);
+              } catch (e) {
+                resolve(false);
+              }
+            };
+            img.onerror = () => resolve(false);
+            img.src = logo;
+            setTimeout(() => resolve(false), 1000);
+          } catch (error) {
+            resolve(false);
+          }
+        });
+      };
       
-      // Invoice Title
-      doc.setFontSize(24);
+      const logoLoaded = await loadLogo();
+      if (!logoLoaded) {
+        // Fallback to text if logo fails
+        doc.setFontSize(16);
+        doc.setTextColor(34, 197, 94);
+        doc.setFont(undefined, 'bold');
+        doc.text('WKLY Nuts', margin, yPos + 8);
+      }
+
+      // Company Name and Address (Center) - Dhanish Enterprises
+      const centerX = pageWidth / 2;
+      doc.setFontSize(16);
       doc.setTextColor(0, 0, 0);
-      doc.text('INVOICE', pageWidth / 2, yPos, { align: 'center' });
-      
-      // Invoice Number and Date (Right side, simple)
+      doc.setFont(undefined, 'bold');
+      doc.text('Dhanish Enterprises', centerX, yPos, { align: 'center' });
+      yPos += 6;
       doc.setFontSize(10);
       doc.setFont(undefined, 'normal');
+      doc.setTextColor(60, 60, 60);
+      doc.text('No.1, Chelliamman koil,', centerX, yPos, { align: 'center' });
+      yPos += 5;
+      doc.text('Ambattur, Chennai,', centerX, yPos, { align: 'center' });
+      yPos += 5;
+      doc.text('TamilNadu - 600058', centerX, yPos, { align: 'center' });
+      
+      // Invoice Title (Below company address)
+      yPos += 8;
+      doc.setFontSize(20);
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(0, 0, 0);
+      doc.text('INVOICE', centerX, yPos, { align: 'center' });
+      
+      // Invoice Number and Date (Right side)
       const invoiceDate = invoice.invoiceDate || invoice.invoice_date;
       const invoiceNum = invoice.invoiceNumber || invoice.invoice_number || 'N/A';
       const dateStr = invoiceDate ? new Date(invoiceDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A';
+      
+      // Reset yPos to align with top
+      yPos = margin + 5;
+      doc.setFontSize(10);
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(0, 0, 0);
       doc.text(`Invoice#: ${invoiceNum}`, pageWidth - margin, yPos, { align: 'right' });
       yPos += 5;
       doc.text(`Date: ${dateStr}`, pageWidth - margin, yPos, { align: 'right' });
       
-      yPos += 15;
+      // Move yPos to after company address and invoice title
+      yPos = margin + 50;
 
       // Bill To Section (Left side) - Simple
       let customerData = invoice.customer;
