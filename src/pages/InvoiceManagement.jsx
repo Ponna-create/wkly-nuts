@@ -394,30 +394,38 @@ export default function InvoiceManagement() {
         doc.text('WKLY Nuts', margin, yPos + 10);
       }
 
-      // Company Details (Top Right)
+      // Company Details (Top Right) - Matching reference layout
       const companyX = pageWidth - margin - 60;
+      const companyStartY = yPos;
       doc.setFontSize(12);
       doc.setTextColor(0, 0, 0);
       doc.setFont(undefined, 'bold');
-      doc.text('WKLY Nuts', companyX, yPos, { align: 'right' });
+      doc.text('WKLY Nuts', companyX, companyStartY, { align: 'right' });
       doc.setFont(undefined, 'normal');
       doc.setFontSize(9);
       doc.setTextColor(100, 100, 100);
-      // Add company address here if available
-      doc.text('Production Management System', companyX, yPos + 6, { align: 'right' });
+      // Company address lines (matching reference format)
+      let companyY = companyStartY + 6;
+      doc.text('Production Management System', companyX, companyY, { align: 'right' });
+      companyY += 4;
+      // Add more company details if needed (address, phone, email, GSTIN)
+      // For now, keeping it simple to match reference spacing
       
-      yPos += 25;
+      // Adjust yPos to align with logo height or minimum spacing
+      yPos = Math.max(companyStartY + 25, margin + 40);
 
-      // Invoice Details Section (Right side, below company)
-      const invoiceDetailsX = pageWidth - margin - 60;
+      // Invoice Title (Centered) - Matching reference layout
       doc.setFontSize(16);
       doc.setTextColor(0, 0, 0);
       doc.setFont(undefined, 'bold');
       doc.text('INVOICE', pageWidth / 2, yPos, { align: 'center' });
-      yPos += 8;
+      yPos += 10;
       
+      // Invoice Details Section (Right side) - Matching reference layout
+      const invoiceDetailsX = pageWidth - margin - 60;
       doc.setFontSize(9);
       doc.setFont(undefined, 'normal');
+      doc.setTextColor(0, 0, 0);
       doc.text(`Invoice#: ${invoice.invoiceNumber || invoice.invoice_number || 'N/A'}`, invoiceDetailsX, yPos, { align: 'right' });
       yPos += 5;
       const invoiceDate = invoice.invoiceDate || invoice.invoice_date;
@@ -433,9 +441,10 @@ export default function InvoiceManagement() {
         yPos += 5;
       }
       
-      yPos += 5;
+      // Reset yPos to align Bill To section with Invoice Details (matching reference)
+      const billToStartY = yPos - (dueDate ? 20 : 15); // Align with invoice details
 
-      // Bill To Section (Left side)
+      // Bill To Section (Left side) - Matching reference layout
       // Handle customer - could be object or just ID
       let customerData = invoice.customer;
       if (!customerData && invoice.customerId) {
@@ -443,47 +452,54 @@ export default function InvoiceManagement() {
         customerData = customers.find(c => String(c.id) === String(invoice.customerId));
       }
       
+      // Use billToStartY to align with Invoice Details section
+      const billToY = billToStartY;
+      
       if (customerData) {
         doc.setFontSize(11);
         doc.setFont(undefined, 'bold');
-        doc.text('Bill To', margin, yPos);
+        doc.setTextColor(0, 0, 0);
+        doc.text('Bill To', margin, billToY);
         doc.setFont(undefined, 'bold');
         doc.setFontSize(10);
-        yPos += 6;
-        doc.text(customerData.name || 'No Name', margin, yPos);
+        let customerY = billToY + 6;
+        doc.text(customerData.name || 'No Name', margin, customerY);
         doc.setFont(undefined, 'normal');
-        yPos += 5;
+        customerY += 5;
         if (customerData.address) {
-          doc.text(customerData.address, margin, yPos);
-          yPos += 4;
+          doc.text(customerData.address, margin, customerY);
+          customerY += 4;
         }
         if (customerData.city || customerData.state) {
           const addressLine = [customerData.city, customerData.state, customerData.pincode].filter(Boolean).join(', ');
           if (addressLine) {
-            doc.text(addressLine, margin, yPos);
-            yPos += 4;
+            doc.text(addressLine, margin, customerY);
+            customerY += 4;
           }
         }
         if (customerData.phone) {
-          doc.text(customerData.phone, margin, yPos);
-          yPos += 4;
+          doc.text(customerData.phone, margin, customerY);
+          customerY += 4;
         }
         if (customerData.gstin) {
-          doc.text(`GSTIN: ${customerData.gstin}`, margin, yPos);
-          yPos += 4;
+          doc.text(`GSTIN: ${customerData.gstin}`, margin, customerY);
+          customerY += 4;
         }
-        yPos += 5;
+        // Update yPos to the maximum of Bill To section or Invoice Details section
+        yPos = Math.max(customerY + 5, yPos);
       } else {
         // Show placeholder if no customer
         doc.setFontSize(11);
         doc.setFont(undefined, 'bold');
-        doc.text('Bill To', margin, yPos);
+        doc.setTextColor(0, 0, 0);
+        doc.text('Bill To', margin, billToY);
         doc.setFont(undefined, 'normal');
         doc.setFontSize(10);
-        yPos += 6;
-        doc.text('No Customer Information', margin, yPos);
-        yPos += 10;
+        yPos = Math.max(billToY + 16, yPos);
       }
+      
+      // Add spacing before items table
+      yPos += 5;
 
       // Items Table (matching reference layout)
       const tableData = invoice.items.map((item, index) => [
@@ -608,24 +624,45 @@ export default function InvoiceManagement() {
       doc.text(`₹${balanceDue.toFixed(2)}`, pageWidth - margin, yPos, { align: 'right' });
       yPos += 10;
 
-      // Footer Message (Left side, below items)
-      if (yPos < pageHeight - 40) {
+      // Footer Message (Left side, below items) - Matching reference
+      if (yPos < pageHeight - 60) {
         doc.setFontSize(9);
         doc.setTextColor(100, 100, 100);
         doc.setFont(undefined, 'italic');
         doc.text('Thanks for your business.', margin, yPos);
+        yPos += 8;
       }
 
-      // Payment Terms and Notes (if space available)
-      if (yPos < pageHeight - 50) {
-        if (invoice.notes) {
-          yPos += 8;
-          doc.setFontSize(8);
-          doc.setFont(undefined, 'normal');
-          doc.setTextColor(100, 100, 100);
-          const notesLines = doc.splitTextToSize(invoice.notes, pageWidth - 2 * margin);
-          doc.text(notesLines, margin, yPos);
-        }
+      // Terms & Conditions Section (Bottom) - Matching reference layout
+      if (yPos < pageHeight - 30) {
+        yPos += 10;
+        doc.setFontSize(8);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(0, 0, 0);
+        doc.text('Terms & Conditions', margin, yPos);
+        yPos += 5;
+        doc.setFont(undefined, 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(100, 100, 100);
+        
+        // Terms & Conditions text (matching reference format)
+        const termsText = invoice.terms 
+          ? `All services provided are subject to the terms and conditions outlined in the contract agreement or engagement letter. ${invoice.terms}`
+          : 'All services provided are subject to the terms and conditions outlined in the contract agreement or engagement letter.';
+        
+        const termsLines = doc.splitTextToSize(termsText, pageWidth - 2 * margin);
+        doc.text(termsLines, margin, yPos);
+        yPos += (termsLines.length * 4) + 5;
+      }
+
+      // Additional Notes (if space available and notes exist)
+      if (invoice.notes && yPos < pageHeight - 20) {
+        yPos += 5;
+        doc.setFontSize(8);
+        doc.setFont(undefined, 'normal');
+        doc.setTextColor(100, 100, 100);
+        const notesLines = doc.splitTextToSize(invoice.notes, pageWidth - 2 * margin);
+        doc.text(notesLines, margin, yPos);
       }
       
       // Page number
