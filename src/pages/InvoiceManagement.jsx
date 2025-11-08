@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Plus, Edit, Trash2, Search, X, FileText, CheckCircle, AlertCircle, Clock, DollarSign, Package, User, Save, Printer, Download } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { dbService } from '../services/supabase';
+import { dbService, isSupabaseAvailable } from '../services/supabase';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import logo from '../assets/wkly-nuts-logo.png';
@@ -325,10 +325,18 @@ export default function InvoiceManagement() {
     // Generate invoice number and reduce stock only when status changes to "paid"
     if (newStatus === 'paid') {
       // Generate invoice number if not already generated
-      if (!invoice.invoiceNumber || invoice.invoiceNumber === 'N/A') {
+      if (!invoice.invoiceNumber || invoice.invoiceNumber === 'N/A' || invoice.invoiceNumber === null) {
         const year = new Date().getFullYear();
-        const invoiceCount = invoices.filter(inv => inv.status === 'paid' || (inv.invoiceNumber && inv.invoiceNumber !== 'N/A')).length + 1;
+        // Count all invoices that have a real invoice number (not N/A or null)
+        const existingPaidInvoices = invoices.filter(inv => {
+          const invNum = inv.invoiceNumber || inv.invoice_number;
+          return invNum && invNum !== 'N/A' && invNum !== null && invNum.startsWith(`INV-${year}`);
+        });
+        const invoiceCount = existingPaidInvoices.length + 1;
         updatedInvoice.invoiceNumber = `INV-${year}-${String(invoiceCount).padStart(5, '0')}`;
+        console.log('Generated invoice number:', updatedInvoice.invoiceNumber, 'for invoice:', invoice.id);
+      } else {
+        console.log('Invoice already has number:', invoice.invoiceNumber);
       }
       
       // Reduce stock only when invoice is marked as paid
@@ -360,19 +368,35 @@ export default function InvoiceManagement() {
     
     // Wait for database sync, then reload invoices to ensure we have the latest data
     try {
+      // Explicitly save to database first to ensure invoice number is persisted
+      if (isSupabaseAvailable()) {
+        const updateResult = await dbService.updateInvoice(updatedInvoice);
+        if (updateResult.error) {
+          console.error('Error updating invoice in database:', updateResult.error);
+          showToast('Error saving invoice to database', 'error');
+          return;
+        }
+        console.log('Invoice updated in database:', updateResult.data);
+      }
+      
       // Give a small delay for the database sync to complete
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise(resolve => setTimeout(resolve, 300));
       
       // Reload invoices from database to ensure we have the latest data
       const invoicesRes = await dbService.getInvoices();
       if (invoicesRes.data) {
         dispatch({ type: 'LOAD_INVOICES', payload: invoicesRes.data });
+        console.log('Invoices reloaded, invoice number should be:', updatedInvoice.invoiceNumber);
       }
     } catch (error) {
       console.error('Error reloading invoices:', error);
+      showToast('Error reloading invoices', 'error');
     }
     
-    showToast(`Invoice marked as ${newStatus}${newStatus === 'paid' && (!invoice.invoiceNumber || invoice.invoiceNumber === 'N/A') ? ' - Invoice number generated and stock reduced' : ''}`, 'success');
+    const invoiceNumberMsg = newStatus === 'paid' && (!invoice.invoiceNumber || invoice.invoiceNumber === 'N/A') 
+      ? ` - Invoice number ${updatedInvoice.invoiceNumber} generated and stock reduced` 
+      : '';
+    showToast(`Invoice marked as ${newStatus}${invoiceNumberMsg}`, 'success');
   };
 
   // Generate PDF Invoice - Simple & Clean Layout
