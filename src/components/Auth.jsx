@@ -24,32 +24,69 @@ export default function Auth({ children }) {
     setIsLoading(false);
   }, []);
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
 
-    // Check if password is configured
-    if (!APP_PASSWORD) {
-      setError('Password not configured. Please set VITE_APP_PASSWORD in Vercel environment variables.');
+    // Option 1: Client-side validation (password in VITE_ variable - exposed to browser)
+    // This is acceptable for internal-only tools
+    if (APP_PASSWORD) {
+      // Validate username (if configured)
+      if (APP_USERNAME && username.trim().toLowerCase() !== APP_USERNAME.toLowerCase()) {
+        setError('Incorrect username. Please try again.');
+        setUsername('');
+        setPassword('');
+        return;
+      }
+
+      // Validate password
+      if (password === APP_PASSWORD) {
+        localStorage.setItem('wklyNutsAuth', 'authenticated');
+        setIsAuthenticated(true);
+      } else {
+        setError('Incorrect password. Please try again.');
+        setPassword('');
+      }
       return;
     }
 
-    // Validate username (if configured)
-    if (APP_USERNAME && username.trim().toLowerCase() !== APP_USERNAME.toLowerCase()) {
-      setError('Incorrect username. Please try again.');
-      setUsername('');
-      setPassword('');
-      return;
-    }
+    // Option 2: Server-side validation (more secure - requires Supabase Edge Function)
+    // Uncomment this if you want to use server-side password verification
+    /*
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      if (!supabaseUrl) {
+        setError('Supabase not configured. Using client-side validation.');
+        return;
+      }
 
-    // Validate password
-    if (password === APP_PASSWORD) {
-      localStorage.setItem('wklyNutsAuth', 'authenticated');
-      setIsAuthenticated(true);
-    } else {
-      setError('Incorrect password. Please try again.');
-      setPassword('');
+      const response = await fetch(`${supabaseUrl}/functions/v1/verify-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({ username, password }),
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        localStorage.setItem('wklyNutsAuth', 'authenticated');
+        setIsAuthenticated(true);
+      } else {
+        setError('Incorrect username or password. Please try again.');
+        setUsername('');
+        setPassword('');
+      }
+    } catch (error) {
+      setError('Login failed. Please try again.');
+      console.error('Login error:', error);
     }
+    */
+    
+    // If no password configured at all
+    setError('Password not configured. Please set VITE_APP_PASSWORD in Vercel environment variables.');
   };
 
   const handleLogout = () => {
