@@ -10,6 +10,7 @@ import SKUManagement from './pages/SKUManagement';
 import PricingStrategy from './pages/PricingStrategy';
 import SalesRevenue from './pages/SalesRevenue';
 import VendorComparison from './pages/VendorComparison';
+import CustomerManagement from './pages/CustomerManagement';
 
 function App() {
   return (
@@ -24,6 +25,7 @@ function App() {
               <Route path="/pricing" element={<PricingStrategy />} />
               <Route path="/sales" element={<SalesRevenue />} />
               <Route path="/vendor-comparison" element={<VendorComparison />} />
+              <Route path="/customers" element={<CustomerManagement />} />
             </Routes>
           </Layout>
           <Toast />

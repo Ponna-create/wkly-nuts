@@ -9,7 +9,8 @@ import {
   BarChart3,
   Menu,
   X,
-  LogOut
+  LogOut,
+  UserCircle
 } from 'lucide-react';
 import { logout } from './Auth';
 import logo from '../assets/wkly-nuts-logo.png';
@@ -21,6 +22,7 @@ const navigation = [
   { name: 'Pricing Strategy', href: '/pricing', icon: DollarSign },
   { name: 'Sales & Revenue', href: '/sales', icon: TrendingUp },
   { name: 'Vendor Comparison', href: '/vendor-comparison', icon: BarChart3 },
+  { name: 'Customer Management', href: '/customers', icon: UserCircle },
 ];
 
 export default function Layout({ children }) {

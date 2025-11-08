@@ -14,6 +14,8 @@ const loadFromLocalStorage = () => {
         skus: parsed.skus || [],
         pricingStrategies: parsed.pricingStrategies || [],
         salesTargets: parsed.salesTargets || [],
+        customers: parsed.customers || [],
+        invoices: parsed.invoices || [],
         toast: null,
       };
     }
@@ -25,6 +27,8 @@ const loadFromLocalStorage = () => {
     skus: [],
     pricingStrategies: [],
     salesTargets: [],
+    customers: [],
+    invoices: [],
     toast: null,
   };
 };
@@ -43,6 +47,8 @@ const initialState = {
   skus: [],
   pricingStrategies: [],
   salesTargets: [],
+  customers: [],
+  invoices: [],
   toast: null,
 };
 
@@ -57,6 +63,10 @@ function appReducer(state, action) {
       return { ...state, pricingStrategies: action.payload };
     case 'LOAD_SALES_TARGETS':
       return { ...state, salesTargets: action.payload };
+    case 'LOAD_CUSTOMERS':
+      return { ...state, customers: action.payload };
+    case 'LOAD_INVOICES':
+      return { ...state, invoices: action.payload };
     case 'LOAD_ALL_DATA':
       return {
         ...state,
@@ -64,6 +74,8 @@ function appReducer(state, action) {
         skus: action.payload.skus || [],
         pricingStrategies: action.payload.pricingStrategies || [],
         salesTargets: action.payload.salesTargets || [],
+        customers: action.payload.customers || [],
+        invoices: action.payload.invoices || [],
       };
 
     // Vendor actions
@@ -128,6 +140,38 @@ function appReducer(state, action) {
       return {
         ...state,
         salesTargets: state.salesTargets.filter((t) => t.id !== action.payload),
+      };
+
+    // Customer actions
+    case 'ADD_CUSTOMER':
+      return { ...state, customers: [...state.customers, action.payload] };
+    case 'UPDATE_CUSTOMER':
+      return {
+        ...state,
+        customers: state.customers.map((c) =>
+          c.id === action.payload.id ? action.payload : c
+        ),
+      };
+    case 'DELETE_CUSTOMER':
+      return {
+        ...state,
+        customers: state.customers.filter((c) => c.id !== action.payload),
+      };
+
+    // Invoice actions
+    case 'ADD_INVOICE':
+      return { ...state, invoices: [...state.invoices, action.payload] };
+    case 'UPDATE_INVOICE':
+      return {
+        ...state,
+        invoices: state.invoices.map((i) =>
+          i.id === action.payload.id ? action.payload : i
+        ),
+      };
+    case 'DELETE_INVOICE':
+      return {
+        ...state,
+        invoices: state.invoices.filter((i) => i.id !== action.payload),
       };
 
     // Toast actions
@@ -211,6 +255,30 @@ export function AppProvider({ children }) {
             case 'DELETE_SALES_TARGET':
               await dbService.deleteSalesTarget(action.payload);
               break;
+            case 'ADD_CUSTOMER':
+              const customerRes = await dbService.createCustomer(action.payload);
+              if (customerRes.data && customerRes.data.id !== action.payload.id) {
+                dispatchReducer({ type: 'UPDATE_CUSTOMER', payload: { ...action.payload, id: customerRes.data.id } });
+              }
+              break;
+            case 'UPDATE_CUSTOMER':
+              await dbService.updateCustomer(action.payload);
+              break;
+            case 'DELETE_CUSTOMER':
+              await dbService.deleteCustomer(action.payload);
+              break;
+            case 'ADD_INVOICE':
+              const invoiceRes = await dbService.createInvoice(action.payload);
+              if (invoiceRes.data && invoiceRes.data.id !== action.payload.id) {
+                dispatchReducer({ type: 'UPDATE_INVOICE', payload: { ...action.payload, id: invoiceRes.data.id } });
+              }
+              break;
+            case 'UPDATE_INVOICE':
+              await dbService.updateInvoice(action.payload);
+              break;
+            case 'DELETE_INVOICE':
+              await dbService.deleteInvoice(action.payload);
+              break;
           }
         } catch (error) {
           console.error('Error syncing with database:', error);
@@ -228,11 +296,13 @@ export function AppProvider({ children }) {
         try {
           setUseDatabase(true);
           // Load all data from Supabase
-          const [vendorsRes, skusRes, pricingRes, targetsRes] = await Promise.all([
+          const [vendorsRes, skusRes, pricingRes, targetsRes, customersRes, invoicesRes] = await Promise.all([
             dbService.getVendors(),
             dbService.getSKUs(),
             dbService.getPricingStrategies(),
             dbService.getSalesTargets(),
+            dbService.getCustomers(),
+            dbService.getInvoices(),
           ]);
 
           dispatchReducer({
@@ -242,6 +312,8 @@ export function AppProvider({ children }) {
               skus: skusRes.data || [],
               pricingStrategies: pricingRes.data || [],
               salesTargets: targetsRes.data || [],
+              customers: customersRes.data || [],
+              invoices: invoicesRes.data || [],
             },
           });
         } catch (error) {
@@ -275,9 +347,11 @@ export function AppProvider({ children }) {
         skus: state.skus,
         pricingStrategies: state.pricingStrategies,
         salesTargets: state.salesTargets,
+        customers: state.customers,
+        invoices: state.invoices,
       });
     }
-  }, [state.vendors, state.skus, state.pricingStrategies, state.salesTargets, isLoading, useDatabase]);
+  }, [state.vendors, state.skus, state.pricingStrategies, state.salesTargets, state.customers, state.invoices, isLoading, useDatabase]);
 
   const showToast = useCallback((message, type = 'success') => {
     dispatch({ type: 'SHOW_TOAST', payload: { message, type } });
