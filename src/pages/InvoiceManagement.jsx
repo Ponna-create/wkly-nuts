@@ -474,6 +474,11 @@ export default function InvoiceManagement() {
 
     // Save to database first (before updating local state) to ensure persistence
     console.log('=== Saving to database ===');
+    
+    // CRITICAL: Capture the generated invoice number BEFORE any database operations
+    const finalInvoiceNumber = updatedInvoice.invoiceNumber;
+    console.log('🔒 LOCKED invoice number before DB operations:', finalInvoiceNumber);
+    
     try {
       if (isSupabaseAvailable()) {
         console.log('Supabase is available, proceeding with database save');
@@ -484,6 +489,12 @@ export default function InvoiceManagement() {
           customerId: updatedInvoice.customerId,
           totalAmount: updatedInvoice.totalAmount
         });
+        
+        // Ensure invoice number is set before proceeding
+        if (finalInvoiceNumber && finalInvoiceNumber !== 'N/A') {
+          updatedInvoice.invoiceNumber = finalInvoiceNumber;
+          console.log('✅ Invoice number locked in:', updatedInvoice.invoiceNumber);
+        }
         
         // First, check if invoice exists in database by trying to fetch it
         console.log('Checking if invoice exists in database...');
@@ -594,6 +605,12 @@ export default function InvoiceManagement() {
         } else {
           console.log('📝 Invoice exists in database, updating it...');
           // Invoice exists, update it
+          // CRITICAL: Ensure the generated invoice number is still set
+          if (finalInvoiceNumber && finalInvoiceNumber !== 'N/A') {
+            updatedInvoice.invoiceNumber = finalInvoiceNumber;
+            console.log('🔒 Re-applying locked invoice number:', finalInvoiceNumber);
+          }
+          
           console.log('Updating invoice with invoice number:', updatedInvoice.invoiceNumber);
           console.log('Full invoice data being sent:', {
             id: updatedInvoice.id,
@@ -601,6 +618,15 @@ export default function InvoiceManagement() {
             status: updatedInvoice.status,
             customerId: updatedInvoice.customerId
           });
+          
+          // Double-check before sending to database
+          if (!updatedInvoice.invoiceNumber || updatedInvoice.invoiceNumber === 'N/A') {
+            console.error('❌ CRITICAL ERROR: Invoice number is missing or N/A before database update!');
+            console.error('Expected:', finalInvoiceNumber);
+            console.error('Actual:', updatedInvoice.invoiceNumber);
+            showToast('Error: Invoice number not generated', 'error');
+            return;
+          }
           
           const updateResult = await dbService.updateInvoice(updatedInvoice);
           if (updateResult.error) {
