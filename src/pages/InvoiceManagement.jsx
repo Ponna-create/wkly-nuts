@@ -381,6 +381,10 @@ export default function InvoiceManagement() {
         
         // Get accurate count from database if available
         let invoiceCount = 1;
+        let generatedNumber = '';
+        let maxAttempts = 10; // Prevent infinite loop
+        let attempt = 0;
+        
         if (isSupabaseAvailable()) {
           try {
             // Query database for all invoices with invoice numbers for this year
@@ -390,7 +394,19 @@ export default function InvoiceManagement() {
                 const invNum = inv.invoiceNumber || inv.invoice_number;
                 return invNum && invNum !== 'N/A' && invNum !== null && invNum !== undefined && invNum.startsWith(`INV-${year}`);
               });
-              invoiceCount = existingPaidInvoices.length + 1;
+              
+              // Get the highest invoice number to avoid duplicates
+              const invoiceNumbers = existingPaidInvoices
+                .map(inv => {
+                  const invNum = inv.invoiceNumber || inv.invoice_number;
+                  const match = invNum.match(/INV-\d{4}-(\d+)/);
+                  return match ? parseInt(match[1], 10) : 0;
+                })
+                .filter(num => num > 0);
+              
+              invoiceCount = invoiceNumbers.length > 0 ? Math.max(...invoiceNumbers) + 1 : 1;
+              console.log('Found', existingPaidInvoices.length, 'existing invoices for year', year);
+              console.log('Highest invoice number:', invoiceCount - 1, 'Next will be:', invoiceCount);
             }
           } catch (error) {
             console.error('Error counting invoices from database, using local count:', error);
@@ -410,7 +426,17 @@ export default function InvoiceManagement() {
           invoiceCount = existingPaidInvoices.length + 1;
         }
         
-        updatedInvoice.invoiceNumber = `INV-${year}-${String(invoiceCount).padStart(5, '0')}`;
+        // Generate unique invoice number
+        do {
+          generatedNumber = `INV-${year}-${String(invoiceCount).padStart(5, '0')}`;
+          attempt++;
+          invoiceCount++;
+        } while (attempt < maxAttempts && invoices.some(inv => {
+          const invNum = inv.invoiceNumber || inv.invoice_number;
+          return invNum === generatedNumber;
+        }));
+        
+        updatedInvoice.invoiceNumber = generatedNumber;
         console.log('✅ Generated invoice number:', updatedInvoice.invoiceNumber, 'for invoice:', invoice.id, 'count:', invoiceCount);
         console.log('Updated invoice object:', {
           id: updatedInvoice.id,
@@ -468,7 +494,32 @@ export default function InvoiceManagement() {
           console.error('Error fetching invoices:', allInvoicesRes.error);
         }
         
-        const invoiceExists = allInvoicesRes.data?.some(inv => inv.id === invoiceId);
+        // Check if invoice exists by ID
+        let invoiceExists = allInvoicesRes.data?.some(inv => inv.id === invoiceId);
+        
+        // Also check if invoice exists by customer and date (in case ID doesn't match)
+        if (!invoiceExists && updatedInvoice.customerId && updatedInvoice.invoiceDate) {
+          invoiceExists = allInvoicesRes.data?.some(inv => 
+            inv.customerId === updatedInvoice.customerId && 
+            inv.invoiceDate === updatedInvoice.invoiceDate &&
+            (!inv.invoiceNumber || inv.invoiceNumber === 'N/A')
+          );
+          if (invoiceExists) {
+            console.log('Found existing invoice by customer and date, will update it');
+            // Get the existing invoice ID
+            const existingInvoice = allInvoicesRes.data.find(inv => 
+              inv.customerId === updatedInvoice.customerId && 
+              inv.invoiceDate === updatedInvoice.invoiceDate &&
+              (!inv.invoiceNumber || inv.invoiceNumber === 'N/A')
+            );
+            if (existingInvoice) {
+              updatedInvoice.id = existingInvoice.id;
+              invoiceId = existingInvoice.id;
+              console.log('Using existing invoice ID:', invoiceId);
+            }
+          }
+        }
+        
         console.log('Invoice exists in database?', invoiceExists);
         
         if (!invoiceExists) {
@@ -487,17 +538,46 @@ export default function InvoiceManagement() {
           });
           const createResult = await dbService.createInvoice(invoiceToCreate);
           if (createResult.error) {
-            console.error('❌ Error creating invoice in database:', createResult.error);
-            showToast('Error saving invoice to database', 'error');
-            return;
+            // Handle duplicate key error - invoice number already exists
+            if (createResult.error.code === '23505' && createResult.error.message?.includes('invoice_number')) {
+              console.error('❌ Duplicate invoice number detected! Regenerating...');
+              // Regenerate invoice number and try update instead
+              const year = new Date().getFullYear();
+              const allInvoicesRes2 = await dbService.getInvoices();
+              const existingNumbers = (allInvoicesRes2.data || [])
+                .map(inv => inv.invoiceNumber || inv.invoice_number)
+                .filter(num => num && num.startsWith(`INV-${year}`));
+              
+              // Find next available number
+              let newCount = 1;
+              while (existingNumbers.includes(`INV-${year}-${String(newCount).padStart(5, '0')}`)) {
+                newCount++;
+              }
+              updatedInvoice.invoiceNumber = `INV-${year}-${String(newCount).padStart(5, '0')}`;
+              console.log('Regenerated invoice number:', updatedInvoice.invoiceNumber);
+              
+              // Try to update existing invoice instead
+              const updateResult = await dbService.updateInvoice(updatedInvoice);
+              if (updateResult.error) {
+                console.error('❌ Error updating invoice after duplicate:', updateResult.error);
+                showToast('Error saving invoice to database', 'error');
+                return;
+              }
+              updatedInvoice = updateResult.data;
+            } else {
+              console.error('❌ Error creating invoice in database:', createResult.error);
+              showToast('Error saving invoice to database', 'error');
+              return;
+            }
+          } else {
+            console.log('✅ Invoice created in database:', {
+              id: createResult.data.id,
+              invoiceNumber: createResult.data.invoiceNumber,
+              status: createResult.data.status
+            });
+            // Update the invoice ID in local state to match database
+            updatedInvoice = { ...createResult.data, id: createResult.data.id };
           }
-          console.log('✅ Invoice created in database:', {
-            id: createResult.data.id,
-            invoiceNumber: createResult.data.invoiceNumber,
-            status: createResult.data.status
-          });
-          // Update the invoice ID in local state to match database
-          updatedInvoice = { ...createResult.data, id: createResult.data.id };
         } else {
           console.log('📝 Invoice exists in database, updating it...');
           // Invoice exists, update it
