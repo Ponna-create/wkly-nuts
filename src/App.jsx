@@ -11,6 +11,7 @@ import PricingStrategy from './pages/PricingStrategy';
 import SalesRevenue from './pages/SalesRevenue';
 import VendorComparison from './pages/VendorComparison';
 import CustomerManagement from './pages/CustomerManagement';
+import InventoryManagement from './pages/InventoryManagement';
 
 function App() {
   return (
@@ -26,6 +27,7 @@ function App() {
               <Route path="/sales" element={<SalesRevenue />} />
               <Route path="/vendor-comparison" element={<VendorComparison />} />
               <Route path="/customers" element={<CustomerManagement />} />
+              <Route path="/inventory" element={<InventoryManagement />} />
             </Routes>
           </Layout>
           <Toast />

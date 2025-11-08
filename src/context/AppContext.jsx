@@ -16,6 +16,7 @@ const loadFromLocalStorage = () => {
         salesTargets: parsed.salesTargets || [],
         customers: parsed.customers || [],
         invoices: parsed.invoices || [],
+        inventory: parsed.inventory || [],
         toast: null,
       };
     }
@@ -29,6 +30,7 @@ const loadFromLocalStorage = () => {
     salesTargets: [],
     customers: [],
     invoices: [],
+    inventory: [],
     toast: null,
   };
 };
@@ -49,6 +51,7 @@ const initialState = {
   salesTargets: [],
   customers: [],
   invoices: [],
+  inventory: [],
   toast: null,
 };
 
@@ -67,6 +70,8 @@ function appReducer(state, action) {
       return { ...state, customers: action.payload };
     case 'LOAD_INVOICES':
       return { ...state, invoices: action.payload };
+    case 'LOAD_INVENTORY':
+      return { ...state, inventory: action.payload };
     case 'LOAD_ALL_DATA':
       return {
         ...state,
@@ -76,6 +81,7 @@ function appReducer(state, action) {
         salesTargets: action.payload.salesTargets || [],
         customers: action.payload.customers || [],
         invoices: action.payload.invoices || [],
+        inventory: action.payload.inventory || [],
       };
 
     // Vendor actions
@@ -172,6 +178,22 @@ function appReducer(state, action) {
       return {
         ...state,
         invoices: state.invoices.filter((i) => i.id !== action.payload),
+      };
+
+    // Inventory actions
+    case 'ADD_INVENTORY':
+      return { ...state, inventory: [...state.inventory, action.payload] };
+    case 'UPDATE_INVENTORY':
+      return {
+        ...state,
+        inventory: state.inventory.map((inv) =>
+          inv.id === action.payload.id ? action.payload : inv
+        ),
+      };
+    case 'DELETE_INVENTORY':
+      return {
+        ...state,
+        inventory: state.inventory.filter((inv) => inv.id !== action.payload),
       };
 
     // Toast actions
@@ -279,6 +301,18 @@ export function AppProvider({ children }) {
             case 'DELETE_INVOICE':
               await dbService.deleteInvoice(action.payload);
               break;
+            case 'ADD_INVENTORY':
+              const inventoryRes = await dbService.createInventory(action.payload);
+              if (inventoryRes.data && inventoryRes.data.id !== action.payload.id) {
+                dispatchReducer({ type: 'UPDATE_INVENTORY', payload: { ...action.payload, id: inventoryRes.data.id } });
+              }
+              break;
+            case 'UPDATE_INVENTORY':
+              await dbService.updateInventory(action.payload);
+              break;
+            case 'DELETE_INVENTORY':
+              await dbService.deleteInventory(action.payload);
+              break;
           }
         } catch (error) {
           console.error('Error syncing with database:', error);
@@ -296,13 +330,14 @@ export function AppProvider({ children }) {
         try {
           setUseDatabase(true);
           // Load all data from Supabase
-          const [vendorsRes, skusRes, pricingRes, targetsRes, customersRes, invoicesRes] = await Promise.all([
+          const [vendorsRes, skusRes, pricingRes, targetsRes, customersRes, invoicesRes, inventoryRes] = await Promise.all([
             dbService.getVendors(),
             dbService.getSKUs(),
             dbService.getPricingStrategies(),
             dbService.getSalesTargets(),
             dbService.getCustomers(),
             dbService.getInvoices(),
+            dbService.getInventory(),
           ]);
 
           dispatchReducer({
@@ -314,6 +349,7 @@ export function AppProvider({ children }) {
               salesTargets: targetsRes.data || [],
               customers: customersRes.data || [],
               invoices: invoicesRes.data || [],
+              inventory: inventoryRes.data || [],
             },
           });
         } catch (error) {
@@ -349,9 +385,10 @@ export function AppProvider({ children }) {
         salesTargets: state.salesTargets,
         customers: state.customers,
         invoices: state.invoices,
+        inventory: state.inventory,
       });
     }
-  }, [state.vendors, state.skus, state.pricingStrategies, state.salesTargets, state.customers, state.invoices, isLoading, useDatabase]);
+  }, [state.vendors, state.skus, state.pricingStrategies, state.salesTargets, state.customers, state.invoices, state.inventory, isLoading, useDatabase]);
 
   const showToast = useCallback((message, type = 'success') => {
     dispatch({ type: 'SHOW_TOAST', payload: { message, type } });
