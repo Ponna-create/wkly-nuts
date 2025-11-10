@@ -1166,6 +1166,7 @@ export default function InvoiceManagement() {
           // Clean and normalize the terms text for better formatting
           // Preserve intentional line breaks but normalize excessive whitespace
           let cleanedTerms = terms
+            .replace(/₹/g, 'Rs. ') // Replace rupee symbol with Rs. to avoid encoding issues in PDF
             .replace(/[ \t]+/g, ' ') // Replace multiple spaces/tabs with single space (but keep newlines)
             .replace(/\n\s*\n\s*\n+/g, '\n\n') // Replace 3+ newlines with double newline (paragraph break)
             .replace(/[ \t]+\n/g, '\n') // Remove trailing spaces before newlines
@@ -1262,6 +1263,7 @@ export default function InvoiceManagement() {
           // Clean and normalize the notes text for better formatting
           // Preserve intentional line breaks but normalize excessive whitespace
           let cleanedNotes = notes
+            .replace(/₹/g, 'Rs. ') // Replace rupee symbol with Rs. to avoid encoding issues in PDF
             .replace(/[ \t]+/g, ' ') // Replace multiple spaces/tabs with single space (but keep newlines)
             .replace(/\n\s*\n\s*\n+/g, '\n\n') // Replace 3+ newlines with double newline (paragraph break)
             .replace(/[ \t]+\n/g, '\n') // Remove trailing spaces before newlines
