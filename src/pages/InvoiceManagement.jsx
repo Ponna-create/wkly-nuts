@@ -1259,11 +1259,6 @@ export default function InvoiceManagement() {
         doc.setTextColor(60, 60, 60);
         
         if (notes && notes.trim()) {
-          // Log the original notes to debug truncation issue
-          console.log('🔍 Original notes text:', notes);
-          console.log('🔍 Notes length:', notes.length);
-          console.log('🔍 Notes first 100 chars:', notes.substring(0, 100));
-          
           // Clean and normalize the notes text for better formatting
           // Preserve intentional line breaks but normalize excessive whitespace
           let cleanedNotes = notes
@@ -1274,18 +1269,9 @@ export default function InvoiceManagement() {
             .replace(/\n[ \t]+/g, '\n') // Remove leading spaces after newlines
             .trim();
           
-          console.log('🔍 Cleaned notes text:', cleanedNotes);
-          console.log('🔍 Cleaned notes length:', cleanedNotes.length);
-          
           // Split long text into multiple lines with proper word wrapping
           // splitTextToSize automatically handles word boundaries
           const notesLines = doc.splitTextToSize(cleanedNotes, textAvailableWidth);
-          console.log('🔍 Notes lines count:', notesLines.length);
-          console.log('🔍 Notes lines:', notesLines);
-          // Log each line individually to see what's being split
-          notesLines.forEach((line, idx) => {
-            console.log(`🔍 Line ${idx + 1}:`, line);
-          });
           
           // Add each line with consistent spacing and page break handling
           notesLines.forEach((line, index) => {
@@ -1296,15 +1282,11 @@ export default function InvoiceManagement() {
             }
             // Trim the line to remove any leading/trailing spaces for cleaner formatting
             const trimmedLine = line.trim();
-            console.log(`🎨 Rendering line ${index + 1} at yPos ${yPos}:`, trimmedLine);
             if (trimmedLine) {
               // Use consistent left alignment
               doc.text(trimmedLine, margin, yPos, { align: 'left' });
-              console.log(`✅ Rendered line ${index + 1} successfully`);
               // Use consistent line height for uniform spacing
               yPos += 6; // Consistent line height for better readability
-            } else {
-              console.log(`⚠️ Skipped empty line ${index + 1}`);
             }
           });
           console.log('✅ Notes added to PDF');
