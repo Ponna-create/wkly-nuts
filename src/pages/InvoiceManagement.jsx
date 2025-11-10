@@ -1078,6 +1078,85 @@ export default function InvoiceManagement() {
       }
       yPos += 10;
 
+      // Payment Terms Section
+      const terms = invoice.terms || invoice.paymentTerms;
+      if (terms && terms.trim()) {
+        // Check if we have enough space, otherwise add new page
+        if (yPos > pageHeight - 50) {
+          doc.addPage();
+          yPos = margin;
+        }
+        
+        yPos += 5;
+        doc.setFontSize(10);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(0, 0, 0);
+        doc.text('Payment Terms:', margin, yPos);
+        yPos += 6;
+        
+        doc.setFontSize(9);
+        doc.setFont(undefined, 'normal');
+        doc.setTextColor(60, 60, 60);
+        // Split long text into multiple lines
+        const termsLines = doc.splitTextToSize(terms, pageWidth - (2 * margin));
+        doc.text(termsLines, margin, yPos);
+        yPos += (termsLines.length * 5) + 5;
+      }
+
+      // Notes Section
+      const notes = invoice.notes;
+      if (notes && notes.trim()) {
+        // Check if we have enough space, otherwise add new page
+        if (yPos > pageHeight - 50) {
+          doc.addPage();
+          yPos = margin;
+        }
+        
+        yPos += 5;
+        doc.setFontSize(10);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(0, 0, 0);
+        doc.text('Notes:', margin, yPos);
+        yPos += 6;
+        
+        doc.setFontSize(9);
+        doc.setFont(undefined, 'normal');
+        doc.setTextColor(60, 60, 60);
+        // Split long text into multiple lines
+        const notesLines = doc.splitTextToSize(notes, pageWidth - (2 * margin));
+        doc.text(notesLines, margin, yPos);
+        yPos += (notesLines.length * 5) + 5;
+      }
+
+      // Status Section (if not paid, show status)
+      if (invoiceStatus !== 'paid') {
+        // Check if we have enough space
+        if (yPos > pageHeight - 40) {
+          doc.addPage();
+          yPos = margin;
+        }
+        
+        yPos += 5;
+        doc.setFontSize(10);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(0, 0, 0);
+        doc.text('Status:', margin, yPos);
+        yPos += 6;
+        
+        doc.setFontSize(9);
+        doc.setFont(undefined, 'normal');
+        // Color code based on status
+        if (invoiceStatus === 'sent') {
+          doc.setTextColor(255, 152, 0); // Orange
+        } else if (invoiceStatus === 'draft') {
+          doc.setTextColor(100, 100, 100); // Gray
+        } else {
+          doc.setTextColor(0, 0, 0); // Black
+        }
+        doc.text(invoiceStatus.charAt(0).toUpperCase() + invoiceStatus.slice(1), margin, yPos);
+        yPos += 10;
+      }
+
       // Simple Footer
       if (yPos < pageHeight - 30) {
         yPos += 10;
