@@ -1290,11 +1290,15 @@ export default function InvoiceManagement() {
             }
             // Trim the line to remove any leading/trailing spaces for cleaner formatting
             const trimmedLine = line.trim();
+            console.log(`🎨 Rendering line ${index + 1} at yPos ${yPos}:`, trimmedLine);
             if (trimmedLine) {
               // Use consistent left alignment
               doc.text(trimmedLine, margin, yPos, { align: 'left' });
+              console.log(`✅ Rendered line ${index + 1} successfully`);
               // Use consistent line height for uniform spacing
               yPos += 6; // Consistent line height for better readability
+            } else {
+              console.log(`⚠️ Skipped empty line ${index + 1}`);
             }
           });
           console.log('✅ Notes added to PDF');
