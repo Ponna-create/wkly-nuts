@@ -1276,6 +1276,10 @@ export default function InvoiceManagement() {
           const notesLines = doc.splitTextToSize(cleanedNotes, textAvailableWidth);
           console.log('🔍 Notes lines count:', notesLines.length);
           console.log('🔍 Notes lines:', notesLines);
+          // Log each line individually to see what's being split
+          notesLines.forEach((line, idx) => {
+            console.log(`🔍 Line ${idx + 1}:`, line);
+          });
           
           // Add each line with consistent spacing and page break handling
           notesLines.forEach((line, index) => {
