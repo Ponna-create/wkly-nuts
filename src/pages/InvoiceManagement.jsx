@@ -1163,10 +1163,19 @@ export default function InvoiceManagement() {
         doc.setTextColor(60, 60, 60);
         
         if (terms && terms.trim()) {
+          // Clean and normalize the terms text for better formatting
+          // Preserve intentional line breaks but normalize excessive whitespace
+          let cleanedTerms = terms
+            .replace(/[ \t]+/g, ' ') // Replace multiple spaces/tabs with single space (but keep newlines)
+            .replace(/\n\s*\n\s*\n+/g, '\n\n') // Replace 3+ newlines with double newline (paragraph break)
+            .replace(/[ \t]+\n/g, '\n') // Remove trailing spaces before newlines
+            .replace(/\n[ \t]+/g, '\n') // Remove leading spaces after newlines
+            .trim();
+          
           // Split long text into multiple lines with proper word wrapping
           // splitTextToSize automatically handles word boundaries
-          const termsLines = doc.splitTextToSize(terms, textAvailableWidth);
-          // Add each line with proper spacing
+          const termsLines = doc.splitTextToSize(cleanedTerms, textAvailableWidth);
+          // Add each line with consistent spacing
           termsLines.forEach((line, index) => {
             // Check if we need a new page
             if (yPos > pageHeight - 20) {
@@ -1176,8 +1185,10 @@ export default function InvoiceManagement() {
             // Trim the line to remove any leading/trailing spaces for cleaner formatting
             const trimmedLine = line.trim();
             if (trimmedLine) {
-              doc.text(trimmedLine, margin, yPos);
-              yPos += 5.5; // Slightly increased line height for better readability
+              // Use consistent left alignment
+              doc.text(trimmedLine, margin, yPos, { align: 'left' });
+              // Use consistent line height for uniform spacing
+              yPos += 6; // Consistent line height for better readability
             }
           });
           console.log('✅ Payment Terms added to PDF');
@@ -1243,10 +1254,20 @@ export default function InvoiceManagement() {
         doc.setTextColor(60, 60, 60);
         
         if (notes && notes.trim()) {
+          // Clean and normalize the notes text for better formatting
+          // Preserve intentional line breaks but normalize excessive whitespace
+          let cleanedNotes = notes
+            .replace(/[ \t]+/g, ' ') // Replace multiple spaces/tabs with single space (but keep newlines)
+            .replace(/\n\s*\n\s*\n+/g, '\n\n') // Replace 3+ newlines with double newline (paragraph break)
+            .replace(/[ \t]+\n/g, '\n') // Remove trailing spaces before newlines
+            .replace(/\n[ \t]+/g, '\n') // Remove leading spaces after newlines
+            .trim();
+          
           // Split long text into multiple lines with proper word wrapping
           // splitTextToSize automatically handles word boundaries
-          const notesLines = doc.splitTextToSize(notes, textAvailableWidth);
-          // Add each line with proper spacing and page break handling
+          const notesLines = doc.splitTextToSize(cleanedNotes, textAvailableWidth);
+          
+          // Add each line with consistent spacing and page break handling
           notesLines.forEach((line, index) => {
             // Check if we need a new page before adding this line
             if (yPos > pageHeight - 20) {
@@ -1256,8 +1277,10 @@ export default function InvoiceManagement() {
             // Trim the line to remove any leading/trailing spaces for cleaner formatting
             const trimmedLine = line.trim();
             if (trimmedLine) {
-              doc.text(trimmedLine, margin, yPos);
-              yPos += 5.5; // Slightly increased line height for better readability
+              // Use consistent left alignment
+              doc.text(trimmedLine, margin, yPos, { align: 'left' });
+              // Use consistent line height for uniform spacing
+              yPos += 6; // Consistent line height for better readability
             }
           });
           console.log('✅ Notes added to PDF');
