@@ -782,10 +782,25 @@ export const dbService = {
     if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
     
     try {
+      // For new invoices, use NULL for invoice_number (will be generated when status changes to 'paid')
+      // Only use provided invoiceNumber if it's explicitly set and not 'N/A'
+      let invoiceNumberValue = null;
+      if (invoice.invoiceNumber && invoice.invoiceNumber !== 'N/A') {
+        invoiceNumberValue = invoice.invoiceNumber;
+      }
+      
+      console.log('Creating invoice with data:', {
+        invoiceNumber: invoiceNumberValue,
+        customerId: invoice.customerId,
+        status: invoice.status,
+        subtotal: invoice.subtotal,
+        totalAmount: invoice.totalAmount
+      });
+      
       const { data, error } = await supabase
         .from('invoices')
         .insert({
-          invoice_number: invoice.invoiceNumber || 'N/A', // Use 'N/A' as placeholder until invoice is paid
+          invoice_number: invoiceNumberValue, // Use NULL for new invoices (not 'N/A' to avoid duplicate key errors)
           customer_id: invoice.customerId || null,
           invoice_date: invoice.invoiceDate || new Date().toISOString().split('T')[0],
           due_date: invoice.dueDate || null,
@@ -818,12 +833,30 @@ export const dbService = {
         `)
         .single();
       
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Supabase error creating invoice:', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint
+        });
+        throw error;
+      }
+      
+      // Map invoice_number: if NULL, use 'N/A' for display
+      const invoiceNumber = data.invoice_number || 'N/A';
+      
+      console.log('✅ Invoice created successfully:', {
+        id: data.id,
+        invoiceNumber: invoiceNumber,
+        status: data.status
+      });
       
       return { 
         data: {
           id: data.id,
-          invoiceNumber: data.invoice_number,
+          invoiceNumber: invoiceNumber, // Use 'N/A' if NULL for display consistency
+          invoice_number: invoiceNumber, // Also set snake_case format
           customerId: data.customer_id,
           customer: data.customers ? {
             id: data.customers.id,
@@ -855,7 +888,13 @@ export const dbService = {
         error: null 
       };
     } catch (error) {
-      console.error('Error creating invoice:', error);
+      console.error('❌❌❌ Error creating invoice:', {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        fullError: error
+      });
       return { data: null, error };
     }
   },

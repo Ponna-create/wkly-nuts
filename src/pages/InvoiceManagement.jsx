@@ -286,18 +286,41 @@ export default function InvoiceManagement() {
         showToast('Invoice updated successfully', 'success');
       } else {
         // Create new invoice - save to database first
+        console.log('📝 Creating new invoice with data:', {
+          customerId: invoiceData.customerId,
+          invoiceDate: invoiceData.invoiceDate,
+          itemsCount: invoiceData.items.length,
+          subtotal: invoiceData.subtotal,
+          totalAmount: invoiceData.totalAmount,
+          status: invoiceData.status
+        });
+        
         if (isSupabaseAvailable()) {
           const createResult = await dbService.createInvoice(invoiceData);
           if (createResult.error) {
-            console.error('Error creating invoice:', createResult.error);
-            showToast('Error creating invoice', 'error');
+            console.error('❌❌❌ Error creating invoice:', createResult.error);
+            console.error('Error details:', {
+              code: createResult.error.code,
+              message: createResult.error.message,
+              details: createResult.error.details,
+              hint: createResult.error.hint
+            });
+            
+            // Show more detailed error message
+            let errorMessage = 'Error creating invoice';
+            if (createResult.error.message) {
+              errorMessage += ': ' + createResult.error.message;
+            }
+            showToast(errorMessage, 'error');
             return;
           }
+          
+          console.log('✅ Invoice created successfully:', createResult.data.id);
           // Use the database ID from the response
           dispatch({ type: 'ADD_INVOICE', payload: createResult.data });
           showToast('Invoice created successfully', 'success');
         } else {
-          dispatch({ type: 'ADD_INVOICE', payload: { ...invoiceData, id: Date.now() + Math.random() } });
+          dispatch({ type: 'ADD_INVOICE', payload: { ...invoiceData, id: Date.now() + Math.random(), invoiceNumber: 'N/A' } });
           showToast('Invoice created successfully', 'success');
         }
         
