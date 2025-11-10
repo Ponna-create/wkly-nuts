@@ -382,7 +382,7 @@ export default function InvoiceManagement() {
       invoice_number_snake: invoice.invoice_number
     });
 
-    const updatedInvoice = {
+    let updatedInvoice = {
       ...invoice,
       status: newStatus,
       paymentDate: newStatus === 'paid' ? new Date().toISOString().split('T')[0] : invoice.paymentDate,
