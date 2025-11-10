@@ -797,8 +797,28 @@ export default function InvoiceManagement() {
         return;
       }
       
-      // Get the latest invoice data from state to ensure we have the most up-to-date information
-      const latestInvoice = invoices.find(inv => inv.id === invoice.id) || invoice;
+      // Try to get the latest invoice data from state first
+      let latestInvoice = invoices.find(inv => inv.id === invoice.id) || invoice;
+      
+      // If invoice not found in state, try to fetch from database
+      if (!latestInvoice || !latestInvoice.id) {
+        if (isSupabaseAvailable() && invoice.id) {
+          console.log('⚠️ Invoice not in state, fetching from database...');
+          try {
+            const fetchResult = await dbService.getInvoices();
+            if (fetchResult.data) {
+              const fetchedInvoice = fetchResult.data.find(inv => inv.id === invoice.id);
+              if (fetchedInvoice) {
+                latestInvoice = fetchedInvoice;
+                console.log('✅ Fetched invoice from database:', fetchedInvoice);
+              }
+            }
+          } catch (error) {
+            console.error('Error fetching invoice from database:', error);
+          }
+        }
+      }
+      
       if (!latestInvoice) {
         showToast('Invoice not found', 'error');
         return;
@@ -816,7 +836,18 @@ export default function InvoiceManagement() {
         notes: invoice.notes,
         hasTerms: !!(invoice.terms || invoice.paymentTerms || invoice.payment_terms),
         hasNotes: !!invoice.notes,
-        allKeys: Object.keys(invoice).filter(k => k.includes('term') || k.includes('note') || k.includes('status'))
+        allKeys: Object.keys(invoice).filter(k => k.includes('term') || k.includes('note') || k.includes('status')),
+        fullInvoiceKeys: Object.keys(invoice) // Show ALL keys for debugging
+      });
+      
+      // CRITICAL: Ensure notes and terms are properly set (handle null/undefined)
+      if (!invoice.notes) invoice.notes = null;
+      if (!invoice.terms && !invoice.paymentTerms && !invoice.payment_terms) invoice.terms = null;
+      
+      console.log('📄 After normalization:', {
+        notes: invoice.notes,
+        terms: invoice.terms,
+        status: invoice.status
       });
 
       // Check if invoice has items
@@ -1090,32 +1121,44 @@ export default function InvoiceManagement() {
       }
       yPos += 10;
 
-      // Payment Terms Section
-      const terms = invoice.terms || invoice.paymentTerms || invoice.payment_terms;
-      console.log('🔍 Payment Terms check:', { terms, hasTerms: !!(terms && terms.trim()) });
+      // Calculate available width for text sections (used by Payment Terms and Notes)
+      // A4 width is 210mm, margin is 15mm, so available is 180mm, but use 170mm for better margins
+      const textAvailableWidth = pageWidth - (2 * margin) - 10; // Subtract 10mm for better margins and readability
+
+      // Payment Terms Section (ALWAYS show)
+      console.log('🔵 STARTING Payment Terms Section - yPos:', yPos, 'pageHeight:', pageHeight);
+      const terms = invoice.terms || invoice.paymentTerms || invoice.payment_terms || '';
+      console.log('🔍 Payment Terms check in PDF:', { 
+        terms, 
+        rawTerms: invoice.terms,
+        paymentTerms: invoice.paymentTerms,
+        payment_terms: invoice.payment_terms,
+        hasTerms: !!(terms && terms.trim()),
+        invoiceKeys: Object.keys(invoice)
+      });
+      // Check if we have enough space, otherwise add new page
+      if (yPos > pageHeight - 50) {
+        console.log('📄 Adding new page for Payment Terms');
+        doc.addPage();
+        yPos = margin;
+      }
+      
+      yPos += 8;
+      doc.setFontSize(10);
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(0, 0, 0);
+      doc.text('Payment Terms:', margin, yPos);
+      console.log('✅ Payment Terms label rendered at yPos:', yPos);
+      yPos += 7;
+      
+      doc.setFontSize(9);
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(60, 60, 60);
+      
       if (terms && terms.trim()) {
-        // Check if we have enough space, otherwise add new page
-        if (yPos > pageHeight - 50) {
-          doc.addPage();
-          yPos = margin;
-        }
-        
-        yPos += 8;
-        doc.setFontSize(10);
-        doc.setFont(undefined, 'bold');
-        doc.setTextColor(0, 0, 0);
-        doc.text('Payment Terms:', margin, yPos);
-        yPos += 7;
-        
-        doc.setFontSize(9);
-        doc.setFont(undefined, 'normal');
-        doc.setTextColor(60, 60, 60);
-        // Calculate available width (page width minus margins) - use a bit less for better formatting
-        // A4 width is 210mm, margin is 15mm, so available is 180mm, but use 170mm for better margins
-        const availableWidth = pageWidth - (2 * margin) - 10; // Subtract 10mm for better margins and readability
         // Split long text into multiple lines with proper word wrapping
         // splitTextToSize automatically handles word boundaries
-        const termsLines = doc.splitTextToSize(terms, availableWidth);
+        const termsLines = doc.splitTextToSize(terms, textAvailableWidth);
         // Add each line with proper spacing
         termsLines.forEach((line, index) => {
           // Check if we need a new page
@@ -1130,38 +1173,48 @@ export default function InvoiceManagement() {
             yPos += 5.5; // Slightly increased line height for better readability
           }
         });
-        yPos += 3; // Extra spacing after section
         console.log('✅ Payment Terms added to PDF');
       } else {
-        console.log('⚠️ Payment Terms not found or empty');
+        // Show "N/A" if no terms provided
+        doc.setTextColor(120, 120, 120); // Gray for N/A
+        doc.text('N/A', margin, yPos);
+        yPos += 5.5;
+        console.log('⚠️ Payment Terms not found, showing N/A');
       }
+      yPos += 3; // Extra spacing after section
 
-      // Notes Section
-      const notes = invoice.notes;
-      console.log('🔍 Notes check:', { notes, hasNotes: !!(notes && notes.trim()) });
+      // Notes Section (ALWAYS show)
+      console.log('🔵 STARTING Notes Section - yPos:', yPos, 'pageHeight:', pageHeight);
+      const notes = invoice.notes || '';
+      console.log('🔍 Notes check in PDF:', { 
+        notes, 
+        rawNotes: invoice.notes,
+        hasNotes: !!(notes && notes.trim()),
+        invoiceKeys: Object.keys(invoice)
+      });
+      // Check if we have enough space, otherwise add new page
+      if (yPos > pageHeight - 50) {
+        console.log('📄 Adding new page for Notes');
+        doc.addPage();
+        yPos = margin;
+      }
+      
+      yPos += 8;
+      doc.setFontSize(10);
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(0, 0, 0);
+      doc.text('Notes:', margin, yPos);
+      console.log('✅ Notes label rendered at yPos:', yPos);
+      yPos += 7;
+      
+      doc.setFontSize(9);
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(60, 60, 60);
+      
       if (notes && notes.trim()) {
-        // Check if we have enough space, otherwise add new page
-        if (yPos > pageHeight - 50) {
-          doc.addPage();
-          yPos = margin;
-        }
-        
-        yPos += 8;
-        doc.setFontSize(10);
-        doc.setFont(undefined, 'bold');
-        doc.setTextColor(0, 0, 0);
-        doc.text('Notes:', margin, yPos);
-        yPos += 7;
-        
-        doc.setFontSize(9);
-        doc.setFont(undefined, 'normal');
-        doc.setTextColor(60, 60, 60);
-        // Calculate available width (page width minus margins) - use a bit less for better formatting
-        // A4 width is 210mm, margin is 15mm, so available is 180mm, but use 170mm for better margins
-        const availableWidth = pageWidth - (2 * margin) - 10; // Subtract 10mm for better margins and readability
         // Split long text into multiple lines with proper word wrapping
         // splitTextToSize automatically handles word boundaries
-        const notesLines = doc.splitTextToSize(notes, availableWidth);
+        const notesLines = doc.splitTextToSize(notes, textAvailableWidth);
         // Add each line with proper spacing and page break handling
         notesLines.forEach((line, index) => {
           // Check if we need a new page before adding this line
@@ -1176,16 +1229,22 @@ export default function InvoiceManagement() {
             yPos += 5.5; // Slightly increased line height for better readability
           }
         });
-        yPos += 3; // Extra spacing after section
         console.log('✅ Notes added to PDF');
       } else {
-        console.log('⚠️ Notes not found or empty');
+        // Show "N/A" if no notes provided
+        doc.setTextColor(120, 120, 120); // Gray for N/A
+        doc.text('N/A', margin, yPos);
+        yPos += 5.5;
+        console.log('⚠️ Notes not found, showing N/A');
       }
+      yPos += 3; // Extra spacing after section
 
       // Status Section (ALWAYS show status for clarity)
+      console.log('🔵 STARTING Status Section - yPos:', yPos, 'pageHeight:', pageHeight);
       console.log('🔍 Status check:', { invoiceStatus, shouldShow: true });
       // Check if we have enough space
       if (yPos > pageHeight - 40) {
+        console.log('📄 Adding new page for Status');
         doc.addPage();
         yPos = margin;
       }
@@ -1195,6 +1254,7 @@ export default function InvoiceManagement() {
       doc.setFont(undefined, 'bold');
       doc.setTextColor(0, 0, 0);
       doc.text('Status:', margin, yPos);
+      console.log('✅ Status label rendered at yPos:', yPos);
       yPos += 7;
       
       doc.setFontSize(9);
