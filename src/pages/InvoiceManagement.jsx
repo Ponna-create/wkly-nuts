@@ -812,10 +812,11 @@ export default function InvoiceManagement() {
         id: invoice.id,
         invoiceNumber: invoice.invoiceNumber || invoice.invoice_number,
         status: invoice.status,
-        terms: invoice.terms || invoice.paymentTerms,
+        terms: invoice.terms || invoice.paymentTerms || invoice.payment_terms,
         notes: invoice.notes,
-        hasTerms: !!(invoice.terms || invoice.paymentTerms),
-        hasNotes: !!invoice.notes
+        hasTerms: !!(invoice.terms || invoice.paymentTerms || invoice.payment_terms),
+        hasNotes: !!invoice.notes,
+        allKeys: Object.keys(invoice).filter(k => k.includes('term') || k.includes('note') || k.includes('status'))
       });
 
       // Check if invoice has items
@@ -1147,38 +1148,36 @@ export default function InvoiceManagement() {
         console.log('⚠️ Notes not found or empty');
       }
 
-      // Status Section (if not paid, show status)
-      console.log('🔍 Status check:', { invoiceStatus, shouldShow: invoiceStatus !== 'paid' });
-      if (invoiceStatus !== 'paid') {
-        // Check if we have enough space
-        if (yPos > pageHeight - 40) {
-          doc.addPage();
-          yPos = margin;
-        }
-        
-        yPos += 5;
-        doc.setFontSize(10);
-        doc.setFont(undefined, 'bold');
-        doc.setTextColor(0, 0, 0);
-        doc.text('Status:', margin, yPos);
-        yPos += 6;
-        
-        doc.setFontSize(9);
-        doc.setFont(undefined, 'normal');
-        // Color code based on status
-        if (invoiceStatus === 'sent') {
-          doc.setTextColor(255, 152, 0); // Orange
-        } else if (invoiceStatus === 'draft') {
-          doc.setTextColor(100, 100, 100); // Gray
-        } else {
-          doc.setTextColor(0, 0, 0); // Black
-        }
-        doc.text(invoiceStatus.charAt(0).toUpperCase() + invoiceStatus.slice(1), margin, yPos);
-        yPos += 10;
-        console.log('✅ Status added to PDF');
-      } else {
-        console.log('⚠️ Status is "paid", not showing status section');
+      // Status Section (ALWAYS show status for clarity)
+      console.log('🔍 Status check:', { invoiceStatus, shouldShow: true });
+      // Check if we have enough space
+      if (yPos > pageHeight - 40) {
+        doc.addPage();
+        yPos = margin;
       }
+      
+      yPos += 5;
+      doc.setFontSize(10);
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(0, 0, 0);
+      doc.text('Status:', margin, yPos);
+      yPos += 6;
+      
+      doc.setFontSize(9);
+      doc.setFont(undefined, 'normal');
+      // Color code based on status
+      if (invoiceStatus === 'paid') {
+        doc.setTextColor(34, 197, 94); // Green for paid
+      } else if (invoiceStatus === 'sent') {
+        doc.setTextColor(255, 152, 0); // Orange
+      } else if (invoiceStatus === 'draft') {
+        doc.setTextColor(100, 100, 100); // Gray
+      } else {
+        doc.setTextColor(0, 0, 0); // Black
+      }
+      doc.text(invoiceStatus.charAt(0).toUpperCase() + invoiceStatus.slice(1), margin, yPos);
+      yPos += 10;
+      console.log('✅ Status added to PDF:', invoiceStatus);
 
       // Simple Footer
       if (yPos < pageHeight - 30) {
