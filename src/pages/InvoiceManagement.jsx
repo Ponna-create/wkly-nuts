@@ -382,6 +382,7 @@ export default function InvoiceManagement() {
       invoice_number_snake: invoice.invoice_number
     });
 
+    // Use let instead of const to allow reassignment when updating from database
     let updatedInvoice = {
       ...invoice,
       status: newStatus,
