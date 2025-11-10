@@ -841,14 +841,19 @@ export default function InvoiceManagement() {
         fullInvoiceKeys: Object.keys(invoice) // Show ALL keys for debugging
       });
       
-      // CRITICAL: Ensure notes and terms are properly set (handle null/undefined)
-      if (!invoice.notes) invoice.notes = null;
-      if (!invoice.terms && !invoice.paymentTerms && !invoice.payment_terms) invoice.terms = null;
+      // CRITICAL: Ensure notes, terms, and status are properly set (handle null/undefined)
+      // Always ensure these fields exist, even if empty
+      invoice.notes = invoice.notes || null;
+      invoice.terms = invoice.terms || invoice.paymentTerms || invoice.payment_terms || null;
+      invoice.status = invoice.status || 'draft';
       
       console.log('📄 After normalization:', {
         notes: invoice.notes,
         terms: invoice.terms,
-        status: invoice.status
+        status: invoice.status,
+        hasNotes: !!invoice.notes,
+        hasTerms: !!invoice.terms,
+        hasStatus: !!invoice.status
       });
 
       // Check if invoice has items
@@ -1126,153 +1131,225 @@ export default function InvoiceManagement() {
       // A4 width is 210mm, margin is 15mm, so available is 180mm, but use 170mm for better margins
       const textAvailableWidth = pageWidth - (2 * margin) - 10; // Subtract 10mm for better margins and readability
 
-      // Payment Terms Section (ALWAYS show)
-      console.log('🔵 STARTING Payment Terms Section - yPos:', yPos, 'pageHeight:', pageHeight);
-      const terms = invoice.terms || invoice.paymentTerms || invoice.payment_terms || '';
-      console.log('🔍 Payment Terms check in PDF:', { 
-        terms, 
-        rawTerms: invoice.terms,
-        paymentTerms: invoice.paymentTerms,
-        payment_terms: invoice.payment_terms,
-        hasTerms: !!(terms && terms.trim()),
-        invoiceKeys: Object.keys(invoice)
-      });
-      // Check if we have enough space, otherwise add new page
-      if (yPos > pageHeight - 50) {
-        console.log('📄 Adding new page for Payment Terms');
-        doc.addPage();
-        yPos = margin;
-      }
-      
-      yPos += 8;
-      doc.setFontSize(10);
-      doc.setFont(undefined, 'bold');
-      doc.setTextColor(0, 0, 0);
-      doc.text('Payment Terms:', margin, yPos);
-      console.log('✅ Payment Terms label rendered at yPos:', yPos);
-      yPos += 7;
-      
-      doc.setFontSize(9);
-      doc.setFont(undefined, 'normal');
-      doc.setTextColor(60, 60, 60);
-      
-      if (terms && terms.trim()) {
-        // Split long text into multiple lines with proper word wrapping
-        // splitTextToSize automatically handles word boundaries
-        const termsLines = doc.splitTextToSize(terms, textAvailableWidth);
-        // Add each line with proper spacing
-        termsLines.forEach((line, index) => {
-          // Check if we need a new page
-          if (yPos > pageHeight - 20) {
-            doc.addPage();
-            yPos = margin + 5;
-          }
-          // Trim the line to remove any leading/trailing spaces for cleaner formatting
-          const trimmedLine = line.trim();
-          if (trimmedLine) {
-            doc.text(trimmedLine, margin, yPos);
-            yPos += 5.5; // Slightly increased line height for better readability
-          }
+      // Payment Terms Section (ALWAYS show) - wrapped in try-catch to ensure it always renders
+      try {
+        console.log('🔵 STARTING Payment Terms Section - yPos:', yPos, 'pageHeight:', pageHeight);
+        const terms = invoice.terms || invoice.paymentTerms || invoice.payment_terms || '';
+        console.log('🔍 Payment Terms check in PDF:', { 
+          terms, 
+          rawTerms: invoice.terms,
+          paymentTerms: invoice.paymentTerms,
+          payment_terms: invoice.payment_terms,
+          hasTerms: !!(terms && terms.trim()),
+          invoiceKeys: Object.keys(invoice)
         });
-        console.log('✅ Payment Terms added to PDF');
-      } else {
-        // Show "N/A" if no terms provided
-        doc.setTextColor(120, 120, 120); // Gray for N/A
-        doc.text('N/A', margin, yPos);
-        yPos += 5.5;
-        console.log('⚠️ Payment Terms not found, showing N/A');
-      }
-      yPos += 3; // Extra spacing after section
-
-      // Notes Section (ALWAYS show)
-      console.log('🔵 STARTING Notes Section - yPos:', yPos, 'pageHeight:', pageHeight);
-      const notes = invoice.notes || '';
-      console.log('🔍 Notes check in PDF:', { 
-        notes, 
-        rawNotes: invoice.notes,
-        hasNotes: !!(notes && notes.trim()),
-        invoiceKeys: Object.keys(invoice)
-      });
-      // Check if we have enough space, otherwise add new page
-      if (yPos > pageHeight - 50) {
-        console.log('📄 Adding new page for Notes');
-        doc.addPage();
-        yPos = margin;
-      }
-      
-      yPos += 8;
-      doc.setFontSize(10);
-      doc.setFont(undefined, 'bold');
-      doc.setTextColor(0, 0, 0);
-      doc.text('Notes:', margin, yPos);
-      console.log('✅ Notes label rendered at yPos:', yPos);
-      yPos += 7;
-      
-      doc.setFontSize(9);
-      doc.setFont(undefined, 'normal');
-      doc.setTextColor(60, 60, 60);
-      
-      if (notes && notes.trim()) {
-        // Split long text into multiple lines with proper word wrapping
-        // splitTextToSize automatically handles word boundaries
-        const notesLines = doc.splitTextToSize(notes, textAvailableWidth);
-        // Add each line with proper spacing and page break handling
-        notesLines.forEach((line, index) => {
-          // Check if we need a new page before adding this line
-          if (yPos > pageHeight - 20) {
+        // Check if we have enough space, otherwise add new page
+        if (yPos > pageHeight - 50) {
+          console.log('📄 Adding new page for Payment Terms');
+          doc.addPage();
+          yPos = margin;
+        }
+        
+        yPos += 8;
+        doc.setFontSize(10);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(0, 0, 0);
+        doc.text('Payment Terms:', margin, yPos);
+        console.log('✅ Payment Terms label rendered at yPos:', yPos);
+        yPos += 7;
+        
+        doc.setFontSize(9);
+        doc.setFont(undefined, 'normal');
+        doc.setTextColor(60, 60, 60);
+        
+        if (terms && terms.trim()) {
+          // Split long text into multiple lines with proper word wrapping
+          // splitTextToSize automatically handles word boundaries
+          const termsLines = doc.splitTextToSize(terms, textAvailableWidth);
+          // Add each line with proper spacing
+          termsLines.forEach((line, index) => {
+            // Check if we need a new page
+            if (yPos > pageHeight - 20) {
+              doc.addPage();
+              yPos = margin + 5;
+            }
+            // Trim the line to remove any leading/trailing spaces for cleaner formatting
+            const trimmedLine = line.trim();
+            if (trimmedLine) {
+              doc.text(trimmedLine, margin, yPos);
+              yPos += 5.5; // Slightly increased line height for better readability
+            }
+          });
+          console.log('✅ Payment Terms added to PDF');
+        } else {
+          // Show "N/A" if no terms provided
+          doc.setTextColor(120, 120, 120); // Gray for N/A
+          doc.text('N/A', margin, yPos);
+          yPos += 5.5;
+          console.log('⚠️ Payment Terms not found, showing N/A');
+        }
+        yPos += 3; // Extra spacing after section
+      } catch (error) {
+        console.error('❌ Error rendering Payment Terms section:', error);
+        // Still show the section label even if content fails
+        try {
+          if (yPos > pageHeight - 50) {
             doc.addPage();
-            yPos = margin + 5;
+            yPos = margin;
           }
-          // Trim the line to remove any leading/trailing spaces for cleaner formatting
-          const trimmedLine = line.trim();
-          if (trimmedLine) {
-            doc.text(trimmedLine, margin, yPos);
-            yPos += 5.5; // Slightly increased line height for better readability
-          }
-        });
-        console.log('✅ Notes added to PDF');
-      } else {
-        // Show "N/A" if no notes provided
-        doc.setTextColor(120, 120, 120); // Gray for N/A
-        doc.text('N/A', margin, yPos);
-        yPos += 5.5;
-        console.log('⚠️ Notes not found, showing N/A');
+          yPos += 8;
+          doc.setFontSize(10);
+          doc.setFont(undefined, 'bold');
+          doc.setTextColor(0, 0, 0);
+          doc.text('Payment Terms:', margin, yPos);
+          yPos += 7;
+          doc.setFontSize(9);
+          doc.setFont(undefined, 'normal');
+          doc.setTextColor(120, 120, 120);
+          doc.text('N/A', margin, yPos);
+          yPos += 8;
+        } catch (fallbackError) {
+          console.error('❌ Error in Payment Terms fallback:', fallbackError);
+        }
       }
-      yPos += 3; // Extra spacing after section
 
-      // Status Section (ALWAYS show status for clarity)
-      console.log('🔵 STARTING Status Section - yPos:', yPos, 'pageHeight:', pageHeight);
-      console.log('🔍 Status check:', { invoiceStatus, shouldShow: true });
-      // Check if we have enough space
-      if (yPos > pageHeight - 40) {
-        console.log('📄 Adding new page for Status');
-        doc.addPage();
-        yPos = margin;
+      // Notes Section (ALWAYS show) - wrapped in try-catch to ensure it always renders
+      try {
+        console.log('🔵 STARTING Notes Section - yPos:', yPos, 'pageHeight:', pageHeight);
+        const notes = invoice.notes || '';
+        console.log('🔍 Notes check in PDF:', { 
+          notes, 
+          rawNotes: invoice.notes,
+          hasNotes: !!(notes && notes.trim()),
+          invoiceKeys: Object.keys(invoice)
+        });
+        // Check if we have enough space, otherwise add new page
+        if (yPos > pageHeight - 50) {
+          console.log('📄 Adding new page for Notes');
+          doc.addPage();
+          yPos = margin;
+        }
+        
+        yPos += 8;
+        doc.setFontSize(10);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(0, 0, 0);
+        doc.text('Notes:', margin, yPos);
+        console.log('✅ Notes label rendered at yPos:', yPos);
+        yPos += 7;
+        
+        doc.setFontSize(9);
+        doc.setFont(undefined, 'normal');
+        doc.setTextColor(60, 60, 60);
+        
+        if (notes && notes.trim()) {
+          // Split long text into multiple lines with proper word wrapping
+          // splitTextToSize automatically handles word boundaries
+          const notesLines = doc.splitTextToSize(notes, textAvailableWidth);
+          // Add each line with proper spacing and page break handling
+          notesLines.forEach((line, index) => {
+            // Check if we need a new page before adding this line
+            if (yPos > pageHeight - 20) {
+              doc.addPage();
+              yPos = margin + 5;
+            }
+            // Trim the line to remove any leading/trailing spaces for cleaner formatting
+            const trimmedLine = line.trim();
+            if (trimmedLine) {
+              doc.text(trimmedLine, margin, yPos);
+              yPos += 5.5; // Slightly increased line height for better readability
+            }
+          });
+          console.log('✅ Notes added to PDF');
+        } else {
+          // Show "N/A" if no notes provided
+          doc.setTextColor(120, 120, 120); // Gray for N/A
+          doc.text('N/A', margin, yPos);
+          yPos += 5.5;
+          console.log('⚠️ Notes not found, showing N/A');
+        }
+        yPos += 3; // Extra spacing after section
+      } catch (error) {
+        console.error('❌ Error rendering Notes section:', error);
+        // Still show the section label even if content fails
+        try {
+          if (yPos > pageHeight - 50) {
+            doc.addPage();
+            yPos = margin;
+          }
+          yPos += 8;
+          doc.setFontSize(10);
+          doc.setFont(undefined, 'bold');
+          doc.setTextColor(0, 0, 0);
+          doc.text('Notes:', margin, yPos);
+          yPos += 7;
+          doc.setFontSize(9);
+          doc.setFont(undefined, 'normal');
+          doc.setTextColor(120, 120, 120);
+          doc.text('N/A', margin, yPos);
+          yPos += 8;
+        } catch (fallbackError) {
+          console.error('❌ Error in Notes fallback:', fallbackError);
+        }
       }
-      
-      yPos += 8;
-      doc.setFontSize(10);
-      doc.setFont(undefined, 'bold');
-      doc.setTextColor(0, 0, 0);
-      doc.text('Status:', margin, yPos);
-      console.log('✅ Status label rendered at yPos:', yPos);
-      yPos += 7;
-      
-      doc.setFontSize(9);
-      doc.setFont(undefined, 'normal');
-      // Color code based on status
-      if (invoiceStatus === 'paid') {
-        doc.setTextColor(34, 197, 94); // Green for paid
-      } else if (invoiceStatus === 'sent') {
-        doc.setTextColor(255, 152, 0); // Orange
-      } else if (invoiceStatus === 'draft') {
-        doc.setTextColor(100, 100, 100); // Gray
-      } else {
-        doc.setTextColor(0, 0, 0); // Black
+
+      // Status Section (ALWAYS show status for clarity) - wrapped in try-catch to ensure it always renders
+      try {
+        console.log('🔵 STARTING Status Section - yPos:', yPos, 'pageHeight:', pageHeight);
+        console.log('🔍 Status check:', { invoiceStatus, shouldShow: true });
+        // Check if we have enough space
+        if (yPos > pageHeight - 40) {
+          console.log('📄 Adding new page for Status');
+          doc.addPage();
+          yPos = margin;
+        }
+        
+        yPos += 8;
+        doc.setFontSize(10);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(0, 0, 0);
+        doc.text('Status:', margin, yPos);
+        console.log('✅ Status label rendered at yPos:', yPos);
+        yPos += 7;
+        
+        doc.setFontSize(9);
+        doc.setFont(undefined, 'normal');
+        // Color code based on status
+        if (invoiceStatus === 'paid') {
+          doc.setTextColor(34, 197, 94); // Green for paid
+        } else if (invoiceStatus === 'sent') {
+          doc.setTextColor(255, 152, 0); // Orange
+        } else if (invoiceStatus === 'draft') {
+          doc.setTextColor(100, 100, 100); // Gray
+        } else {
+          doc.setTextColor(0, 0, 0); // Black
+        }
+        doc.text(invoiceStatus.charAt(0).toUpperCase() + invoiceStatus.slice(1), margin, yPos);
+        yPos += 8;
+        console.log('✅ Status added to PDF:', invoiceStatus);
+      } catch (error) {
+        console.error('❌ Error rendering Status section:', error);
+        // Still show the section label even if content fails
+        try {
+          if (yPos > pageHeight - 40) {
+            doc.addPage();
+            yPos = margin;
+          }
+          yPos += 8;
+          doc.setFontSize(10);
+          doc.setFont(undefined, 'bold');
+          doc.setTextColor(0, 0, 0);
+          doc.text('Status:', margin, yPos);
+          yPos += 7;
+          doc.setFontSize(9);
+          doc.setFont(undefined, 'normal');
+          doc.setTextColor(100, 100, 100);
+          doc.text('Draft', margin, yPos);
+          yPos += 8;
+        } catch (fallbackError) {
+          console.error('❌ Error in Status fallback:', fallbackError);
+        }
       }
-      doc.text(invoiceStatus.charAt(0).toUpperCase() + invoiceStatus.slice(1), margin, yPos);
-      yPos += 8;
-      console.log('✅ Status added to PDF:', invoiceStatus);
 
       // Simple Footer
       if (yPos < pageHeight - 30) {
