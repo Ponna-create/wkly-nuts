@@ -1254,6 +1254,11 @@ export default function InvoiceManagement() {
         doc.setTextColor(60, 60, 60);
         
         if (notes && notes.trim()) {
+          // Log the original notes to debug truncation issue
+          console.log('🔍 Original notes text:', notes);
+          console.log('🔍 Notes length:', notes.length);
+          console.log('🔍 Notes first 100 chars:', notes.substring(0, 100));
+          
           // Clean and normalize the notes text for better formatting
           // Preserve intentional line breaks but normalize excessive whitespace
           let cleanedNotes = notes
@@ -1263,9 +1268,14 @@ export default function InvoiceManagement() {
             .replace(/\n[ \t]+/g, '\n') // Remove leading spaces after newlines
             .trim();
           
+          console.log('🔍 Cleaned notes text:', cleanedNotes);
+          console.log('🔍 Cleaned notes length:', cleanedNotes.length);
+          
           // Split long text into multiple lines with proper word wrapping
           // splitTextToSize automatically handles word boundaries
           const notesLines = doc.splitTextToSize(cleanedNotes, textAvailableWidth);
+          console.log('🔍 Notes lines count:', notesLines.length);
+          console.log('🔍 Notes lines:', notesLines);
           
           // Add each line with consistent spacing and page break handling
           notesLines.forEach((line, index) => {
