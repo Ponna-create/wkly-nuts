@@ -807,6 +807,17 @@ export default function InvoiceManagement() {
       // Use the latest invoice data
       invoice = latestInvoice;
 
+      // Debug: Log invoice data to see what fields are available
+      console.log('📄 Generating PDF for invoice:', {
+        id: invoice.id,
+        invoiceNumber: invoice.invoiceNumber || invoice.invoice_number,
+        status: invoice.status,
+        terms: invoice.terms || invoice.paymentTerms,
+        notes: invoice.notes,
+        hasTerms: !!(invoice.terms || invoice.paymentTerms),
+        hasNotes: !!invoice.notes
+      });
+
       // Check if invoice has items
       if (!invoice.items || !Array.isArray(invoice.items) || invoice.items.length === 0) {
         showToast('Invoice has no items. Cannot generate PDF.', 'error');
@@ -1079,7 +1090,8 @@ export default function InvoiceManagement() {
       yPos += 10;
 
       // Payment Terms Section
-      const terms = invoice.terms || invoice.paymentTerms;
+      const terms = invoice.terms || invoice.paymentTerms || invoice.payment_terms;
+      console.log('🔍 Payment Terms check:', { terms, hasTerms: !!(terms && terms.trim()) });
       if (terms && terms.trim()) {
         // Check if we have enough space, otherwise add new page
         if (yPos > pageHeight - 50) {
@@ -1101,10 +1113,14 @@ export default function InvoiceManagement() {
         const termsLines = doc.splitTextToSize(terms, pageWidth - (2 * margin));
         doc.text(termsLines, margin, yPos);
         yPos += (termsLines.length * 5) + 5;
+        console.log('✅ Payment Terms added to PDF');
+      } else {
+        console.log('⚠️ Payment Terms not found or empty');
       }
 
       // Notes Section
       const notes = invoice.notes;
+      console.log('🔍 Notes check:', { notes, hasNotes: !!(notes && notes.trim()) });
       if (notes && notes.trim()) {
         // Check if we have enough space, otherwise add new page
         if (yPos > pageHeight - 50) {
@@ -1126,9 +1142,13 @@ export default function InvoiceManagement() {
         const notesLines = doc.splitTextToSize(notes, pageWidth - (2 * margin));
         doc.text(notesLines, margin, yPos);
         yPos += (notesLines.length * 5) + 5;
+        console.log('✅ Notes added to PDF');
+      } else {
+        console.log('⚠️ Notes not found or empty');
       }
 
       // Status Section (if not paid, show status)
+      console.log('🔍 Status check:', { invoiceStatus, shouldShow: invoiceStatus !== 'paid' });
       if (invoiceStatus !== 'paid') {
         // Check if we have enough space
         if (yPos > pageHeight - 40) {
@@ -1155,6 +1175,9 @@ export default function InvoiceManagement() {
         }
         doc.text(invoiceStatus.charAt(0).toUpperCase() + invoiceStatus.slice(1), margin, yPos);
         yPos += 10;
+        console.log('✅ Status added to PDF');
+      } else {
+        console.log('⚠️ Status is "paid", not showing status section');
       }
 
       // Simple Footer
