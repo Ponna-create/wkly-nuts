@@ -1110,9 +1110,11 @@ export default function InvoiceManagement() {
         doc.setFontSize(9);
         doc.setFont(undefined, 'normal');
         doc.setTextColor(60, 60, 60);
-        // Calculate available width (page width minus margins)
-        const availableWidth = pageWidth - (2 * margin);
-        // Split long text into multiple lines with proper wrapping
+        // Calculate available width (page width minus margins) - use a bit less for better formatting
+        // A4 width is 210mm, margin is 15mm, so available is 180mm, but use 170mm for better margins
+        const availableWidth = pageWidth - (2 * margin) - 10; // Subtract 10mm for better margins and readability
+        // Split long text into multiple lines with proper word wrapping
+        // splitTextToSize automatically handles word boundaries
         const termsLines = doc.splitTextToSize(terms, availableWidth);
         // Add each line with proper spacing
         termsLines.forEach((line, index) => {
@@ -1121,8 +1123,12 @@ export default function InvoiceManagement() {
             doc.addPage();
             yPos = margin + 5;
           }
-          doc.text(line, margin, yPos);
-          yPos += 5; // Line height
+          // Trim the line to remove any leading/trailing spaces for cleaner formatting
+          const trimmedLine = line.trim();
+          if (trimmedLine) {
+            doc.text(trimmedLine, margin, yPos);
+            yPos += 5.5; // Slightly increased line height for better readability
+          }
         });
         yPos += 3; // Extra spacing after section
         console.log('✅ Payment Terms added to PDF');
@@ -1150,9 +1156,11 @@ export default function InvoiceManagement() {
         doc.setFontSize(9);
         doc.setFont(undefined, 'normal');
         doc.setTextColor(60, 60, 60);
-        // Calculate available width (page width minus margins)
-        const availableWidth = pageWidth - (2 * margin);
-        // Split long text into multiple lines with proper wrapping
+        // Calculate available width (page width minus margins) - use a bit less for better formatting
+        // A4 width is 210mm, margin is 15mm, so available is 180mm, but use 170mm for better margins
+        const availableWidth = pageWidth - (2 * margin) - 10; // Subtract 10mm for better margins and readability
+        // Split long text into multiple lines with proper word wrapping
+        // splitTextToSize automatically handles word boundaries
         const notesLines = doc.splitTextToSize(notes, availableWidth);
         // Add each line with proper spacing and page break handling
         notesLines.forEach((line, index) => {
@@ -1161,8 +1169,12 @@ export default function InvoiceManagement() {
             doc.addPage();
             yPos = margin + 5;
           }
-          doc.text(line, margin, yPos);
-          yPos += 5; // Line height
+          // Trim the line to remove any leading/trailing spaces for cleaner formatting
+          const trimmedLine = line.trim();
+          if (trimmedLine) {
+            doc.text(trimmedLine, margin, yPos);
+            yPos += 5.5; // Slightly increased line height for better readability
+          }
         });
         yPos += 3; // Extra spacing after section
         console.log('✅ Notes added to PDF');
