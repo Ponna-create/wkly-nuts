@@ -1100,20 +1100,31 @@ export default function InvoiceManagement() {
           yPos = margin;
         }
         
-        yPos += 5;
+        yPos += 8;
         doc.setFontSize(10);
         doc.setFont(undefined, 'bold');
         doc.setTextColor(0, 0, 0);
         doc.text('Payment Terms:', margin, yPos);
-        yPos += 6;
+        yPos += 7;
         
         doc.setFontSize(9);
         doc.setFont(undefined, 'normal');
         doc.setTextColor(60, 60, 60);
-        // Split long text into multiple lines
-        const termsLines = doc.splitTextToSize(terms, pageWidth - (2 * margin));
-        doc.text(termsLines, margin, yPos);
-        yPos += (termsLines.length * 5) + 5;
+        // Calculate available width (page width minus margins)
+        const availableWidth = pageWidth - (2 * margin);
+        // Split long text into multiple lines with proper wrapping
+        const termsLines = doc.splitTextToSize(terms, availableWidth);
+        // Add each line with proper spacing
+        termsLines.forEach((line, index) => {
+          // Check if we need a new page
+          if (yPos > pageHeight - 20) {
+            doc.addPage();
+            yPos = margin + 5;
+          }
+          doc.text(line, margin, yPos);
+          yPos += 5; // Line height
+        });
+        yPos += 3; // Extra spacing after section
         console.log('✅ Payment Terms added to PDF');
       } else {
         console.log('⚠️ Payment Terms not found or empty');
@@ -1129,20 +1140,31 @@ export default function InvoiceManagement() {
           yPos = margin;
         }
         
-        yPos += 5;
+        yPos += 8;
         doc.setFontSize(10);
         doc.setFont(undefined, 'bold');
         doc.setTextColor(0, 0, 0);
         doc.text('Notes:', margin, yPos);
-        yPos += 6;
+        yPos += 7;
         
         doc.setFontSize(9);
         doc.setFont(undefined, 'normal');
         doc.setTextColor(60, 60, 60);
-        // Split long text into multiple lines
-        const notesLines = doc.splitTextToSize(notes, pageWidth - (2 * margin));
-        doc.text(notesLines, margin, yPos);
-        yPos += (notesLines.length * 5) + 5;
+        // Calculate available width (page width minus margins)
+        const availableWidth = pageWidth - (2 * margin);
+        // Split long text into multiple lines with proper wrapping
+        const notesLines = doc.splitTextToSize(notes, availableWidth);
+        // Add each line with proper spacing and page break handling
+        notesLines.forEach((line, index) => {
+          // Check if we need a new page before adding this line
+          if (yPos > pageHeight - 20) {
+            doc.addPage();
+            yPos = margin + 5;
+          }
+          doc.text(line, margin, yPos);
+          yPos += 5; // Line height
+        });
+        yPos += 3; // Extra spacing after section
         console.log('✅ Notes added to PDF');
       } else {
         console.log('⚠️ Notes not found or empty');
@@ -1156,12 +1178,12 @@ export default function InvoiceManagement() {
         yPos = margin;
       }
       
-      yPos += 5;
+      yPos += 8;
       doc.setFontSize(10);
       doc.setFont(undefined, 'bold');
       doc.setTextColor(0, 0, 0);
       doc.text('Status:', margin, yPos);
-      yPos += 6;
+      yPos += 7;
       
       doc.setFontSize(9);
       doc.setFont(undefined, 'normal');
@@ -1176,7 +1198,7 @@ export default function InvoiceManagement() {
         doc.setTextColor(0, 0, 0); // Black
       }
       doc.text(invoiceStatus.charAt(0).toUpperCase() + invoiceStatus.slice(1), margin, yPos);
-      yPos += 10;
+      yPos += 8;
       console.log('✅ Status added to PDF:', invoiceStatus);
 
       // Simple Footer
