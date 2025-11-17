@@ -234,13 +234,38 @@ export default function InvoiceManagement() {
       return;
     }
 
-    // Validate customer ID format for database (UUID format check)
+    // Auto-sync local customers to database if needed
+    let customerId = formData.customerId;
     if (isSupabaseAvailable()) {
       const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       if (!uuidPattern.test(formData.customerId)) {
-        showToast('Invalid customer selected. Please select a customer from the database or re-create the customer.', 'error');
-        console.error('Invalid customer ID format:', formData.customerId);
-        return;
+        // Customer is local-only, sync to database first
+        const localCustomer = customers.find(c => c.id === formData.customerId);
+        if (!localCustomer) {
+          showToast('Customer not found', 'error');
+          return;
+        }
+        
+        console.log('🔄 Syncing local customer to database:', localCustomer.name);
+        showToast('Syncing customer to database...', 'info');
+        
+        const createResult = await dbService.createCustomer(localCustomer);
+        if (createResult.error) {
+          console.error('Error syncing customer:', createResult.error);
+          showToast('Error syncing customer to database', 'error');
+          return;
+        }
+        
+        // Use the new database customer ID
+        customerId = createResult.data.id;
+        console.log('✅ Customer synced successfully with ID:', customerId);
+        
+        // Update the app state with the synced customer
+        dispatch({ type: 'UPDATE_CUSTOMER', payload: { ...localCustomer, id: customerId } });
+        
+        // Update form data with new customer ID
+        setFormData({ ...formData, customerId });
+        showToast('Customer synced successfully', 'success');
       }
     }
 
@@ -249,14 +274,36 @@ export default function InvoiceManagement() {
       return;
     }
 
-    // Validate SKU IDs in items (must be valid UUIDs for database)
+    // Auto-sync local SKUs to database if needed
     if (isSupabaseAvailable()) {
       const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      for (const item of formData.items) {
+      for (let i = 0; i < formData.items.length; i++) {
+        const item = formData.items[i];
         if (!uuidPattern.test(item.skuId)) {
-          showToast('Invalid SKU in items. Please ensure all SKUs are from the database.', 'error');
-          console.error('Invalid SKU ID format:', item.skuId);
-          return;
+          // SKU is local-only, sync to database first
+          const localSku = skus.find(s => String(s.id) === String(item.skuId));
+          if (!localSku) {
+            showToast(`SKU not found: ${item.skuName}`, 'error');
+            return;
+          }
+          
+          console.log('🔄 Syncing local SKU to database:', localSku.name);
+          showToast(`Syncing SKU: ${localSku.name}...`, 'info');
+          
+          const createResult = await dbService.createSKU(localSku);
+          if (createResult.error) {
+            console.error('Error syncing SKU:', createResult.error);
+            showToast(`Error syncing SKU: ${localSku.name}`, 'error');
+            return;
+          }
+          
+          // Update the item with the new database SKU ID
+          formData.items[i].skuId = createResult.data.id;
+          console.log('✅ SKU synced successfully with ID:', createResult.data.id);
+          
+          // Update the app state with the synced SKU
+          dispatch({ type: 'UPDATE_SKU', payload: { ...localSku, id: createResult.data.id } });
+          showToast(`SKU synced: ${localSku.name}`, 'success');
         }
       }
     }
@@ -269,7 +316,7 @@ export default function InvoiceManagement() {
     }
     
     const invoiceData = {
-      customerId: formData.customerId,
+      customerId: customerId, // Use synced customer ID (may be different from formData if auto-synced)
       invoiceDate: formData.invoiceDate,
       dueDate: formData.dueDate || null,
       items: formData.items.map(item => ({
@@ -1540,22 +1587,14 @@ export default function InvoiceManagement() {
                 disabled={!!editingInvoice}
               >
                 <option value="">Select Customer</option>
-                {customers.map((customer) => {
-                  // Check if customer ID is in valid UUID format (from database)
-                  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-                  const isValidId = uuidPattern.test(customer.id);
-                  
-                  return (
-                    <option 
-                      key={customer.id} 
-                      value={customer.id}
-                      disabled={isSupabaseAvailable() && !isValidId}
-                    >
-                      {customer.name} {customer.phone ? `(${customer.phone})` : ''}
-                      {isSupabaseAvailable() && !isValidId ? ' [Local Only - Please Re-create]' : ''}
-                    </option>
-                  );
-                })}
+                {customers.map((customer) => (
+                  <option 
+                    key={customer.id} 
+                    value={customer.id}
+                  >
+                    {customer.name} {customer.phone ? `(${customer.phone})` : ''}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
