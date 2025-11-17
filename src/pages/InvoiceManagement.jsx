@@ -261,9 +261,12 @@ export default function InvoiceManagement() {
       }
     }
 
-    // IMPORTANT: New invoices should always start as 'draft'
-    // Status can only be changed to 'paid' via handleStatusChange (which generates invoice number)
-    const invoiceStatus = editingInvoice ? formData.status : 'draft';
+    // IMPORTANT: 'Paid' status can only be set via handleStatusChange (which generates invoice number)
+    // New invoices can be 'draft' or 'sent', but never 'paid' initially
+    let invoiceStatus = formData.status;
+    if (!editingInvoice && formData.status === 'paid') {
+      invoiceStatus = 'draft'; // Prevent 'paid' for new invoices
+    }
     
     const invoiceData = {
       customerId: formData.customerId,
@@ -1862,7 +1865,6 @@ export default function InvoiceManagement() {
                 value={formData.status}
                 onChange={(e) => setFormData({ ...formData, status: e.target.value })}
                 className="input-field"
-                disabled={!editingInvoice} // Disable for new invoices (always start as draft)
               >
                 <option value="draft">Draft</option>
                 <option value="sent">Sent</option>
