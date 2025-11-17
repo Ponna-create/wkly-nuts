@@ -249,6 +249,18 @@ export default function InvoiceManagement() {
       return;
     }
 
+    // Validate SKU IDs in items (must be valid UUIDs for database)
+    if (isSupabaseAvailable()) {
+      const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      for (const item of formData.items) {
+        if (!uuidPattern.test(item.skuId)) {
+          showToast('Invalid SKU in items. Please ensure all SKUs are from the database.', 'error');
+          console.error('Invalid SKU ID format:', item.skuId);
+          return;
+        }
+      }
+    }
+
     // IMPORTANT: New invoices should always start as 'draft'
     // Status can only be changed to 'paid' via handleStatusChange (which generates invoice number)
     const invoiceStatus = editingInvoice ? formData.status : 'draft';
