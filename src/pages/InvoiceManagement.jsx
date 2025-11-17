@@ -308,11 +308,40 @@ export default function InvoiceManagement() {
       }
     }
 
-    // IMPORTANT: 'Paid' status can only be set via handleStatusChange (which generates invoice number)
-    // New invoices can be 'draft' or 'sent', but never 'paid' initially
-    let invoiceStatus = formData.status;
-    if (!editingInvoice && formData.status === 'paid') {
-      invoiceStatus = 'draft'; // Prevent 'paid' for new invoices
+    // Generate invoice number if status is 'paid' and invoice number is not set
+    let invoiceNumber = editingInvoice?.invoiceNumber || null;
+    
+    if (formData.status === 'paid' && (!invoiceNumber || invoiceNumber === 'N/A')) {
+      console.log('✅ Status is "paid" - Generating invoice number...');
+      
+      // Generate invoice number format: INV-YYYY-XXXXX
+      const year = new Date().getFullYear();
+      
+      // Get all existing invoices to find the highest number
+      if (isSupabaseAvailable()) {
+        const allInvoicesRes = await dbService.getInvoices();
+        const existingNumbers = (allInvoicesRes.data || [])
+          .map(inv => inv.invoiceNumber || inv.invoice_number)
+          .filter(num => num && num.startsWith(`INV-${year}`));
+        
+        // Extract numbers and find the highest
+        const numbers = existingNumbers.map(num => {
+          const match = num.match(/INV-\d{4}-(\d{5})/);
+          return match ? parseInt(match[1], 10) : 0;
+        });
+        
+        const highestNumber = numbers.length > 0 ? Math.max(...numbers) : 0;
+        const nextNumber = highestNumber + 1;
+        invoiceNumber = `INV-${year}-${String(nextNumber).padStart(5, '0')}`;
+        
+        console.log('📋 Generated invoice number:', invoiceNumber);
+      } else {
+        // For local storage, use a simpler approach
+        const invoiceCount = invoices.filter(inv => 
+          inv.invoiceNumber && inv.invoiceNumber.startsWith(`INV-${year}`)
+        ).length;
+        invoiceNumber = `INV-${year}-${String(invoiceCount + 1).padStart(5, '0')}`;
+      }
     }
     
     const invoiceData = {
@@ -335,8 +364,9 @@ export default function InvoiceManagement() {
       shippingCharge: shipping,
       advancePaid: advance,
       totalAmount: total,
-      balanceDue,
-      status: invoiceStatus, // Always 'draft' for new invoices
+      balanceDue: formData.status === 'paid' ? 0 : balanceDue, // Balance due is 0 when paid
+      status: formData.status,
+      invoiceNumber: invoiceNumber,
       notes: formData.notes || null,
       terms: formData.terms || null,
     };
@@ -344,7 +374,10 @@ export default function InvoiceManagement() {
     try {
       if (editingInvoice) {
         invoiceData.id = editingInvoice.id;
-        invoiceData.invoiceNumber = editingInvoice.invoiceNumber;
+        // Keep existing invoice number if editing (unless we just generated one for paid status)
+        if (!invoiceNumber || invoiceNumber === editingInvoice.invoiceNumber) {
+          invoiceData.invoiceNumber = editingInvoice.invoiceNumber;
+        }
         
         // Save to database
         if (isSupabaseAvailable()) {
@@ -359,7 +392,38 @@ export default function InvoiceManagement() {
         } else {
           dispatch({ type: 'UPDATE_INVOICE', payload: invoiceData });
         }
-        showToast('Invoice updated successfully', 'success');
+        
+        // Reduce inventory if status changed to 'paid' from another status
+        const wasNotPaid = editingInvoice.status !== 'paid';
+        const isNowPaid = formData.status === 'paid';
+        
+        if (wasNotPaid && isNowPaid && invoiceData.items && invoiceData.items.length > 0) {
+          console.log('📦 Reducing inventory stock (status changed to paid)...');
+          try {
+            for (const item of invoiceData.items) {
+              await dbService.updateInventoryStock(
+                item.skuId,
+                item.packType,
+                item.quantity,
+                'subtract'
+              );
+              console.log(`✅ Reduced ${item.quantity} ${item.packType} packs of ${item.skuName}`);
+            }
+            // Reload inventory to reflect changes
+            if (isSupabaseAvailable()) {
+              const inventoryResult = await dbService.getInventory();
+              if (!inventoryResult.error) {
+                dispatch({ type: 'SET_INVENTORY', payload: inventoryResult.data });
+              }
+            }
+            showToast('Invoice updated and inventory reduced', 'success');
+          } catch (error) {
+            console.error('Error reducing stock:', error);
+            showToast('Invoice updated but inventory update failed', 'warning');
+          }
+        } else {
+          showToast('Invoice updated successfully', 'success');
+        }
       } else {
         // Create new invoice - save to database first
         console.log('📝 Creating new invoice with data:', {
@@ -396,12 +460,36 @@ export default function InvoiceManagement() {
           dispatch({ type: 'ADD_INVOICE', payload: createResult.data });
           showToast('Invoice created successfully', 'success');
         } else {
-          dispatch({ type: 'ADD_INVOICE', payload: { ...invoiceData, id: Date.now() + Math.random(), invoiceNumber: 'N/A' } });
+          dispatch({ type: 'ADD_INVOICE', payload: { ...invoiceData, id: Date.now() + Math.random(), invoiceNumber: invoiceNumber || 'N/A' } });
           showToast('Invoice created successfully', 'success');
         }
-        
-        // Stock will be reduced only when invoice status changes to "paid"
-        // (Moved to handleStatusChange function)
+      }
+      
+      // Reduce inventory stock if status is 'paid'
+      if (formData.status === 'paid' && invoiceData.items && invoiceData.items.length > 0) {
+        console.log('📦 Reducing inventory stock for paid invoice...');
+        try {
+          for (const item of invoiceData.items) {
+            await dbService.updateInventoryStock(
+              item.skuId,
+              item.packType,
+              item.quantity,
+              'subtract'
+            );
+            console.log(`✅ Reduced ${item.quantity} ${item.packType} packs of ${item.skuName}`);
+          }
+          // Reload inventory to reflect changes
+          if (isSupabaseAvailable()) {
+            const inventoryResult = await dbService.getInventory();
+            if (!inventoryResult.error) {
+              dispatch({ type: 'SET_INVENTORY', payload: inventoryResult.data });
+            }
+          }
+          showToast('Inventory updated successfully', 'success');
+        } catch (error) {
+          console.error('Error reducing stock:', error);
+          showToast('Warning: Invoice created but inventory update failed', 'warning');
+        }
       }
       
       resetForm();
@@ -1907,7 +1995,7 @@ export default function InvoiceManagement() {
               >
                 <option value="draft">Draft</option>
                 <option value="sent">Sent</option>
-                {/* Paid status can only be set via "Mark as Paid" button to ensure invoice number generation */}
+                <option value="paid">Paid</option>
               </select>
             </div>
           </div>
