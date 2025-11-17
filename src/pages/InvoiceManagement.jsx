@@ -234,6 +234,16 @@ export default function InvoiceManagement() {
       return;
     }
 
+    // Validate customer ID format for database (UUID format check)
+    if (isSupabaseAvailable()) {
+      const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidPattern.test(formData.customerId)) {
+        showToast('Invalid customer selected. Please select a customer from the database or re-create the customer.', 'error');
+        console.error('Invalid customer ID format:', formData.customerId);
+        return;
+      }
+    }
+
     if (formData.items.length === 0) {
       showToast('Please add at least one item', 'error');
       return;
@@ -1515,11 +1525,22 @@ export default function InvoiceManagement() {
                 disabled={!!editingInvoice}
               >
                 <option value="">Select Customer</option>
-                {customers.map((customer) => (
-                  <option key={customer.id} value={customer.id}>
-                    {customer.name} {customer.phone ? `(${customer.phone})` : ''}
-                  </option>
-                ))}
+                {customers.map((customer) => {
+                  // Check if customer ID is in valid UUID format (from database)
+                  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+                  const isValidId = uuidPattern.test(customer.id);
+                  
+                  return (
+                    <option 
+                      key={customer.id} 
+                      value={customer.id}
+                      disabled={isSupabaseAvailable() && !isValidId}
+                    >
+                      {customer.name} {customer.phone ? `(${customer.phone})` : ''}
+                      {isSupabaseAvailable() && !isValidId ? ' [Local Only - Please Re-create]' : ''}
+                    </option>
+                  );
+                })}
               </select>
             </div>
           </div>
