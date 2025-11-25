@@ -240,7 +240,9 @@ export default function InvoiceManagement() {
       const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       if (!uuidPattern.test(formData.customerId)) {
         // Customer is local-only, sync to database first
-        const localCustomer = customers.find(c => c.id === formData.customerId);
+        const localCustomer = customers.find(
+          (c) => String(c.id) === String(formData.customerId)
+        );
         if (!localCustomer) {
           showToast('Customer not found', 'error');
           return;
