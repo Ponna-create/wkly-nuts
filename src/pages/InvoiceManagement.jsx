@@ -31,7 +31,7 @@ export default function InvoiceManagement() {
 
   const [currentItem, setCurrentItem] = useState({
     skuId: '',
-    packType: 'weekly',
+    packType: 'weekly', // 'weekly', 'monthly', or 'single' for single unit SKUs
     quantity: '',
     unitPrice: '',
     priceOverridden: false,
@@ -48,6 +48,9 @@ export default function InvoiceManagement() {
   const getStockForSku = (skuId, packType) => {
     const inv = inventory.find(inv => String(inv.skuId) === String(skuId));
     if (!inv) return 0;
+    if (packType === 'single') {
+      return inv.singleUnitsAvailable || 0;
+    }
     return packType === 'weekly' ? inv.weeklyPacksAvailable : inv.monthlyPacksAvailable;
   };
 
@@ -56,18 +59,23 @@ export default function InvoiceManagement() {
     const sku = skus.find(s => String(s.id) === String(skuId));
     if (!sku) return;
 
+    // Auto-set packType based on SKU type
+    const defaultPackType = sku.skuType === 'single' ? 'single' : 'weekly';
+
     setCurrentItem({
       ...currentItem,
       skuId,
+      packType: defaultPackType,
       priceOverridden: false,
     });
 
     // Auto-fetch price from pricing strategy
-    const pricing = getPricingForSku(skuId, currentItem.packType);
+    const pricing = getPricingForSku(skuId, defaultPackType);
     if (pricing && pricing.sellingPrice) {
       setCurrentItem({
         ...currentItem,
         skuId,
+        packType: defaultPackType,
         unitPrice: pricing.sellingPrice.toString(),
         priceOverridden: false,
       });
@@ -75,6 +83,7 @@ export default function InvoiceManagement() {
       setCurrentItem({
         ...currentItem,
         skuId,
+        packType: defaultPackType,
         unitPrice: '',
         priceOverridden: false,
       });
@@ -96,6 +105,13 @@ export default function InvoiceManagement() {
           ...currentItem,
           packType,
           unitPrice: pricing.sellingPrice.toString(),
+          priceOverridden: false,
+        });
+      } else {
+        setCurrentItem({
+          ...currentItem,
+          packType,
+          unitPrice: '',
           priceOverridden: false,
         });
       }
@@ -125,9 +141,10 @@ export default function InvoiceManagement() {
 
     // Check stock availability
     const availableStock = getStockForSku(currentItem.skuId, currentItem.packType);
+    const isSingleUnit = sku?.skuType === 'single';
     if (availableStock < quantity) {
       const confirm = window.confirm(
-        `Warning: Only ${availableStock.toFixed(2)} packs available. Do you want to proceed?`
+        `Warning: Only ${availableStock.toFixed(2)} ${isSingleUnit ? 'units' : 'packs'} available. Do you want to proceed?`
       );
       if (!confirm) return;
     }
@@ -1731,17 +1748,29 @@ export default function InvoiceManagement() {
                   ))}
                 </select>
               </div>
-              <div>
-                <label className="label">Pack Type</label>
-                <select
-                  value={currentItem.packType}
-                  onChange={(e) => handlePackTypeChange(e.target.value)}
-                  className="input-field"
-                >
-                  <option value="weekly">Weekly</option>
-                  <option value="monthly">Monthly</option>
-                </select>
-              </div>
+              {currentItem.skuId && (() => {
+                const selectedSku = skus.find(s => String(s.id) === String(currentItem.skuId));
+                const isSingleUnit = selectedSku?.skuType === 'single';
+                
+                if (isSingleUnit) {
+                  // Hide pack type selector for single unit SKUs
+                  return null;
+                }
+                
+                return (
+                  <div>
+                    <label className="label">Pack Type</label>
+                    <select
+                      value={currentItem.packType}
+                      onChange={(e) => handlePackTypeChange(e.target.value)}
+                      className="input-field"
+                    >
+                      <option value="weekly">Weekly</option>
+                      <option value="monthly">Monthly</option>
+                    </select>
+                  </div>
+                );
+              })()}
               <div>
                 <label className="label">Quantity</label>
                 <input
@@ -1753,11 +1782,17 @@ export default function InvoiceManagement() {
                   className="input-field"
                   placeholder="0"
                 />
-                {currentItem.skuId && (
-                  <p className="text-xs text-gray-500 mt-1">
-                    Available: {getStockForSku(currentItem.skuId, currentItem.packType).toFixed(2)} packs
-                  </p>
-                )}
+                {currentItem.skuId && (() => {
+                  const selectedSku = skus.find(s => String(s.id) === String(currentItem.skuId));
+                  const isSingleUnit = selectedSku?.skuType === 'single';
+                  const stock = getStockForSku(currentItem.skuId, currentItem.packType);
+                  
+                  return (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Available: {stock.toFixed(2)} {isSingleUnit ? 'units' : 'packs'}
+                    </p>
+                  );
+                })()}
               </div>
               <div>
                 <label className="label">
@@ -1800,7 +1835,7 @@ export default function InvoiceManagement() {
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="text-left py-2 px-4 font-semibold text-gray-700">SKU</th>
-                      <th className="text-left py-2 px-4 font-semibold text-gray-700">Pack Type</th>
+                      <th className="text-left py-2 px-4 font-semibold text-gray-700">Type</th>
                       <th className="text-right py-2 px-4 font-semibold text-gray-700">Qty</th>
                       <th className="text-right py-2 px-4 font-semibold text-gray-700">Unit Price</th>
                       <th className="text-right py-2 px-4 font-semibold text-gray-700">Total</th>
@@ -1811,7 +1846,9 @@ export default function InvoiceManagement() {
                     {formData.items.map((item) => (
                       <tr key={item.id} className="border-t hover:bg-gray-50">
                         <td className="py-2 px-4">{item.skuName}</td>
-                        <td className="py-2 px-4 capitalize">{item.packType}</td>
+                        <td className="py-2 px-4 capitalize">
+                          {item.packType === 'single' ? 'Single Unit' : `${item.packType} Pack`}
+                        </td>
                         <td className="py-2 px-4 text-right">{item.quantity}</td>
                         <td className="py-2 px-4 text-right">
                           ₹{item.unitPrice.toFixed(2)}

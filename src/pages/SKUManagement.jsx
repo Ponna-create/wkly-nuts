@@ -83,13 +83,15 @@ export default function SKUManagement() {
   const [orderListMode, setOrderListMode] = useState('full'); // 'full' or 'shortage'
   const [showPurchaseList, setShowPurchaseList] = useState(false); // Toggle simplified Purchase List view (only Ingredient + Purchase Kg)
   
-  const [currentStep, setCurrentStep] = useState(1); // 1 = Basic Info, 2 = Day Recipes
+  const [currentStep, setCurrentStep] = useState(1); // 1 = Basic Info, 2 = Day Recipes / Single Unit Details
   const [currentDay, setCurrentDay] = useState('MON');
   
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    targetWeightPerSachet: '',
+    skuType: 'weekly', // 'weekly' or 'single'
+    targetWeightPerSachet: '', // For weekly packs
+    unitWeight: '', // For single unit SKUs (in kg, e.g., 0.5 or 1)
     selectedVendorId: '',
     recipes: {
       MON: [],
@@ -100,6 +102,8 @@ export default function SKUManagement() {
       SAT: [],
       SUN: [],
     },
+    // For single unit SKUs - direct ingredient list
+    singleUnitIngredients: [],
   });
 
   const [currentRecipeItem, setCurrentRecipeItem] = useState({
@@ -144,7 +148,9 @@ export default function SKUManagement() {
     setFormData({
       name: '',
       description: '',
+      skuType: 'weekly',
       targetWeightPerSachet: '',
+      unitWeight: '',
       selectedVendorId: '',
       recipes: {
         MON: [],
@@ -155,6 +161,7 @@ export default function SKUManagement() {
         SAT: [],
         SUN: [],
       },
+      singleUnitIngredients: [],
     });
     setCurrentRecipeItem({ ingredientId: '', gramsPerSachet: '' });
     setCurrentStep(1);
@@ -221,6 +228,63 @@ export default function SKUManagement() {
     });
   };
 
+  // Single unit ingredient handlers
+  const handleAddSingleUnitIngredient = () => {
+    if (!currentRecipeItem.ingredientId || !currentRecipeItem.gramsPerSachet) {
+      showToast('Please select ingredient and enter grams per unit', 'error');
+      return;
+    }
+
+    if (!formData.selectedVendorId) {
+      showToast('Please select a vendor first', 'error');
+      return;
+    }
+
+    const vendorIngredients = getIngredientsByVendor(formData.selectedVendorId);
+    const ingredient = vendorIngredients.find((ing) => ing.id == currentRecipeItem.ingredientId);
+
+    if (!ingredient) {
+      showToast('Ingredient not found for selected vendor', 'error');
+      return;
+    }
+
+    const gramsPerUnit = parseFloat(currentRecipeItem.gramsPerSachet);
+    const unitWeightKg = parseFloat(formData.unitWeight) || 0;
+    const unitWeightGrams = unitWeightKg * 1000;
+    const percentage = unitWeightGrams > 0 ? (gramsPerUnit / unitWeightGrams) * 100 : 0;
+
+    const newIngredient = {
+      id: Date.now() + Math.random(),
+      ingredientId: ingredient.id,
+      ingredientName: ingredient.name,
+      gramsPerUnit,
+      percentage: percentage.toFixed(1),
+      vendorId: ingredient.vendorId,
+      vendorName: ingredient.vendorName,
+      pricePerGram: ingredient.pricePerUnit / (ingredient.unit === 'kg' ? 1000 : 1),
+      unit: ingredient.unit,
+    };
+
+    setFormData({
+      ...formData,
+      singleUnitIngredients: [...formData.singleUnitIngredients, newIngredient],
+    });
+
+    setCurrentRecipeItem({ ingredientId: '', gramsPerSachet: '' });
+    showToast('Ingredient added', 'success');
+  };
+
+  const handleRemoveSingleUnitIngredient = (itemId) => {
+    setFormData({
+      ...formData,
+      singleUnitIngredients: formData.singleUnitIngredients.filter((item) => item.id !== itemId),
+    });
+  };
+
+  const getSingleUnitTotal = () => {
+    return formData.singleUnitIngredients.reduce((sum, item) => sum + item.gramsPerUnit, 0);
+  };
+
   const getCurrentDayTotal = () => {
     return formData.recipes[currentDay].reduce((sum, item) => sum + item.gramsPerSachet, 0);
   };
@@ -230,45 +294,83 @@ export default function SKUManagement() {
   };
 
   const calculateSKUTotals = () => {
-    let weeklyTotalGrams = 0;
-    let weeklyRawMaterialCost = 0;
+    if (formData.skuType === 'single') {
+      // For single unit SKUs, calculate based on unit weight
+      const unitWeightKg = parseFloat(formData.unitWeight) || 0;
+      const unitWeightGrams = unitWeightKg * 1000;
+      let totalRawMaterialCost = 0;
 
-    DAYS.forEach((day) => {
-      const dayRecipe = formData.recipes[day];
-      dayRecipe.forEach((item) => {
-        weeklyTotalGrams += item.gramsPerSachet;
-        weeklyRawMaterialCost += item.gramsPerSachet * item.pricePerGram;
+      formData.singleUnitIngredients.forEach((item) => {
+        totalRawMaterialCost += item.gramsPerUnit * item.pricePerGram;
       });
-    });
 
-    const monthlyTotalGrams = weeklyTotalGrams * 4;
-    const monthlyRawMaterialCost = weeklyRawMaterialCost * 4;
+      return {
+        singleUnit: {
+          unitWeight: unitWeightKg,
+          unitWeightGrams: unitWeightGrams,
+          totalGrams: unitWeightGrams,
+          rawMaterialCost: totalRawMaterialCost,
+        },
+      };
+    } else {
+      // Weekly pack calculation (existing logic)
+      let weeklyTotalGrams = 0;
+      let weeklyRawMaterialCost = 0;
 
-    return {
-      weeklyPack: {
-        sachets: 7,
-        totalGrams: weeklyTotalGrams,
-        rawMaterialCost: weeklyRawMaterialCost,
-      },
-      monthlyPack: {
-        sachets: 28,
-        weeklyPacksIncluded: 4,
-        totalGrams: monthlyTotalGrams,
-        rawMaterialCost: monthlyRawMaterialCost,
-      },
-    };
+      DAYS.forEach((day) => {
+        const dayRecipe = formData.recipes[day];
+        dayRecipe.forEach((item) => {
+          weeklyTotalGrams += item.gramsPerSachet;
+          weeklyRawMaterialCost += item.gramsPerSachet * item.pricePerGram;
+        });
+      });
+
+      const monthlyTotalGrams = weeklyTotalGrams * 4;
+      const monthlyRawMaterialCost = weeklyRawMaterialCost * 4;
+
+      return {
+        weeklyPack: {
+          sachets: 7,
+          totalGrams: weeklyTotalGrams,
+          rawMaterialCost: weeklyRawMaterialCost,
+        },
+        monthlyPack: {
+          sachets: 28,
+          weeklyPacksIncluded: 4,
+          totalGrams: monthlyTotalGrams,
+          rawMaterialCost: monthlyRawMaterialCost,
+        },
+      };
+    }
   };
 
   const handleSaveSKU = () => {
-    if (!formData.name || !formData.description || !formData.targetWeightPerSachet) {
+    if (!formData.name || !formData.description) {
       showToast('Please fill in all basic information', 'error');
       return;
     }
 
-    const completedDays = getCompletedDays();
-    if (completedDays.length !== 7) {
-      showToast(`Please complete all 7 day recipes (${completedDays.length}/7 done)`, 'error');
-      return;
+    if (formData.skuType === 'weekly') {
+      // Weekly pack validation
+      if (!formData.targetWeightPerSachet) {
+        showToast('Please enter target weight per sachet', 'error');
+        return;
+      }
+      const completedDays = getCompletedDays();
+      if (completedDays.length !== 7) {
+        showToast(`Please complete all 7 day recipes (${completedDays.length}/7 done)`, 'error');
+        return;
+      }
+    } else {
+      // Single unit validation
+      if (!formData.unitWeight) {
+        showToast('Please enter unit weight (e.g., 0.5 or 1 for kg)', 'error');
+        return;
+      }
+      if (formData.singleUnitIngredients.length === 0) {
+        showToast('Please add at least one ingredient', 'error');
+        return;
+      }
     }
 
     const totals = calculateSKUTotals();
@@ -276,7 +378,8 @@ export default function SKUManagement() {
     const skuData = {
       ...formData,
       ...totals,
-      targetWeightPerSachet: parseFloat(formData.targetWeightPerSachet),
+      targetWeightPerSachet: formData.skuType === 'weekly' ? parseFloat(formData.targetWeightPerSachet) : null,
+      unitWeight: formData.skuType === 'single' ? parseFloat(formData.unitWeight) : null,
     };
 
     if (editingSKU) {
@@ -300,8 +403,14 @@ export default function SKUManagement() {
     setFormData({
       name: sku.name,
       description: sku.description,
-      targetWeightPerSachet: sku.targetWeightPerSachet,
-      recipes: sku.recipes,
+      skuType: sku.skuType || 'weekly',
+      targetWeightPerSachet: sku.targetWeightPerSachet || '',
+      unitWeight: sku.unitWeight || '',
+      selectedVendorId: sku.selectedVendorId || '',
+      recipes: sku.recipes || {
+        MON: [], TUE: [], WED: [], THU: [], FRI: [], SAT: [], SUN: [],
+      },
+      singleUnitIngredients: sku.singleUnitIngredients || [],
     });
     setEditingSKU(sku);
     setShowForm(true);
@@ -317,10 +426,155 @@ export default function SKUManagement() {
 
   const handleCalculateProduction = () => {
     if (!selectedSKU || !calculatorData.numberOfPacks) {
-      showToast('Please select SKU and enter number of packs', 'error');
+      showToast('Please select SKU and enter number of packs/units', 'error');
       return;
     }
 
+    // Handle single unit SKUs differently
+    if (selectedSKU.skuType === 'single') {
+      const numberOfUnits = parseInt(calculatorData.numberOfPacks);
+      const selectedVendor = calculatorData.selectedVendorId 
+        ? vendors.find(v => String(v.id) === String(calculatorData.selectedVendorId))
+        : null;
+
+      const consolidatedIngredients = new Map();
+
+      // Process single unit ingredients
+      if (selectedSKU.singleUnitIngredients && selectedSKU.singleUnitIngredients.length > 0) {
+        selectedSKU.singleUnitIngredients.forEach((item) => {
+          let pricePerGram = item.pricePerGram;
+          let vendorName = item.vendorName;
+          
+          if (selectedVendor) {
+            const vendorIng = selectedVendor.ingredients.find(ing => 
+              matchIngredient(item.ingredientName, ing.name)
+            );
+            if (vendorIng) {
+              pricePerGram = vendorIng.unit === 'kg' ? vendorIng.pricePerUnit / 1000 : vendorIng.pricePerUnit;
+              vendorName = selectedVendor.name;
+            } else {
+              pricePerGram = 0;
+              vendorName = `${selectedVendor.name} (Not Supplied)`;
+            }
+          }
+          
+          const totalGrams = item.gramsPerUnit * numberOfUnits;
+          const totalCost = totalGrams * pricePerGram;
+
+          if (consolidatedIngredients.has(item.ingredientName)) {
+            const existing = consolidatedIngredients.get(item.ingredientName);
+            consolidatedIngredients.set(item.ingredientName, {
+              ...existing,
+              totalGrams: existing.totalGrams + totalGrams,
+              totalCost: existing.totalCost + totalCost,
+              pricePerGram: selectedVendor ? pricePerGram : existing.pricePerGram,
+              vendorName: selectedVendor ? vendorName : existing.vendorName,
+            });
+          } else {
+            consolidatedIngredients.set(item.ingredientName, {
+              ingredientName: item.ingredientName,
+              totalGrams,
+              pricePerGram: pricePerGram,
+              totalCost,
+              vendorName: vendorName,
+            });
+          }
+        });
+      }
+
+      // Add vendor availability info
+      const requirements = Array.from(consolidatedIngredients.values()).map((req) => {
+        if (selectedVendor) {
+          const vendorIng = selectedVendor.ingredients.find((ing) => 
+            matchIngredient(req.ingredientName, ing.name)
+          );
+          if (vendorIng) {
+            const availableGrams = vendorIng.unit === 'kg' ? vendorIng.quantityAvailable * 1000 : vendorIng.quantityAvailable;
+            const pricePerGram = vendorIng.unit === 'kg' ? vendorIng.pricePerUnit / 1000 : vendorIng.pricePerUnit;
+            
+            return {
+              ...req,
+              pricePerGram: pricePerGram,
+              totalCost: req.totalGrams * pricePerGram,
+              totalKg: (req.totalGrams / 1000).toFixed(2),
+              available: availableGrams,
+              shortage: Math.max(0, req.totalGrams - availableGrams),
+              recommendedVendor: selectedVendor.name,
+              hasShortage: req.totalGrams > availableGrams,
+              vendorPrice: vendorIng.pricePerUnit,
+              vendorUnit: vendorIng.unit,
+            };
+          } else {
+            return {
+              ...req,
+              pricePerGram: 0,
+              totalCost: 0,
+              totalKg: (req.totalGrams / 1000).toFixed(2),
+              available: 0,
+              shortage: req.totalGrams,
+              recommendedVendor: `${selectedVendor.name} (Not Supplied)`,
+              hasShortage: true,
+              vendorPrice: null,
+              vendorUnit: null,
+            };
+          }
+        } else {
+          const availableVendors = [];
+          vendors.forEach((vendor) => {
+            const vendorIng = vendor.ingredients.find((ing) => ing.name === req.ingredientName);
+            if (vendorIng) {
+              const availableGrams = vendorIng.unit === 'kg' ? vendorIng.quantityAvailable * 1000 : vendorIng.quantityAvailable;
+              const pricePerGram = vendorIng.unit === 'kg' ? vendorIng.pricePerUnit / 1000 : vendorIng.pricePerUnit;
+              
+              availableVendors.push({
+                vendorName: vendor.name,
+                available: availableGrams,
+                pricePerGram: pricePerGram,
+                quality: vendorIng.quality,
+                vendorPrice: vendorIng.pricePerUnit,
+                vendorUnit: vendorIng.unit,
+              });
+            }
+          });
+
+          const bestVendor = availableVendors
+            .filter((v) => v.available >= req.totalGrams)
+            .sort((a, b) => a.pricePerGram - b.pricePerGram)[0];
+
+          const recommendedVendor = bestVendor || availableVendors.sort((a, b) => b.available - a.available)[0];
+
+          return {
+            ...req,
+            totalKg: (req.totalGrams / 1000).toFixed(2),
+            available: recommendedVendor?.available || 0,
+            shortage: Math.max(0, req.totalGrams - (recommendedVendor?.available || 0)),
+            recommendedVendor: recommendedVendor?.vendorName || 'N/A',
+            hasShortage: req.totalGrams > (recommendedVendor?.available || 0),
+            vendorPrice: recommendedVendor?.vendorPrice || null,
+            vendorUnit: recommendedVendor?.vendorUnit || null,
+          };
+        }
+      });
+
+      const totalRawMaterialCost = requirements.reduce((sum, req) => sum + req.totalCost, 0);
+      const costPerUnit = totalRawMaterialCost / numberOfUnits;
+
+      setProductionRequirements({
+        requirements,
+        totalUnits: numberOfUnits,
+        totalRawMaterialCost,
+        costPerUnit,
+        numberOfPacks: numberOfUnits,
+        packType: 'single',
+        selectedVendorName: selectedVendor?.name || null,
+      });
+
+      setShowPurchaseList(false);
+      showToast('Production requirements calculated', 'success');
+      return;
+    }
+
+    // Weekly pack calculation (existing logic)
     const numberOfPacks = parseInt(calculatorData.numberOfPacks);
     const multiplier = calculatorData.packType === 'weekly' ? numberOfPacks : numberOfPacks * 4;
     const selectedVendor = calculatorData.selectedVendorId 
@@ -353,10 +607,10 @@ export default function SKUManagement() {
         }
         
         return {
-          ingredientName: item.ingredientName,
-          gramsPerSachet: item.gramsPerSachet,
-          quantity: multiplier,
-          totalGrams: item.gramsPerSachet * multiplier,
+        ingredientName: item.ingredientName,
+        gramsPerSachet: item.gramsPerSachet,
+        quantity: multiplier,
+        totalGrams: item.gramsPerSachet * multiplier,
           pricePerGram: pricePerGram,
           pricePerSachet: item.gramsPerSachet * pricePerGram, // Price for one sachet
           totalCost: item.gramsPerSachet * multiplier * pricePerGram,
@@ -450,41 +704,41 @@ export default function SKUManagement() {
         }
       } else {
         // No vendor selected - find all vendors and recommend best one (original behavior)
-        const availableVendors = [];
-        vendors.forEach((vendor) => {
-          const vendorIng = vendor.ingredients.find((ing) => ing.name === req.ingredientName);
-          if (vendorIng) {
-            const availableGrams = vendorIng.unit === 'kg' ? vendorIng.quantityAvailable * 1000 : vendorIng.quantityAvailable;
-            const pricePerGram = vendorIng.unit === 'kg' ? vendorIng.pricePerUnit / 1000 : vendorIng.pricePerUnit;
-            
-            availableVendors.push({
-              vendorName: vendor.name,
-              available: availableGrams,
-              pricePerGram: pricePerGram,
-              quality: vendorIng.quality,
+      const availableVendors = [];
+      vendors.forEach((vendor) => {
+        const vendorIng = vendor.ingredients.find((ing) => ing.name === req.ingredientName);
+        if (vendorIng) {
+          const availableGrams = vendorIng.unit === 'kg' ? vendorIng.quantityAvailable * 1000 : vendorIng.quantityAvailable;
+          const pricePerGram = vendorIng.unit === 'kg' ? vendorIng.pricePerUnit / 1000 : vendorIng.pricePerUnit;
+          
+          availableVendors.push({
+            vendorName: vendor.name,
+            available: availableGrams,
+            pricePerGram: pricePerGram,
+            quality: vendorIng.quality,
               vendorPrice: vendorIng.pricePerUnit,
               vendorUnit: vendorIng.unit,
-            });
-          }
-        });
+          });
+        }
+      });
 
-        const bestVendor = availableVendors
-          .filter((v) => v.available >= req.totalGrams)
-          .sort((a, b) => a.pricePerGram - b.pricePerGram)[0];
+      const bestVendor = availableVendors
+        .filter((v) => v.available >= req.totalGrams)
+        .sort((a, b) => a.pricePerGram - b.pricePerGram)[0];
 
-        const recommendedVendor = bestVendor || availableVendors.sort((a, b) => b.available - a.available)[0];
+      const recommendedVendor = bestVendor || availableVendors.sort((a, b) => b.available - a.available)[0];
 
-        return {
-          ...req,
-          totalKg: (req.totalGrams / 1000).toFixed(2),
-          available: recommendedVendor?.available || 0,
-          shortage: Math.max(0, req.totalGrams - (recommendedVendor?.available || 0)),
-          recommendedVendor: recommendedVendor?.vendorName || 'N/A',
-          hasShortage: req.totalGrams > (recommendedVendor?.available || 0),
+      return {
+        ...req,
+        totalKg: (req.totalGrams / 1000).toFixed(2),
+        available: recommendedVendor?.available || 0,
+        shortage: Math.max(0, req.totalGrams - (recommendedVendor?.available || 0)),
+        recommendedVendor: recommendedVendor?.vendorName || 'N/A',
+        hasShortage: req.totalGrams > (recommendedVendor?.available || 0),
           // Add vendor price with unit for display
           vendorPrice: recommendedVendor?.vendorPrice || null,
           vendorUnit: recommendedVendor?.vendorUnit || null,
-        };
+      };
       }
     });
 
@@ -633,7 +887,9 @@ export default function SKUManagement() {
             </div>
             <div className="flex justify-between text-sm">
               <span className={currentStep === 1 ? 'text-primary font-semibold' : 'text-gray-600'}>Basic Info</span>
-              <span className={currentStep === 2 ? 'text-primary font-semibold' : 'text-gray-600'}>7-Day Recipes ({completedDays.length}/7)</span>
+              <span className={currentStep === 2 ? 'text-primary font-semibold' : 'text-gray-600'}>
+                {formData.skuType === 'single' ? 'Single Unit Details' : `7-Day Recipes (${completedDays.length}/7)`}
+              </span>
             </div>
           </div>
 
@@ -648,42 +904,81 @@ export default function SKUManagement() {
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     className="input-field"
-                    placeholder="e.g., Day Pack, Night Pack"
+                    placeholder="e.g., Day Pack, Night Pack, Dates 0.5kg"
                   />
                 </div>
                 <div>
-                  <label className="label">Target Weight per Sachet (grams) <span className="text-red-500">*</span></label>
-                  <input
-                    type="number"
-                    value={formData.targetWeightPerSachet}
-                    onChange={(e) => setFormData({ ...formData, targetWeightPerSachet: e.target.value })}
+                  <label className="label">SKU Type <span className="text-red-500">*</span></label>
+                  <select
+                    value={formData.skuType}
+                    onChange={(e) => {
+                      const newType = e.target.value;
+                      setFormData({
+                        ...formData,
+                        skuType: newType,
+                        // Reset type-specific fields when switching
+                        targetWeightPerSachet: newType === 'weekly' ? formData.targetWeightPerSachet : '',
+                        unitWeight: newType === 'single' ? formData.unitWeight : '',
+                        singleUnitIngredients: newType === 'single' ? formData.singleUnitIngredients : [],
+                        recipes: newType === 'weekly' ? formData.recipes : {
+                          MON: [], TUE: [], WED: [], THU: [], FRI: [], SAT: [], SUN: [],
+                        },
+                      });
+                    }}
                     className="input-field"
-                    placeholder="e.g., 30 or 44"
-                  />
+                  >
+                    <option value="weekly">Weekly Pack (7-day recipes)</option>
+                    <option value="single">Single Unit (e.g., Dates 0.5kg, 1kg)</option>
+                  </select>
                 </div>
+                {formData.skuType === 'weekly' ? (
+                  <div>
+                    <label className="label">Target Weight per Sachet (grams) <span className="text-red-500">*</span></label>
+                    <input
+                      type="number"
+                      value={formData.targetWeightPerSachet}
+                      onChange={(e) => setFormData({ ...formData, targetWeightPerSachet: e.target.value })}
+                      className="input-field"
+                      placeholder="e.g., 30 or 44"
+                    />
+                  </div>
+                ) : (
+                  <div>
+                    <label className="label">Unit Weight (kg) <span className="text-red-500">*</span></label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={formData.unitWeight}
+                      onChange={(e) => setFormData({ ...formData, unitWeight: e.target.value })}
+                      className="input-field"
+                      placeholder="e.g., 0.5 or 1"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Enter weight in kilograms (e.g., 0.5 for half kg, 1 for 1 kg)</p>
+                  </div>
+                )}
                 <div className="md:col-span-2">
                   <label className="label">Select Vendor for All Ingredients <span className="text-red-500">*</span></label>
                   <div className="relative" style={{ zIndex: 99999, isolation: 'isolate' }}>
-                    <select
-                      value={formData.selectedVendorId}
-                      onChange={(e) => setFormData({ ...formData, selectedVendorId: e.target.value })}
+                  <select
+                    value={formData.selectedVendorId}
+                    onChange={(e) => setFormData({ ...formData, selectedVendorId: e.target.value })}
                       onClick={(e) => e.stopPropagation()}
                       onMouseDown={(e) => e.stopPropagation()}
-                      className="input-field"
+                    className="input-field"
                       style={{ 
                         zIndex: 99999, 
                         position: 'relative',
                         pointerEvents: 'auto',
                         cursor: 'pointer'
                       }}
-                    >
-                      <option value="">-- Select Vendor --</option>
-                      {vendors.map((vendor) => (
+                  >
+                    <option value="">-- Select Vendor --</option>
+                    {vendors.map((vendor) => (
                         <option key={vendor.id} value={String(vendor.id)}>
-                          {vendor.name} ({vendor.ingredients.length} ingredients)
-                        </option>
-                      ))}
-                    </select>
+                        {vendor.name} ({vendor.ingredients.length} ingredients)
+                      </option>
+                    ))}
+                  </select>
                   </div>
                   {formData.selectedVendorId && (
                     <p className="text-sm text-gray-600 mt-1">
@@ -706,23 +1001,157 @@ export default function SKUManagement() {
               <div className="flex justify-end">
                 <button
                   onClick={() => {
-                    if (!formData.name || !formData.description || !formData.targetWeightPerSachet || !formData.selectedVendorId) {
+                    if (!formData.name || !formData.description || !formData.selectedVendorId) {
                       showToast('Please fill in all required fields including vendor selection', 'error');
+                      return;
+                    }
+                    if (formData.skuType === 'weekly' && !formData.targetWeightPerSachet) {
+                      showToast('Please enter target weight per sachet', 'error');
+                      return;
+                    }
+                    if (formData.skuType === 'single' && !formData.unitWeight) {
+                      showToast('Please enter unit weight', 'error');
                       return;
                     }
                     setCurrentStep(2);
                   }}
                   className="btn-primary"
                 >
-                  Next: Build Day Recipes
+                  Next: {formData.skuType === 'single' ? 'Add Ingredients' : 'Build Day Recipes'}
                 </button>
               </div>
             </div>
           )}
 
-          {/* Step 2: Day Recipes */}
+          {/* Step 2: Day Recipes or Single Unit Details */}
           {currentStep === 2 && (
             <div className="space-y-6">
+              {formData.skuType === 'single' ? (
+                /* Single Unit Form */
+                <div className="space-y-6">
+                  <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                    <h3 className="text-lg font-bold text-gray-900 mb-2">Single Unit SKU: {formData.name}</h3>
+                    <p className="text-sm text-gray-600">
+                      Unit Weight: <span className="font-semibold">{formData.unitWeight} kg</span>
+                    </p>
+                  </div>
+
+                  {/* Added Ingredients */}
+                  {formData.singleUnitIngredients.length > 0 && (
+                    <div className="mb-4 space-y-2">
+                      <h4 className="font-semibold text-gray-900">Ingredients</h4>
+                      {formData.singleUnitIngredients.map((item) => (
+                        <div key={item.id} className="bg-white p-3 rounded-lg flex justify-between items-center shadow-sm border">
+                          <div className="flex-1">
+                            <span className="font-semibold text-gray-900">{item.ingredientName}</span>
+                            <span className="text-sm text-gray-600 ml-3">
+                              {item.gramsPerUnit}g ({item.percentage}%)
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => handleRemoveSingleUnitIngredient(item.id)}
+                            className="text-red-500 hover:text-red-700"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                      <div className="bg-gray-50 p-3 rounded-lg border-2 border-gray-300">
+                        <div className="flex justify-between items-center">
+                          <span className="font-semibold text-gray-900">Total Weight:</span>
+                          <span className={`font-bold text-lg ${
+                            Math.abs(getSingleUnitTotal() - (parseFloat(formData.unitWeight) * 1000)) === 0 
+                              ? 'text-green-600' 
+                              : Math.abs(getSingleUnitTotal() - (parseFloat(formData.unitWeight) * 1000)) <= 10
+                              ? 'text-yellow-600'
+                              : 'text-red-600'
+                          }`}>
+                            {getSingleUnitTotal().toFixed(1)}g / {(parseFloat(formData.unitWeight) * 1000).toFixed(1)}g
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Vendor Info */}
+                  {formData.selectedVendorId && (
+                    <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
+                      <p className="text-sm text-blue-800">
+                        <span className="font-semibold">Selected Vendor:</span> {vendors.find(v => v.id == formData.selectedVendorId)?.name}
+                        <span className="ml-2 text-blue-600">
+                          ({getIngredientsByVendor(formData.selectedVendorId).length} ingredients available)
+                        </span>
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Add Ingredient Form */}
+                  <div className="bg-white p-4 rounded-lg border border-gray-200">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
+                      <div className="md:col-span-2">
+                        <label className="label text-sm">Ingredient</label>
+                        <div className="relative" style={{ zIndex: 99999, isolation: 'isolate' }}>
+                          <select
+                            value={currentRecipeItem.ingredientId}
+                            onChange={(e) => setCurrentRecipeItem({ ...currentRecipeItem, ingredientId: e.target.value })}
+                            onClick={(e) => e.stopPropagation()}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            className="input-field"
+                            disabled={!formData.selectedVendorId}
+                            style={{ 
+                              zIndex: 99999, 
+                              position: 'relative',
+                              pointerEvents: formData.selectedVendorId ? 'auto' : 'none',
+                              cursor: formData.selectedVendorId ? 'pointer' : 'not-allowed'
+                            }}
+                          >
+                            <option value="">-- Select Ingredient --</option>
+                            {getIngredientsByVendor(formData.selectedVendorId).map((ing) => (
+                              <option key={ing.id} value={String(ing.id)}>
+                                {ing.name} - ₹{ing.pricePerUnit}/{ing.unit}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="label text-sm">Grams per Unit</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          value={currentRecipeItem.gramsPerSachet}
+                          onChange={(e) => setCurrentRecipeItem({ ...currentRecipeItem, gramsPerSachet: e.target.value })}
+                          className="input-field"
+                          placeholder="e.g., 500"
+                        />
+                      </div>
+                    </div>
+                    <button onClick={handleAddSingleUnitIngredient} className="btn-primary w-full flex items-center justify-center gap-2">
+                      <Plus className="w-5 h-5" />
+                      Add Ingredient
+                    </button>
+                  </div>
+
+                  {/* Save Button */}
+                  <div className="flex justify-between items-center">
+                    <button
+                      onClick={() => setCurrentStep(1)}
+                      className="btn-secondary"
+                    >
+                      Back to Basic Info
+                    </button>
+                    <button
+                      onClick={handleSaveSKU}
+                      disabled={formData.singleUnitIngredients.length === 0}
+                      className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {editingSKU ? 'Update SKU' : 'Save SKU'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* Weekly Pack Form (existing) */
+                <>
               {/* Day Tabs */}
               <div className="flex gap-2 overflow-x-auto pb-2">
                 {DAYS.map((day) => (
@@ -790,27 +1219,27 @@ export default function SKUManagement() {
                     <div className="md:col-span-2">
                       <label className="label text-sm">Ingredient</label>
                       <div className="relative" style={{ zIndex: 99999, isolation: 'isolate' }}>
-                        <select
-                          value={currentRecipeItem.ingredientId}
-                          onChange={(e) => setCurrentRecipeItem({ ...currentRecipeItem, ingredientId: e.target.value })}
+                      <select
+                        value={currentRecipeItem.ingredientId}
+                        onChange={(e) => setCurrentRecipeItem({ ...currentRecipeItem, ingredientId: e.target.value })}
                           onClick={(e) => e.stopPropagation()}
                           onMouseDown={(e) => e.stopPropagation()}
-                          className="input-field"
-                          disabled={!formData.selectedVendorId}
+                        className="input-field"
+                        disabled={!formData.selectedVendorId}
                           style={{ 
                             zIndex: 99999, 
                             position: 'relative',
                             pointerEvents: formData.selectedVendorId ? 'auto' : 'none',
                             cursor: formData.selectedVendorId ? 'pointer' : 'not-allowed'
                           }}
-                        >
-                          <option value="">-- Select Ingredient --</option>
-                          {getIngredientsByVendor(formData.selectedVendorId).map((ing) => (
+                      >
+                        <option value="">-- Select Ingredient --</option>
+                        {getIngredientsByVendor(formData.selectedVendorId).map((ing) => (
                             <option key={ing.id} value={String(ing.id)}>
-                              {ing.name} - ₹{ing.pricePerUnit}/{ing.unit}
-                            </option>
-                          ))}
-                        </select>
+                            {ing.name} - ₹{ing.pricePerUnit}/{ing.unit}
+                          </option>
+                        ))}
+                      </select>
                       </div>
                     </div>
                     <div>
@@ -867,6 +1296,8 @@ export default function SKUManagement() {
                   {editingSKU ? 'Update SKU' : 'Save SKU'} ({completedDays.length}/7 Complete)
                 </button>
               </div>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -905,8 +1336,8 @@ export default function SKUManagement() {
                   const skuId = e.target.value;
                   const sku = skus.find((s) => String(s.id) === String(skuId));
                   if (sku) {
-                    setSelectedSKU(sku);
-                    setProductionRequirements(null);
+                  setSelectedSKU(sku);
+                  setProductionRequirements(null);
                   }
                 }}
                 onClick={(e) => e.stopPropagation()}
@@ -927,41 +1358,59 @@ export default function SKUManagement() {
                 ))}
               </select>
             </div>
-            <div className="relative" style={{ zIndex: 99999, isolation: 'isolate' }}>
-              <label className="label">Pack Type</label>
-              <select
-                value={calculatorData.packType}
-                onChange={(e) => {
-                  setCalculatorData({ ...calculatorData, packType: e.target.value });
-                  setProductionRequirements(null);
-                }}
-                onClick={(e) => e.stopPropagation()}
-                onMouseDown={(e) => e.stopPropagation()}
-                className="input-field"
-                style={{ 
-                  zIndex: 99999, 
-                  position: 'relative',
-                  pointerEvents: 'auto',
-                  cursor: 'pointer'
-                }}
-              >
-                <option value="weekly">Weekly Pack (7 different sachets)</option>
-                <option value="monthly">Monthly Pack (28 sachets = 4 weeks)</option>
-              </select>
-            </div>
-            <div>
-              <label className="label">Number of Packs</label>
-              <input
-                type="number"
-                value={calculatorData.numberOfPacks}
-                onChange={(e) => {
-                  setCalculatorData({ ...calculatorData, numberOfPacks: e.target.value });
-                  setProductionRequirements(null);
-                }}
-                className="input-field"
-                placeholder="e.g., 80"
-              />
-            </div>
+            {selectedSKU && selectedSKU.skuType === 'single' ? (
+              <div>
+                <label className="label">Number of Units</label>
+                <input
+                  type="number"
+                  value={calculatorData.numberOfPacks}
+                  onChange={(e) => {
+                    setCalculatorData({ ...calculatorData, numberOfPacks: e.target.value });
+                    setProductionRequirements(null);
+                  }}
+                  className="input-field"
+                  placeholder="e.g., 50"
+                />
+              </div>
+            ) : (
+              <>
+                <div className="relative" style={{ zIndex: 99999, isolation: 'isolate' }}>
+                  <label className="label">Pack Type</label>
+                  <select
+                    value={calculatorData.packType}
+                    onChange={(e) => {
+                      setCalculatorData({ ...calculatorData, packType: e.target.value });
+                      setProductionRequirements(null);
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    className="input-field"
+                    style={{ 
+                      zIndex: 99999, 
+                      position: 'relative',
+                      pointerEvents: 'auto',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <option value="weekly">Weekly Pack (7 different sachets)</option>
+                    <option value="monthly">Monthly Pack (28 sachets = 4 weeks)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="label">Number of Packs</label>
+                  <input
+                    type="number"
+                    value={calculatorData.numberOfPacks}
+                    onChange={(e) => {
+                      setCalculatorData({ ...calculatorData, numberOfPacks: e.target.value });
+                      setProductionRequirements(null);
+                    }}
+                    className="input-field"
+                    placeholder="e.g., 80"
+                  />
+                </div>
+              </>
+            )}
             <div className="relative" style={{ zIndex: 99999, isolation: 'isolate' }}>
               <label className="label">Select Vendor <span className="text-gray-500 text-xs">(Optional)</span></label>
               <select
@@ -1009,9 +1458,13 @@ export default function SKUManagement() {
               {/* Header with CSV Export - Always visible */}
               <div className="flex justify-between items-center mb-4">
                 <div>
-                  <h3 className="text-lg font-bold text-gray-900">Production Requirements</h3>
+                <h3 className="text-lg font-bold text-gray-900">Production Requirements</h3>
                   <p className="text-xs text-gray-600 mt-1">
-                    Total quantities consolidated across all {DAYS.length} days ({productionRequirements.numberOfPacks} {productionRequirements.packType === 'weekly' ? 'weekly' : 'monthly'} packs = {productionRequirements.totalSachets} total sachets)
+                    {productionRequirements.packType === 'single' ? (
+                      <>Total quantities for {productionRequirements.totalUnits} units</>
+                    ) : (
+                      <>Total quantities consolidated across all {DAYS.length} days ({productionRequirements.numberOfPacks} {productionRequirements.packType === 'weekly' ? 'weekly' : 'monthly'} packs = {productionRequirements.totalSachets} total sachets)</>
+                    )}
                   </p>
                 </div>
                 <div className="flex gap-2">
@@ -1099,36 +1552,60 @@ export default function SKUManagement() {
                     </div>
                   )}
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <div>
-                    <p className="text-sm text-gray-600">Total Sachets</p>
-                    <p className="text-2xl font-bold text-gray-900">{productionRequirements.totalSachets}</p>
-                    <p className="text-xs text-gray-500">({productionRequirements.multiplier} of each day)</p>
+                {productionRequirements.packType === 'single' ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-sm text-gray-600">Total Units</p>
+                      <p className="text-2xl font-bold text-gray-900">{productionRequirements.totalUnits}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-600">Total Raw Material Cost</p>
+                      <p className="text-2xl font-bold text-primary-700">
+                        ₹{productionRequirements.totalRawMaterialCost.toLocaleString('en-IN', {
+                          minimumFractionDigits: 2,
+                        })}
+                      </p>
+                    </div>
+                    <div className="md:col-span-2">
+                      <p className="text-sm text-gray-600">Cost per Unit</p>
+                      <p className="text-2xl font-bold text-accent-600">
+                        ₹{productionRequirements.costPerUnit.toFixed(2)}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-sm text-gray-600">Total Raw Material Cost</p>
-                    <p className="text-2xl font-bold text-primary-700">
-                      ₹{productionRequirements.totalRawMaterialCost.toLocaleString('en-IN', {
-                        minimumFractionDigits: 2,
-                      })}
-                    </p>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div>
+                      <p className="text-sm text-gray-600">Total Sachets</p>
+                      <p className="text-2xl font-bold text-gray-900">{productionRequirements.totalSachets}</p>
+                      <p className="text-xs text-gray-500">({productionRequirements.multiplier} of each day)</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-600">Total Raw Material Cost</p>
+                      <p className="text-2xl font-bold text-primary-700">
+                        ₹{productionRequirements.totalRawMaterialCost.toLocaleString('en-IN', {
+                          minimumFractionDigits: 2,
+                        })}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-600">Cost per Pack</p>
+                      <p className="text-2xl font-bold text-accent-600">
+                        ₹{productionRequirements.costPerPack.toFixed(2)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-600">Cost per Sachet</p>
+                      <p className="text-2xl font-bold text-gray-700">
+                        ₹{productionRequirements.costPerSachet.toFixed(2)}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-sm text-gray-600">Cost per Pack</p>
-                    <p className="text-2xl font-bold text-accent-600">
-                      ₹{productionRequirements.costPerPack.toFixed(2)}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-600">Cost per Sachet</p>
-                    <p className="text-2xl font-bold text-gray-700">
-                      ₹{productionRequirements.costPerSachet.toFixed(2)}
-                    </p>
-                  </div>
-                </div>
+                )}
               </div>
 
-              {/* Day-by-Day Breakdown (Expandable) - Always visible */}
+              {/* Day-by-Day Breakdown (Expandable) - Only for weekly packs */}
+              {productionRequirements.packType !== 'single' && (
               <details className="mt-6 bg-gray-50 p-4 rounded-lg">
                 <summary className="font-bold text-gray-900 cursor-pointer">
                   📅 Day-by-Day Breakdown (Click to expand)
@@ -1223,6 +1700,7 @@ export default function SKUManagement() {
                   );
                 })()}
               </details>
+              )}
 
               {/* Ingredients Order List (Expandable) - Always visible */}
               <details className="mt-6 bg-gray-50 p-4 rounded-lg">
@@ -1559,11 +2037,24 @@ export default function SKUManagement() {
               <div key={sku.id} className="card">
                 <div className="flex justify-between items-start mb-4">
                   <div>
-                    <h3 className="text-lg font-bold text-gray-900">{sku.name}</h3>
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className="text-lg font-bold text-gray-900">{sku.name}</h3>
+                      {sku.skuType === 'single' && (
+                        <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-semibold rounded">
+                          Single Unit
+                        </span>
+                      )}
+                    </div>
                     <p className="text-sm text-gray-600">{sku.description}</p>
-                    <p className="text-sm text-primary font-semibold mt-1">
-                      Target: {sku.targetWeightPerSachet}g per sachet
-                    </p>
+                    {sku.skuType === 'single' ? (
+                      <p className="text-sm text-primary font-semibold mt-1">
+                        Unit Weight: {sku.unitWeight} kg
+                      </p>
+                    ) : (
+                      <p className="text-sm text-primary font-semibold mt-1">
+                        Target: {sku.targetWeightPerSachet}g per sachet
+                      </p>
+                    )}
                   </div>
                   <div className="flex gap-2">
                     <button
@@ -1581,43 +2072,79 @@ export default function SKUManagement() {
                   </div>
                 </div>
 
-                {/* 7-Day Recipe Preview */}
+                {/* Recipe Preview */}
                 <div>
-                  <h4 className="font-semibold text-gray-900 mb-2">7-Day Recipes</h4>
-                  <div className="grid grid-cols-7 gap-1 mb-4">
-                    {DAYS.map((day) => (
-                      <div key={day} className={`${DAY_COLORS[day]} text-white text-center py-2 rounded text-xs font-bold`}>
-                        {day}
-                        <div className="text-[10px] mt-1">
-                          {sku.recipes[day].length} ing
+                  {sku.skuType === 'single' ? (
+                    /* Single Unit Details */
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-2">Ingredients</h4>
+                      {sku.singleUnitIngredients && sku.singleUnitIngredients.length > 0 ? (
+                        <div className="space-y-1 mb-4">
+                          {sku.singleUnitIngredients.map((ing, idx) => (
+                            <div key={idx} className="bg-gray-50 p-2 rounded text-sm flex justify-between">
+                              <span>{ing.ingredientName}</span>
+                              <span className="font-semibold">{ing.gramsPerUnit}g ({ing.percentage}%)</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-gray-500 mb-4">No ingredients added</p>
+                      )}
+                      <div className="bg-blue-50 p-3 rounded-lg border-t">
+                        <p className="text-xs text-blue-600 font-semibold mb-1">SINGLE UNIT</p>
+                        <p className="text-sm text-gray-700">Weight: {sku.unitWeight} kg</p>
+                        {sku.singleUnit && (
+                          <>
+                            <p className="text-sm text-gray-700">
+                              Total: {(sku.singleUnit.totalGrams / 1000).toFixed(2)} kg
+                            </p>
+                            <p className="text-sm font-bold text-blue-700">
+                              ₹{sku.singleUnit.rawMaterialCost.toFixed(2)} per unit
+                            </p>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    /* Weekly Pack Details */
+                    <>
+                      <h4 className="font-semibold text-gray-900 mb-2">7-Day Recipes</h4>
+                      <div className="grid grid-cols-7 gap-1 mb-4">
+                        {DAYS.map((day) => (
+                          <div key={day} className={`${DAY_COLORS[day]} text-white text-center py-2 rounded text-xs font-bold`}>
+                            {day}
+                            <div className="text-[10px] mt-1">
+                              {sku.recipes[day]?.length || 0} ing
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Pack Details */}
+                      <div className="grid grid-cols-2 gap-4 pt-4 border-t">
+                        <div className="bg-blue-50 p-3 rounded-lg">
+                          <p className="text-xs text-blue-600 font-semibold mb-1">WEEKLY PACK</p>
+                          <p className="text-sm text-gray-700">7 different sachets</p>
+                          <p className="text-sm text-gray-700">
+                            {(sku.weeklyPack?.totalGrams / 1000 || 0).toFixed(2)} kg total
+                          </p>
+                          <p className="text-sm font-bold text-blue-700">
+                            ₹{sku.weeklyPack?.rawMaterialCost.toFixed(2) || '0.00'}
+                          </p>
+                        </div>
+                        <div className="bg-accent-50 p-3 rounded-lg">
+                          <p className="text-xs text-accent-600 font-semibold mb-1">MONTHLY PACK</p>
+                          <p className="text-sm text-gray-700">28 sachets (4 weeks)</p>
+                          <p className="text-sm text-gray-700">
+                            {(sku.monthlyPack?.totalGrams / 1000 || 0).toFixed(2)} kg total
+                          </p>
+                          <p className="text-sm font-bold text-accent-700">
+                            ₹{sku.monthlyPack?.rawMaterialCost.toFixed(2) || '0.00'}
+                          </p>
                         </div>
                       </div>
-                    ))}
-                  </div>
-
-                  {/* Pack Details */}
-                  <div className="grid grid-cols-2 gap-4 pt-4 border-t">
-                    <div className="bg-blue-50 p-3 rounded-lg">
-                      <p className="text-xs text-blue-600 font-semibold mb-1">WEEKLY PACK</p>
-                      <p className="text-sm text-gray-700">7 different sachets</p>
-                      <p className="text-sm text-gray-700">
-                        {(sku.weeklyPack.totalGrams / 1000).toFixed(2)} kg total
-                      </p>
-                      <p className="text-sm font-bold text-blue-700">
-                        ₹{sku.weeklyPack.rawMaterialCost.toFixed(2)}
-                      </p>
-                    </div>
-                    <div className="bg-accent-50 p-3 rounded-lg">
-                      <p className="text-xs text-accent-600 font-semibold mb-1">MONTHLY PACK</p>
-                      <p className="text-sm text-gray-700">28 sachets (4 weeks)</p>
-                      <p className="text-sm text-gray-700">
-                        {(sku.monthlyPack.totalGrams / 1000).toFixed(2)} kg total
-                      </p>
-                      <p className="text-sm font-bold text-accent-700">
-                        ₹{sku.monthlyPack.rawMaterialCost.toFixed(2)}
-                      </p>
-                    </div>
-                  </div>
+                    </>
+                  )}
                 </div>
               </div>
             ))
