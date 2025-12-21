@@ -150,7 +150,23 @@ function appReducer(state, action) {
 
     // Customer actions
     case 'ADD_CUSTOMER':
+      // Check for duplicate by phone number before adding
+      const existingCustomer = state.customers.find(
+        (c) => c.phone && action.payload.phone && 
+        c.phone.replace(/\D/g, '') === action.payload.phone.replace(/\D/g, '')
+      );
+      if (existingCustomer) {
+        return state; // Don't add duplicate
+      }
       return { ...state, customers: [...state.customers, action.payload] };
+    case 'REPLACE_CUSTOMER':
+      // Replace customer with temporary ID with the one from database
+      return {
+        ...state,
+        customers: state.customers
+          .filter((c) => c.id !== action.payload.tempId)
+          .concat(action.payload.customer),
+      };
     case 'UPDATE_CUSTOMER':
       return {
         ...state,
@@ -279,8 +295,13 @@ export function AppProvider({ children }) {
               break;
             case 'ADD_CUSTOMER':
               const customerRes = await dbService.createCustomer(action.payload);
-              if (customerRes.data && customerRes.data.id !== action.payload.id) {
-                dispatchReducer({ type: 'UPDATE_CUSTOMER', payload: { ...action.payload, id: customerRes.data.id } });
+              if (customerRes.data) {
+                // Remove the customer with temporary ID and add with database ID
+                const tempId = action.payload.id;
+                dispatchReducer({ 
+                  type: 'REPLACE_CUSTOMER', 
+                  payload: { tempId, customer: { ...customerRes.data, id: customerRes.data.id } } 
+                });
               }
               break;
             case 'UPDATE_CUSTOMER':

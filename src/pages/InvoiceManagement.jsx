@@ -268,19 +268,41 @@ export default function InvoiceManagement() {
         console.log('🔄 Syncing local customer to database:', localCustomer.name);
         showToast('Syncing customer to database...', 'info');
         
-        const createResult = await dbService.createCustomer(localCustomer);
-        if (createResult.error) {
-          console.error('Error syncing customer:', createResult.error);
-          showToast('Error syncing customer to database', 'error');
-          return;
+        // Check if customer already exists in database by phone number
+        const normalizedPhone = localCustomer.phone?.replace(/\D/g, '');
+        const existingCustomers = customers.filter(
+          (c) => c.phone && normalizedPhone && 
+          c.phone.replace(/\D/g, '') === normalizedPhone &&
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(c.id))
+        );
+        
+        if (existingCustomers.length > 0) {
+          // Customer already exists in database, use existing ID
+          customerId = existingCustomers[0].id;
+          console.log('✅ Customer already exists in database with ID:', customerId);
+          // Replace the temporary customer with the existing one
+          dispatch({ 
+            type: 'REPLACE_CUSTOMER', 
+            payload: { tempId: localCustomer.id, customer: existingCustomers[0] } 
+          });
+        } else {
+          const createResult = await dbService.createCustomer(localCustomer);
+          if (createResult.error) {
+            console.error('Error syncing customer:', createResult.error);
+            showToast('Error syncing customer to database', 'error');
+            return;
+          }
+          
+          // Use the new database customer ID
+          customerId = createResult.data.id;
+          console.log('✅ Customer synced successfully with ID:', customerId);
+          
+          // Replace the temporary customer with the database customer
+          dispatch({ 
+            type: 'REPLACE_CUSTOMER', 
+            payload: { tempId: localCustomer.id, customer: createResult.data } 
+          });
         }
-        
-        // Use the new database customer ID
-        customerId = createResult.data.id;
-        console.log('✅ Customer synced successfully with ID:', customerId);
-        
-        // Update the app state with the synced customer
-        dispatch({ type: 'UPDATE_CUSTOMER', payload: { ...localCustomer, id: customerId } });
         
         // Update form data with new customer ID
         setFormData({ ...formData, customerId });

@@ -1,13 +1,14 @@
-import React, { useState } from 'react';
-import { Plus, Edit, Trash2, Search, X, User, Mail, Phone, MapPin, Building2 } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Plus, Edit, Trash2, Search, X, User, Mail, Phone, MapPin, Building2, AlertTriangle, Merge } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 
 export default function CustomerManagement() {
   const { state, dispatch, showToast } = useApp();
-  const { customers } = state;
+  const { customers, invoices } = state;
   const [showForm, setShowForm] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [showDuplicates, setShowDuplicates] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -44,6 +45,9 @@ export default function CustomerManagement() {
       return;
     }
 
+    // Normalize phone number for duplicate checking
+    const normalizedPhone = formData.phone.replace(/\D/g, '');
+
     if (editingCustomer) {
       dispatch({
         type: 'UPDATE_CUSTOMER',
@@ -51,6 +55,17 @@ export default function CustomerManagement() {
       });
       showToast('Customer updated successfully', 'success');
     } else {
+      // Check for duplicate by phone number
+      const duplicateCustomer = customers.find(
+        (c) => c.phone && normalizedPhone && 
+        c.phone.replace(/\D/g, '') === normalizedPhone
+      );
+      
+      if (duplicateCustomer) {
+        showToast('A customer with this phone number already exists', 'error');
+        return;
+      }
+
       dispatch({
         type: 'ADD_CUSTOMER',
         payload: { ...formData, id: Date.now() + Math.random() },
@@ -85,6 +100,94 @@ export default function CustomerManagement() {
     }
   };
 
+  // Detect duplicates by phone number
+  const duplicateGroups = useMemo(() => {
+    const groups = {};
+    customers.forEach((customer) => {
+      if (customer.phone) {
+        const normalizedPhone = customer.phone.replace(/\D/g, '');
+        if (normalizedPhone) {
+          if (!groups[normalizedPhone]) {
+            groups[normalizedPhone] = [];
+          }
+          groups[normalizedPhone].push(customer);
+        }
+      }
+    });
+    // Return only groups with more than one customer
+    return Object.values(groups).filter((group) => group.length > 1);
+  }, [customers]);
+
+  const handleMergeDuplicates = (duplicateGroup) => {
+    // Keep the first customer (usually the oldest/primary one)
+    const primaryCustomer = duplicateGroup[0];
+    const duplicatesToDelete = duplicateGroup.slice(1);
+
+    // Merge data from duplicates into primary customer
+    const mergedCustomer = { ...primaryCustomer };
+    
+    duplicatesToDelete.forEach((dup) => {
+      // Merge fields that are missing in primary but present in duplicate
+      if (!mergedCustomer.email && dup.email) mergedCustomer.email = dup.email;
+      if (!mergedCustomer.address && dup.address) mergedCustomer.address = dup.address;
+      if (!mergedCustomer.city && dup.city) mergedCustomer.city = dup.city;
+      if (!mergedCustomer.state && dup.state) mergedCustomer.state = dup.state;
+      if (!mergedCustomer.pincode && dup.pincode) mergedCustomer.pincode = dup.pincode;
+      if (!mergedCustomer.gstin && dup.gstin) mergedCustomer.gstin = dup.gstin;
+      if (!mergedCustomer.notes && dup.notes) mergedCustomer.notes = dup.notes;
+      // Combine notes if both exist
+      if (mergedCustomer.notes && dup.notes && mergedCustomer.notes !== dup.notes) {
+        mergedCustomer.notes = `${mergedCustomer.notes}\n${dup.notes}`;
+      }
+    });
+
+    // Update primary customer with merged data
+    dispatch({ type: 'UPDATE_CUSTOMER', payload: mergedCustomer });
+
+    // Update invoices that reference duplicate customers to point to primary customer
+    duplicatesToDelete.forEach((dup) => {
+      const relatedInvoices = invoices.filter(
+        (inv) => inv.customerId && String(inv.customerId) === String(dup.id)
+      );
+      relatedInvoices.forEach((invoice) => {
+        dispatch({
+          type: 'UPDATE_INVOICE',
+          payload: { ...invoice, customerId: primaryCustomer.id },
+        });
+      });
+    });
+
+    // Delete duplicate customers
+    duplicatesToDelete.forEach((dup) => {
+      dispatch({ type: 'DELETE_CUSTOMER', payload: dup.id });
+    });
+
+    const invoiceCount = duplicatesToDelete.reduce((count, dup) => {
+      return count + invoices.filter(
+        (inv) => inv.customerId && String(inv.customerId) === String(dup.id)
+      ).length;
+    }, 0);
+
+    showToast(
+      `Merged ${duplicatesToDelete.length} duplicate(s) into ${primaryCustomer.name}${invoiceCount > 0 ? ` and updated ${invoiceCount} invoice(s)` : ''}`,
+      'success'
+    );
+    setShowDuplicates(false);
+  };
+
+  const handleDeleteDuplicates = (duplicateGroup) => {
+    const primaryCustomer = duplicateGroup[0];
+    const duplicatesToDelete = duplicateGroup.slice(1);
+
+    if (window.confirm(`Delete ${duplicatesToDelete.length} duplicate(s) of ${primaryCustomer.name}?`)) {
+      duplicatesToDelete.forEach((dup) => {
+        dispatch({ type: 'DELETE_CUSTOMER', payload: dup.id });
+      });
+      showToast(`Deleted ${duplicatesToDelete.length} duplicate(s)`, 'success');
+      setShowDuplicates(false);
+    }
+  };
+
   const filteredCustomers = customers.filter((customer) =>
     customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     (customer.email && customer.email.toLowerCase().includes(searchTerm.toLowerCase())) ||
@@ -99,17 +202,128 @@ export default function CustomerManagement() {
           <h1 className="text-2xl font-bold text-gray-900">Customer Management</h1>
           <p className="text-gray-600 mt-1">Manage your customers and their information</p>
         </div>
-        <button
-          onClick={() => setShowForm(true)}
-          className="btn-primary flex items-center gap-2"
-        >
-          <Plus className="w-5 h-5" />
-          Add Customer
-        </button>
+        <div className="flex gap-2">
+          {duplicateGroups.length > 0 && !showDuplicates && (
+            <button
+              onClick={() => setShowDuplicates(true)}
+              className="btn-secondary flex items-center gap-2 bg-yellow-50 text-yellow-700 hover:bg-yellow-100 border-yellow-200"
+            >
+              <AlertTriangle className="w-5 h-5" />
+              {duplicateGroups.length} Duplicate{duplicateGroups.length > 1 ? 's' : ''} Found
+            </button>
+          )}
+          <button
+            onClick={() => setShowForm(true)}
+            className="btn-primary flex items-center gap-2"
+          >
+            <Plus className="w-5 h-5" />
+            Add Customer
+          </button>
+        </div>
       </div>
 
+      {/* Duplicates Section */}
+      {showDuplicates && duplicateGroups.length > 0 && (
+        <div className="card bg-yellow-50 border-yellow-200">
+          <div className="flex justify-between items-center mb-4">
+            <div>
+              <h2 className="text-xl font-bold text-yellow-900 flex items-center gap-2">
+                <AlertTriangle className="w-6 h-6" />
+                Duplicate Customers Found
+              </h2>
+              <p className="text-yellow-700 mt-1">
+                Found {duplicateGroups.length} group{duplicateGroups.length > 1 ? 's' : ''} of duplicate customers
+              </p>
+            </div>
+            <button
+              onClick={() => setShowDuplicates(false)}
+              className="text-yellow-700 hover:text-yellow-900"
+            >
+              <X className="w-6 h-6" />
+            </button>
+          </div>
+
+          <div className="space-y-4">
+            {duplicateGroups.map((group, groupIndex) => (
+              <div key={groupIndex} className="bg-white rounded-lg p-4 border border-yellow-200">
+                <div className="flex justify-between items-start mb-3">
+                  <div>
+                    <h3 className="font-semibold text-gray-900">
+                      {group.length} duplicate{group.length > 1 ? 's' : ''} with phone: {group[0].phone}
+                    </h3>
+                    <p className="text-sm text-gray-600 mt-1">
+                      All have the same phone number: {group[0].phone}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleMergeDuplicates(group)}
+                      className="btn-primary flex items-center gap-2 text-sm py-1.5 px-3"
+                    >
+                      <Merge className="w-4 h-4" />
+                      Merge All
+                    </button>
+                    <button
+                      onClick={() => handleDeleteDuplicates(group)}
+                      className="btn-secondary flex items-center gap-2 text-sm py-1.5 px-3 text-red-600 hover:bg-red-50"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Delete Duplicates
+                    </button>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  {group.map((customer, idx) => (
+                    <div
+                      key={customer.id}
+                      className={`p-3 rounded border ${
+                        idx === 0
+                          ? 'bg-blue-50 border-blue-200'
+                          : 'bg-gray-50 border-gray-200'
+                      }`}
+                    >
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-gray-900">{customer.name}</span>
+                            {idx === 0 && (
+                              <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded">
+                                Primary (will be kept)
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-sm text-gray-600 mt-1">
+                            <div>Phone: {customer.phone}</div>
+                            {customer.email && <div>Email: {customer.email}</div>}
+                            {customer.address && (
+                              <div>
+                                Address: {customer.address}
+                                {customer.city && `, ${customer.city}`}
+                                {customer.state && `, ${customer.state}`}
+                                {customer.pincode && ` ${customer.pincode}`}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleDelete(customer.id)}
+                          className="p-1 text-red-600 hover:bg-red-50 rounded"
+                          title="Delete this duplicate"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Search Bar */}
-      {!showForm && customers.length > 0 && (
+      {!showForm && !showDuplicates && customers.length > 0 && (
         <div className="relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
           <input
@@ -285,7 +499,7 @@ export default function CustomerManagement() {
       )}
 
       {/* Customers List */}
-      {!showForm && (
+      {!showForm && !showDuplicates && (
         <div className="card">
           {customers.length === 0 ? (
             <div className="text-center py-12">
