@@ -25,8 +25,20 @@ const DAY_COLORS_LIGHT = {
 };
 
 export default function SKUManagement() {
-  const { state, dispatch, showToast } = useApp();
-  const { skus, vendors } = state;
+  const { state, dispatch, showToast, isLoading } = useApp();
+  const { skus = [], vendors = [] } = state;
+
+  // Show loading state while data is being fetched
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <Package className="w-16 h-16 text-gray-300 mx-auto mb-4 animate-pulse" />
+          <p className="text-gray-500">Loading SKU Management...</p>
+        </div>
+      </div>
+    );
+  }
   
   // Helper function for flexible ingredient matching
   const matchIngredient = (recipeName, vendorName) => {
@@ -121,22 +133,25 @@ export default function SKUManagement() {
 
   const getAllIngredients = () => {
     const ingredients = [];
+    if (!vendors || !Array.isArray(vendors)) return ingredients;
     vendors.forEach((vendor) => {
-      vendor.ingredients.forEach((ing) => {
-        ingredients.push({
-          ...ing,
-          vendorId: vendor.id,
-          vendorName: vendor.name,
+      if (vendor && vendor.ingredients && Array.isArray(vendor.ingredients)) {
+        vendor.ingredients.forEach((ing) => {
+          ingredients.push({
+            ...ing,
+            vendorId: vendor.id,
+            vendorName: vendor.name,
+          });
         });
-      });
+      }
     });
     return ingredients;
   };
 
   const getIngredientsByVendor = (vendorId) => {
-    if (!vendorId) return [];
+    if (!vendorId || !vendors || !Array.isArray(vendors)) return [];
     const vendor = vendors.find(v => v.id == vendorId);
-    if (!vendor) return [];
+    if (!vendor || !vendor.ingredients || !Array.isArray(vendor.ingredients)) return [];
     return vendor.ingredients.map(ing => ({
       ...ing,
       vendorId: vendor.id,
@@ -975,7 +990,7 @@ export default function SKUManagement() {
                     <option value="">-- Select Vendor --</option>
                     {vendors.map((vendor) => (
                         <option key={vendor.id} value={String(vendor.id)}>
-                        {vendor.name} ({vendor.ingredients.length} ingredients)
+                        {vendor.name} ({vendor?.ingredients?.length || 0} ingredients)
                       </option>
                     ))}
                   </select>
@@ -1432,7 +1447,7 @@ export default function SKUManagement() {
                 <option value="">-- Use Default Pricing --</option>
                 {vendors.map((vendor) => (
                   <option key={vendor.id} value={String(vendor.id)}>
-                    {vendor.name} ({vendor.ingredients.length} ingredients)
+                    {vendor.name} ({vendor?.ingredients?.length || 0} ingredients)
                   </option>
                 ))}
               </select>
