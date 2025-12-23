@@ -26,6 +26,20 @@ const DAY_COLORS_LIGHT = {
 
 export default function SKUManagement() {
   const { state, dispatch, showToast, isLoading } = useApp();
+  
+  // Safety check - if state is not available, show error
+  if (!state) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <Package className="w-16 h-16 text-red-300 mx-auto mb-4" />
+          <p className="text-red-500 text-lg font-semibold">Error Loading SKU Management</p>
+          <p className="text-gray-500 mt-2">Application state is not available. Please refresh the page.</p>
+        </div>
+      </div>
+    );
+  }
+  
   const { skus = [], vendors = [] } = state;
 
   // Show loading state while data is being fetched

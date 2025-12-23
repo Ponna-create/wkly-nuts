@@ -4,6 +4,7 @@ import { AppProvider } from './context/AppContext';
 import Auth from './components/Auth';
 import Layout from './components/Layout';
 import Toast from './components/Toast';
+import ErrorBoundary from './components/ErrorBoundary';
 import Dashboard from './pages/Dashboard';
 import VendorManagement from './pages/VendorManagement';
 import SKUManagement from './pages/SKUManagement';
@@ -21,15 +22,15 @@ function App() {
         <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <Layout>
             <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/vendors" element={<VendorManagement />} />
-              <Route path="/skus" element={<SKUManagement />} />
-              <Route path="/pricing" element={<PricingStrategy />} />
-              <Route path="/sales" element={<SalesRevenue />} />
-              <Route path="/vendor-comparison" element={<VendorComparison />} />
-              <Route path="/customers" element={<CustomerManagement />} />
-              <Route path="/inventory" element={<InventoryManagement />} />
-              <Route path="/invoices" element={<InvoiceManagement />} />
+              <Route path="/" element={<ErrorBoundary><Dashboard /></ErrorBoundary>} />
+              <Route path="/vendors" element={<ErrorBoundary><VendorManagement /></ErrorBoundary>} />
+              <Route path="/skus" element={<ErrorBoundary><SKUManagement /></ErrorBoundary>} />
+              <Route path="/pricing" element={<ErrorBoundary><PricingStrategy /></ErrorBoundary>} />
+              <Route path="/sales" element={<ErrorBoundary><SalesRevenue /></ErrorBoundary>} />
+              <Route path="/vendor-comparison" element={<ErrorBoundary><VendorComparison /></ErrorBoundary>} />
+              <Route path="/customers" element={<ErrorBoundary><CustomerManagement /></ErrorBoundary>} />
+              <Route path="/inventory" element={<ErrorBoundary><InventoryManagement /></ErrorBoundary>} />
+              <Route path="/invoices" element={<ErrorBoundary><InvoiceManagement /></ErrorBoundary>} />
             </Routes>
           </Layout>
           <Toast />
