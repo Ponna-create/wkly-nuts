@@ -800,14 +800,14 @@ export default function SKUManagement() {
 
     const headers = ['Ingredient', 'Total Grams', 'Total Kg', 'Available', 'Shortage', 'Cost/Gram', 'Total Cost', 'Vendor'];
     const rows = productionRequirements.requirements.map(req => [
-      req.ingredientName,
-      req.totalGrams.toFixed(0),
-      req.totalKg,
-      req.available.toFixed(0),
-      req.shortage.toFixed(0),
-      req.pricePerGram.toFixed(2),
-      req.totalCost.toFixed(2),
-      req.recommendedVendor,
+      req.ingredientName || '',
+      (req.totalGrams || 0).toFixed(0),
+      req.totalKg || '0.00',
+      (req.available || 0).toFixed(0),
+      (req.shortage || 0).toFixed(0),
+      (req.pricePerGram || 0).toFixed(2),
+      (req.totalCost || 0).toFixed(2),
+      req.recommendedVendor || 'N/A',
     ]);
 
     const csvContent = [
@@ -819,9 +819,9 @@ export default function SKUManagement() {
       headers.join(','),
       ...rows.map(row => row.join(',')),
       '',
-      `Total Raw Material Cost,₹${productionRequirements.totalRawMaterialCost.toFixed(2)}`,
-      `Cost Per Pack,₹${productionRequirements.costPerPack.toFixed(2)}`,
-      `Cost Per Sachet,₹${productionRequirements.costPerSachet.toFixed(2)}`,
+      `Total Raw Material Cost,₹${(productionRequirements.totalRawMaterialCost || 0).toFixed(2)}`,
+      `Cost Per Pack,₹${(productionRequirements.costPerPack || 0).toFixed(2)}`,
+      `Cost Per Sachet,₹${(productionRequirements.costPerSachet || 0).toFixed(2)}`,
       `Total Sachets,${productionRequirements.totalSachets}`,
     ].join('\n');
 
@@ -1095,7 +1095,7 @@ export default function SKUManagement() {
                               ? 'text-yellow-600'
                               : 'text-red-600'
                           }`}>
-                            {getSingleUnitTotal().toFixed(1)}g / {(parseFloat(formData.unitWeight) * 1000).toFixed(1)}g
+                            {(getSingleUnitTotal() || 0).toFixed(1)}g / {((parseFloat(formData.unitWeight) || 0) * 1000).toFixed(1)}g
                           </span>
                         </div>
                       </div>
@@ -1525,19 +1525,19 @@ export default function SKUManagement() {
                         key={index}
                         className={`border-b ${req.hasShortage ? 'bg-red-50' : ''}`}
                       >
-                        <td className="p-3 font-medium">{req.ingredientName}</td>
-                        <td className="p-3 text-right">{req.totalGrams.toFixed(0)}</td>
-                        <td className="p-3 text-right font-semibold">{req.totalKg}</td>
-                        <td className="p-3 text-right">{req.available.toFixed(0)}g</td>
+                        <td className="p-3 font-medium">{req.ingredientName || ''}</td>
+                        <td className="p-3 text-right">{(req.totalGrams || 0).toFixed(0)}</td>
+                        <td className="p-3 text-right font-semibold">{req.totalKg || '0.00'}</td>
+                        <td className="p-3 text-right">{(req.available || 0).toFixed(0)}g</td>
                         <td className="p-3 text-right">
-                          {req.shortage > 0 && (
-                            <span className="text-red-600 font-bold">{req.shortage.toFixed(0)}g</span>
+                          {(req.shortage || 0) > 0 && (
+                            <span className="text-red-600 font-bold">{(req.shortage || 0).toFixed(0)}g</span>
                           )}
                         </td>
                         <td className="p-3 text-right">
                           {req.vendorPrice !== null && req.vendorUnit ? (
                             <div>
-                              <span className="font-semibold text-blue-700">₹{req.vendorPrice.toFixed(2)}</span>
+                              <span className="font-semibold text-blue-700">₹{(req.vendorPrice || 0).toFixed(2)}</span>
                               <span className="text-xs text-gray-600 ml-1">/ {req.vendorUnit}</span>
                             </div>
                           ) : (
@@ -1545,15 +1545,15 @@ export default function SKUManagement() {
                           )}
                         </td>
                         <td className="p-3 text-right">
-                          {req.pricePerGram > 0 ? (
-                            `₹${req.pricePerGram.toFixed(2)}`
+                          {(req.pricePerGram || 0) > 0 ? (
+                            `₹${(req.pricePerGram || 0).toFixed(2)}`
                           ) : (
                             <span className="text-gray-400">N/A</span>
                           )}
                         </td>
                         <td className="p-3 text-right font-semibold">
-                          {req.totalCost > 0 ? (
-                            `₹${req.totalCost.toFixed(2)}`
+                          {(req.totalCost || 0) > 0 ? (
+                            `₹${(req.totalCost || 0).toFixed(2)}`
                           ) : (
                             <span className="text-gray-400">N/A</span>
                           )}
@@ -1590,7 +1590,7 @@ export default function SKUManagement() {
                     <div>
                       <p className="text-sm text-gray-600">Total Raw Material Cost</p>
                       <p className="text-2xl font-bold text-primary-700">
-                        ₹{productionRequirements.totalRawMaterialCost.toLocaleString('en-IN', {
+                        ₹{(productionRequirements.totalRawMaterialCost || 0).toLocaleString('en-IN', {
                           minimumFractionDigits: 2,
                         })}
                       </p>
@@ -1598,7 +1598,7 @@ export default function SKUManagement() {
                     <div className="md:col-span-2">
                       <p className="text-sm text-gray-600">Cost per Unit</p>
                       <p className="text-2xl font-bold text-accent-600">
-                        ₹{productionRequirements.costPerUnit.toFixed(2)}
+                        ₹{(productionRequirements.costPerUnit || 0).toFixed(2)}
                       </p>
                     </div>
                   </div>
@@ -1612,7 +1612,7 @@ export default function SKUManagement() {
                     <div>
                       <p className="text-sm text-gray-600">Total Raw Material Cost</p>
                       <p className="text-2xl font-bold text-primary-700">
-                        ₹{productionRequirements.totalRawMaterialCost.toLocaleString('en-IN', {
+                        ₹{(productionRequirements.totalRawMaterialCost || 0).toLocaleString('en-IN', {
                           minimumFractionDigits: 2,
                         })}
                       </p>
@@ -1620,13 +1620,13 @@ export default function SKUManagement() {
                     <div>
                       <p className="text-sm text-gray-600">Cost per Pack</p>
                       <p className="text-2xl font-bold text-accent-600">
-                        ₹{productionRequirements.costPerPack.toFixed(2)}
+                        ₹{(productionRequirements.costPerPack || 0).toFixed(2)}
                       </p>
                     </div>
                     <div>
                       <p className="text-sm text-gray-600">Cost per Sachet</p>
                       <p className="text-2xl font-bold text-gray-700">
-                        ₹{productionRequirements.costPerSachet.toFixed(2)}
+                        ₹{(productionRequirements.costPerSachet || 0).toFixed(2)}
                       </p>
                     </div>
                   </div>
@@ -1660,9 +1660,9 @@ export default function SKUManagement() {
                             <span className="flex-1">{item.ingredientName}:</span>
                             <div className="flex gap-6 items-center">
                               <span className="font-semibold w-12 text-right">{item.gramsPerSachet}g</span>
-                              {item.pricePerSachet > 0 ? (
+                              {(item.pricePerSachet || 0) > 0 ? (
                                 <span className="text-green-600 font-medium w-16 text-right">
-                                  ₹{item.pricePerSachet.toFixed(2)}
+                                  ₹{(item.pricePerSachet || 0).toFixed(2)}
                                 </span>
                               ) : (
                                 <span className="text-gray-400 w-16 text-right">N/A</span>
@@ -1680,7 +1680,7 @@ export default function SKUManagement() {
                         return (
                           <div className="flex justify-between items-center pt-2 mt-2 border-t-2 border-gray-400 font-bold text-base">
                             <span>Total:</span>
-                            <span className="text-green-700">₹{dayTotal.toFixed(2)}</span>
+                            <span className="text-green-700">₹{(dayTotal || 0).toFixed(2)}</span>
                           </div>
                         );
                       })()}
@@ -1711,17 +1711,17 @@ export default function SKUManagement() {
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div className="bg-white p-4 rounded-lg border border-gray-200 text-center">
                           <p className="text-sm text-gray-600 mb-1">Grams per Week</p>
-                          <p className="text-2xl font-bold text-primary-700">{totalGramsPerWeek.toFixed(0)}g</p>
+                          <p className="text-2xl font-bold text-primary-700">{(totalGramsPerWeek || 0).toFixed(0)}g</p>
                           <p className="text-xs text-gray-500 mt-1">Total</p>
                         </div>
                         <div className="bg-white p-4 rounded-lg border border-gray-200 text-center">
                           <p className="text-sm text-gray-600 mb-1">Cost per Week (7 days)</p>
-                          <p className="text-2xl font-bold text-green-700">₹{totalCostPerWeek.toFixed(2)}</p>
+                          <p className="text-2xl font-bold text-green-700">₹{(totalCostPerWeek || 0).toFixed(2)}</p>
                           <p className="text-xs text-gray-500 mt-1">Total</p>
                         </div>
                         <div className="bg-white p-4 rounded-lg border border-gray-200 text-center">
                           <p className="text-sm text-gray-600 mb-1">Average Sachet Price</p>
-                          <p className="text-2xl font-bold text-accent-700">₹{averageSachetPrice.toFixed(2)}</p>
+                          <p className="text-2xl font-bold text-accent-700">₹{(averageSachetPrice || 0).toFixed(2)}</p>
                           <p className="text-xs text-gray-500 mt-1">Avg Price</p>
                         </div>
                       </div>
@@ -1942,7 +1942,7 @@ export default function SKUManagement() {
                                     <tr key={idx} className="border-b hover:bg-gray-50">
                                       {!showPurchaseList && <td className="p-1 print:p-1 text-gray-600">{idx + 1}</td>}
                                       <td className="p-1 print:p-1 font-medium">{item.ingredientName}</td>
-                                      {!showPurchaseList && <td className="p-1 print:p-1 text-right">{quantityKg.toFixed(2)}</td>}
+                                      {!showPurchaseList && <td className="p-1 print:p-1 text-right">{(quantityKg || 0).toFixed(2)}</td>}
                                       <td className="p-1 print:p-1 text-right font-semibold text-blue-700">
                                         {showPurchaseList 
                                           ? `${purchaseKg} kg`
@@ -1956,7 +1956,7 @@ export default function SKUManagement() {
                               <tfoot>
                                 <tr className="bg-gray-100 font-bold border-t-2 border-gray-400">
                                   <td colSpan={showPurchaseList ? 1 : 2} className="p-1 print:p-1">Total</td>
-                                  {!showPurchaseList && <td className="p-1 print:p-1 text-right">{totalQuantity.toFixed(2)} kg</td>}
+                                  {!showPurchaseList && <td className="p-1 print:p-1 text-right">{(totalQuantity || 0).toFixed(2)} kg</td>}
                                   <td className="p-1 print:p-1 text-right text-blue-700">
                                     {showPurchaseList 
                                       ? `${Math.ceil(totalQuantity)} kg`
@@ -2125,10 +2125,10 @@ export default function SKUManagement() {
                         {sku.singleUnit && (
                           <>
                             <p className="text-sm text-gray-700">
-                              Total: {(sku.singleUnit.totalGrams / 1000).toFixed(2)} kg
+                              Total: {((sku.singleUnit.totalGrams || 0) / 1000).toFixed(2)} kg
                             </p>
                             <p className="text-sm font-bold text-blue-700">
-                              ₹{sku.singleUnit.rawMaterialCost.toFixed(2)} per unit
+                              ₹{(sku.singleUnit.rawMaterialCost || 0).toFixed(2)} per unit
                             </p>
                           </>
                         )}
@@ -2158,7 +2158,7 @@ export default function SKUManagement() {
                             {(sku.weeklyPack?.totalGrams / 1000 || 0).toFixed(2)} kg total
                           </p>
                           <p className="text-sm font-bold text-blue-700">
-                            ₹{sku.weeklyPack?.rawMaterialCost.toFixed(2) || '0.00'}
+                            ₹{((sku.weeklyPack?.rawMaterialCost) || 0).toFixed(2)}
                           </p>
                         </div>
                         <div className="bg-accent-50 p-3 rounded-lg">
@@ -2168,7 +2168,7 @@ export default function SKUManagement() {
                             {(sku.monthlyPack?.totalGrams / 1000 || 0).toFixed(2)} kg total
                           </p>
                           <p className="text-sm font-bold text-accent-700">
-                            ₹{sku.monthlyPack?.rawMaterialCost.toFixed(2) || '0.00'}
+                            ₹{((sku.monthlyPack?.rawMaterialCost) || 0).toFixed(2)}
                           </p>
                         </div>
                       </div>
