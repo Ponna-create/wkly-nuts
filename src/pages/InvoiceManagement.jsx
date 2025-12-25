@@ -541,18 +541,43 @@ export default function InvoiceManagement() {
   };
 
   const handleEdit = (invoice) => {
+    // Try to find customer ID - check both invoice.customerId and invoice.customer.id
+    let customerId = invoice.customerId || '';
+    
+    // If customerId is empty but invoice has customer object, try to use customer.id
+    if (!customerId && invoice.customer && invoice.customer.id) {
+      customerId = invoice.customer.id;
+    }
+    
+    // If customerId still doesn't match any customer in the list, try to find by name/phone
+    if (customerId && !customers.find(c => String(c.id) === String(customerId))) {
+      if (invoice.customer && invoice.customer.name) {
+        // Try to find customer by name and phone
+        const matchingCustomer = customers.find(c => 
+          c.name === invoice.customer.name && 
+          c.phone === invoice.customer.phone
+        );
+        if (matchingCustomer) {
+          customerId = matchingCustomer.id;
+        } else {
+          // Customer not found in list - show warning but allow selection
+          console.warn('Customer from invoice not found in customers list:', invoice.customer);
+        }
+      }
+    }
+    
     setFormData({
-      customerId: invoice.customerId || '',
-      invoiceDate: invoice.invoiceDate || new Date().toISOString().split('T')[0],
-      dueDate: invoice.dueDate || '',
+      customerId: customerId,
+      invoiceDate: invoice.invoiceDate || invoice.invoice_date || new Date().toISOString().split('T')[0],
+      dueDate: invoice.dueDate || invoice.due_date || '',
       items: invoice.items || [],
-      gstRate: invoice.gstRate || 5,
-      discountAmount: invoice.discountAmount || 0,
-      discountPercent: invoice.discountPercent || 0,
-      shippingCharge: invoice.shippingCharge || 0,
-      advancePaid: invoice.advancePaid || 0,
+      gstRate: invoice.gstRate || invoice.gst_rate || 5,
+      discountAmount: invoice.discountAmount || invoice.discount_amount || 0,
+      discountPercent: invoice.discountPercent || invoice.discount_percent || 0,
+      shippingCharge: invoice.shippingCharge || invoice.shipping_charge || 0,
+      advancePaid: invoice.advancePaid || invoice.advance_paid || 0,
       notes: invoice.notes || '',
-      terms: invoice.terms || 'Payment due within 15 days',
+      terms: invoice.terms || invoice.paymentTerms || invoice.payment_terms || 'Payment due within 15 days',
       status: invoice.status || 'draft',
     });
     setEditingInvoice(invoice);
@@ -1713,7 +1738,6 @@ export default function InvoiceManagement() {
                 value={formData.customerId}
                 onChange={(e) => setFormData({ ...formData, customerId: e.target.value })}
                 className="input-field pl-10"
-                disabled={!!editingInvoice}
               >
                 <option value="">Select Customer</option>
                 {customers.map((customer) => (
@@ -1726,6 +1750,12 @@ export default function InvoiceManagement() {
                 ))}
               </select>
             </div>
+            {editingInvoice && editingInvoice.customer && formData.customerId && !customers.find(c => String(c.id) === String(formData.customerId)) && (
+              <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-sm text-yellow-800">
+                <AlertCircle className="w-4 h-4 inline mr-1" />
+                Original customer "{editingInvoice.customer.name}" not found in customer list. Please select a customer.
+              </div>
+            )}
           </div>
 
           {/* Dates */}
