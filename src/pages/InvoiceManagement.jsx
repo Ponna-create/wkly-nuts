@@ -1652,8 +1652,73 @@ export default function InvoiceManagement() {
       );
     }
 
+    // Debug: Log all invoices with missing customers
+    const invoicesWithMissingCustomers = filtered.filter(inv => !inv.customer && inv.customerId);
+    if (invoicesWithMissingCustomers.length > 0) {
+      console.log('🔍 Invoices with missing customers:', invoicesWithMissingCustomers.map(inv => ({
+        invoiceNumber: inv.invoiceNumber,
+        invoiceId: inv.id,
+        customerId: inv.customerId,
+        invoiceDate: inv.invoiceDate
+      })));
+    }
+
     return filtered;
   }, [invoices, statusFilter, searchTerm]);
+
+  // Helper function to find customer by ID (exposed for debugging)
+  const findCustomerById = (customerId) => {
+    return customers.find(c => String(c.id) === String(customerId));
+  };
+
+  // Helper function to check invoices with missing customers (exposed for debugging)
+  React.useEffect(() => {
+    // Expose helper functions to window for debugging
+    if (typeof window !== 'undefined') {
+      window.debugInvoiceCustomers = {
+        findMissingCustomers: () => {
+          const missing = invoices.filter(inv => !inv.customer && inv.customerId);
+          console.log('📋 Invoices with missing customers:', missing.map(inv => ({
+            invoiceNumber: inv.invoiceNumber,
+            invoiceId: inv.id,
+            customerId: inv.customerId,
+            invoiceDate: inv.invoiceDate,
+            totalAmount: inv.totalAmount
+          })));
+          return missing;
+        },
+        findCustomerById: (customerId) => {
+          const customer = customers.find(c => String(c.id) === String(customerId));
+          console.log('👤 Customer found:', customer);
+          return customer;
+        },
+        getAllCustomers: () => {
+          console.log('👥 All customers:', customers.map(c => ({
+            id: c.id,
+            name: c.name,
+            phone: c.phone
+          })));
+          return customers;
+        },
+        checkInvoice: (invoiceNumber) => {
+          const invoice = invoices.find(inv => inv.invoiceNumber === invoiceNumber);
+          if (invoice) {
+            console.log('📄 Invoice details:', {
+              invoiceNumber: invoice.invoiceNumber,
+              invoiceId: invoice.id,
+              customerId: invoice.customerId,
+              customer: invoice.customer,
+              customerExists: invoice.customer ? 'Yes' : 'No',
+              customerInList: invoice.customerId ? findCustomerById(invoice.customerId) ? 'Yes' : 'No' : 'N/A'
+            });
+          } else {
+            console.log('❌ Invoice not found:', invoiceNumber);
+          }
+          return invoice;
+        }
+      };
+    }
+  }, [invoices, customers]);
 
   // Get status icon and color
   const getStatusInfo = (status) => {
@@ -2141,6 +2206,16 @@ export default function InvoiceManagement() {
                       const statusInfo = getStatusInfo(invoice.status);
                       const StatusIcon = statusInfo.icon;
                       
+                      // Debug: Log invoices with missing customers
+                      if (!invoice.customer && invoice.customerId) {
+                        console.log('🔍 Invoice with customerId but no customer object:', {
+                          invoiceNumber: invoice.invoiceNumber,
+                          invoiceId: invoice.id,
+                          customerId: invoice.customerId,
+                          invoiceDate: invoice.invoiceDate
+                        });
+                      }
+                      
                       return (
                         <tr key={invoice.id} className="border-b border-gray-100 hover:bg-gray-50">
                           <td className="py-4 px-4">
@@ -2150,6 +2225,11 @@ export default function InvoiceManagement() {
                             <div className="text-sm text-gray-900">{invoice.customer?.name || 'No Customer'}</div>
                             {invoice.customer?.phone && (
                               <div className="text-xs text-gray-500">{invoice.customer.phone}</div>
+                            )}
+                            {!invoice.customer && invoice.customerId && (
+                              <div className="text-xs text-red-500 mt-1" title={`Customer ID: ${invoice.customerId}`}>
+                                ⚠️ Customer ID exists but customer not found
+                              </div>
                             )}
                           </td>
                           <td className="py-4 px-4 text-sm text-gray-600">
