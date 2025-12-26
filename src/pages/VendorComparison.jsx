@@ -8,6 +8,7 @@ export default function VendorComparison() {
   const [selectedSKU, setSelectedSKU] = useState('');
   const [selectedVendors, setSelectedVendors] = useState([]);
   const [compareMode, setCompareMode] = useState('selected'); // 'selected' or 'all'
+  const [stockCheckMode, setStockCheckMode] = useState('priceOnly'); // 'priceOnly' or 'stockCheck'
 
 
   const getSKURecipe = (skuId) => {
@@ -44,7 +45,7 @@ export default function VendorComparison() {
     return ingredients;
   };
 
-  // Helper function for flexible ingredient matching
+  // Helper function for flexible ingredient matching with typo tolerance
   const matchIngredient = (recipeName, vendorName) => {
     const recipe = recipeName.toLowerCase().trim();
     const vendor = vendorName.toLowerCase().trim();
@@ -68,23 +69,60 @@ export default function VendorComparison() {
       return true;
     }
     
-    // Check for common ingredient variations
+    // Check for common ingredient variations with typo tolerance
     const commonVariations = {
-      'almond': ['almonds', 'almond'],
-      'walnut': ['walnuts', 'walnut'],
-      'cashew': ['cashews', 'cashew'],
-      'raisin': ['raisins', 'raisin'],
-      'date': ['dates', 'date'],
-      'pista': ['pistachio', 'pista', 'pistachios'],
-      'pumpkin': ['pumpkin seed', 'pumpkin seeds'],
-      'sunflower': ['sunflower seed', 'sunflower seeds']
+      'almond': ['almonds', 'almond', 'almondes', 'almondes'],
+      'walnut': ['walnuts', 'walnut', 'walnutes', 'walnutes'],
+      'cashew': ['cashews', 'cashew', 'cashwes', 'cashwes', 'cashe', 'cashews'],
+      'raisin': ['raisins', 'raisin', 'raisen', 'raisens'],
+      'date': ['dates', 'date', 'datte', 'dattes'],
+      'pista': ['pistachio', 'pista', 'pistachios', 'pistachioes'],
+      'pumpkin': ['pumpkin seed', 'pumpkin seeds', 'pumpkinseeds'],
+      'sunflower': ['sunflower seed', 'sunflower seeds', 'sunflowerseeds']
     };
     
+    // Check variations
     for (const [key, variations] of Object.entries(commonVariations)) {
-      if (variations.some(v => normalizedRecipe.includes(v)) && 
-          variations.some(v => normalizedVendor.includes(v))) {
+      const recipeMatches = variations.some(v => normalizedRecipe.includes(v));
+      const vendorMatches = variations.some(v => normalizedVendor.includes(v));
+      
+      if (recipeMatches && vendorMatches) {
         return true;
       }
+      
+      // Also check if the base key matches
+      if (normalizedRecipe.includes(key) && vendorMatches) {
+        return true;
+      }
+      if (normalizedVendor.includes(key) && recipeMatches) {
+        return true;
+      }
+    }
+    
+    // Fuzzy matching for typos (simple character similarity check)
+    // Check if strings are similar enough (allowing for 1-2 character differences)
+    const calculateSimilarity = (str1, str2) => {
+      const longer = str1.length > str2.length ? str1 : str2;
+      const shorter = str1.length > str2.length ? str2 : str1;
+      if (longer.length === 0) return 1.0;
+      
+      // Check if shorter string is contained in longer (allowing for typos)
+      if (longer.includes(shorter) || shorter.includes(longer.substring(0, shorter.length))) {
+        return 0.8; // High similarity
+      }
+      
+      // Simple character overlap check
+      let matches = 0;
+      for (let i = 0; i < Math.min(shorter.length, longer.length); i++) {
+        if (shorter[i] === longer[i]) matches++;
+      }
+      return matches / longer.length;
+    };
+    
+    // If similarity is high enough (>= 0.7), consider it a match
+    const similarity = calculateSimilarity(normalizedRecipe, normalizedVendor);
+    if (similarity >= 0.7) {
+      return true;
     }
     
     return false;
@@ -98,6 +136,7 @@ export default function VendorComparison() {
     
     const vendorsToCompare = compareMode === 'all' ? vendors : vendors.filter(v => selectedVendors.includes(v.id));
     const vendorCosts = [];
+    const checkStock = stockCheckMode === 'stockCheck';
     
     vendorsToCompare.forEach(vendor => {
       let totalCost = 0;
@@ -111,15 +150,56 @@ export default function VendorComparison() {
         );
         
         if (vendorIngredient) {
-          const pricePerGram = vendorIngredient.pricePerUnit / (vendorIngredient.unit === 'kg' ? 1000 : 1);
-          const cost = pricePerGram * recipeItem.gramsPerSachet;
-          totalCost += cost;
-          availableIngredients.push({
-            name: recipeItem.ingredientName,
-            gramsPerSachet: recipeItem.gramsPerSachet,
-            pricePerGram: pricePerGram,
-            cost: cost
-          });
+          // Check stock availability if stock check mode is enabled
+          const quantityAvailable = vendorIngredient.quantityAvailable || 0;
+          const availableGrams = vendorIngredient.unit === 'kg' ? quantityAvailable * 1000 : quantityAvailable;
+          const requiredGrams = recipeItem.gramsPerSachet;
+          
+          // In stock check mode, only consider available if stock is sufficient
+          const hasStock = checkStock ? availableGrams >= requiredGrams : true;
+          const hasAnyStock = checkStock ? availableGrams > 0 : true;
+          
+          if (hasAnyStock) {
+            const pricePerGram = vendorIngredient.pricePerUnit / (vendorIngredient.unit === 'kg' ? 1000 : 1);
+            const cost = pricePerGram * recipeItem.gramsPerSachet;
+            
+            if (hasStock) {
+              totalCost += cost;
+            }
+            
+            availableIngredients.push({
+              name: recipeItem.ingredientName,
+              gramsPerSachet: recipeItem.gramsPerSachet,
+              pricePerGram: pricePerGram,
+              cost: cost,
+              quantityAvailable: quantityAvailable,
+              availableGrams: availableGrams,
+              hasStock: hasStock,
+              hasAnyStock: hasAnyStock,
+              unit: vendorIngredient.unit
+            });
+            
+            if (!hasStock) {
+              canSupplyAll = false;
+              missingIngredients.push(recipeItem.ingredientName);
+            }
+          } else {
+            // No stock available
+            canSupplyAll = false;
+            missingIngredients.push(recipeItem.ingredientName);
+            availableIngredients.push({
+              name: recipeItem.ingredientName,
+              gramsPerSachet: recipeItem.gramsPerSachet,
+              pricePerGram: 0,
+              cost: 0,
+              quantityAvailable: 0,
+              availableGrams: 0,
+              hasStock: false,
+              hasAnyStock: false,
+              unavailable: true,
+              unit: vendorIngredient.unit
+            });
+          }
         } else {
           canSupplyAll = false;
           missingIngredients.push(recipeItem.ingredientName);
@@ -141,9 +221,9 @@ export default function VendorComparison() {
         canSupplyAll,
         missingIngredients,
         ingredients: availableIngredients,
-        availableCount: availableIngredients.filter(ing => !ing.unavailable).length,
+        availableCount: availableIngredients.filter(ing => !ing.unavailable && (checkStock ? ing.hasStock : true)).length,
         totalIngredients: recipe.length,
-        coveragePercentage: (availableIngredients.filter(ing => !ing.unavailable).length / recipe.length) * 100
+        coveragePercentage: (availableIngredients.filter(ing => !ing.unavailable && (checkStock ? ing.hasStock : true)).length / recipe.length) * 100
       });
     });
     
@@ -361,6 +441,48 @@ export default function VendorComparison() {
         </div>
       )}
 
+      {/* Stock Check Mode Toggle */}
+      {selectedSKU && (
+        <div className="card">
+          <h2 className="text-xl font-bold text-gray-900 mb-4">Comparison Mode</h2>
+          <div className="flex flex-wrap gap-4">
+            <button
+              onClick={() => setStockCheckMode('priceOnly')}
+              className={`px-6 py-3 rounded-lg border font-medium transition-colors ${
+                stockCheckMode === 'priceOnly' 
+                  ? 'bg-primary text-white border-primary shadow-md' 
+                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              💰 Price Comparison Only
+            </button>
+            <button
+              onClick={() => setStockCheckMode('stockCheck')}
+              className={`px-6 py-3 rounded-lg border font-medium transition-colors ${
+                stockCheckMode === 'stockCheck' 
+                  ? 'bg-primary text-white border-primary shadow-md' 
+                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              📦 Stock Availability Check
+            </button>
+          </div>
+          <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+            <p className="text-sm text-blue-800">
+              {stockCheckMode === 'priceOnly' ? (
+                <span>
+                  <strong>Price Comparison Mode:</strong> Showing all ingredients with prices from vendor price lists, regardless of stock availability. Use this mode to compare pricing across vendors.
+                </span>
+              ) : (
+                <span>
+                  <strong>Stock Availability Mode:</strong> Only showing ingredients that have sufficient stock available. Ingredients with zero or insufficient stock will be marked as unavailable.
+                </span>
+              )}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Side-by-Side Vendor Comparison */}
       {selectedSKU && vendorCosts.length > 0 && (
         <div className="card">
@@ -425,17 +547,37 @@ export default function VendorComparison() {
                                 <div className="text-xs text-gray-600">
                                   ₹{vendorIngredient.pricePerGram.toFixed(2)}/g
                                 </div>
+                                {stockCheckMode === 'stockCheck' && (
+                                  <div className={`text-xs mt-1 ${
+                                    vendorIngredient.hasStock 
+                                      ? 'text-green-600 font-semibold' 
+                                      : vendorIngredient.hasAnyStock 
+                                        ? 'text-orange-600' 
+                                        : 'text-red-600'
+                                  }`}>
+                                    {vendorIngredient.hasStock 
+                                      ? `✓ Stock: ${vendorIngredient.quantityAvailable.toFixed(2)} ${vendorIngredient.unit || 'units'}`
+                                      : vendorIngredient.hasAnyStock
+                                        ? `⚠ Low Stock: ${vendorIngredient.quantityAvailable.toFixed(2)} ${vendorIngredient.unit || 'units'}`
+                                        : '✗ No Stock'
+                                    }
+                                  </div>
+                                )}
                                 {isCheapest && (
-                                  <div className="text-xs text-green-600 font-semibold">Best Price</div>
+                                  <div className="text-xs text-green-600 font-semibold mt-1">Best Price</div>
                                 )}
                                 {!isCheapest && cheapestPrice > 0 && (
-                                  <div className="text-xs text-orange-600">
+                                  <div className="text-xs text-orange-600 mt-1">
                                     +{((vendorIngredient.cost - cheapestPrice) / cheapestPrice * 100).toFixed(0)}%
                                   </div>
                                 )}
                               </div>
                             ) : (
-                              <div className="text-red-500 text-xs">Not Available</div>
+                              <div className="text-red-500 text-xs">
+                                {vendorIngredient?.hasAnyStock === false && stockCheckMode === 'stockCheck' 
+                                  ? 'No Stock' 
+                                  : 'Not Available'}
+                              </div>
                             )}
                           </td>
                         );
