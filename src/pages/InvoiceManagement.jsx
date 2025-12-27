@@ -1720,6 +1720,140 @@ export default function InvoiceManagement() {
     }
   }, [invoices, customers]);
 
+  // Export invoices to CSV with item details
+  const exportInvoices = () => {
+    const invoicesToExport = filteredInvoices.length > 0 ? filteredInvoices : invoices;
+    
+    // Create CSV content with detailed invoice and item information
+    const csvRows = [];
+    
+    // Main invoice headers
+    const invoiceHeaders = [
+      'Invoice #',
+      'Customer Name',
+      'Customer Phone',
+      'Customer Email',
+      'Invoice Date',
+      'Due Date',
+      'Status',
+      'Subtotal',
+      'Discount Amount',
+      'Discount %',
+      'Shipping Charge',
+      'GST Rate %',
+      'GST Amount',
+      'Advance Paid',
+      'Total Amount',
+      'Balance Due',
+      'Payment Method',
+      'Payment Date',
+      'Notes',
+      'Terms'
+    ];
+    
+    // Item headers
+    const itemHeaders = [
+      'Item #',
+      'Item SKU Name',
+      'Item Description',
+      'Pack Type',
+      'Quantity',
+      'Unit Price',
+      'Item Total'
+    ];
+    
+    // Combine headers
+    const allHeaders = [...invoiceHeaders, ...itemHeaders].join(',');
+    csvRows.push(allHeaders);
+    
+    // Process each invoice
+    invoicesToExport.forEach((invoice) => {
+      const customer = invoice.customer || (invoice.customerId ? customers.find(c => String(c.id) === String(invoice.customerId)) : null);
+      
+      // Base invoice row data
+      const invoiceData = [
+        invoice.invoiceNumber || 'N/A',
+        customer?.name || 'No Customer',
+        customer?.phone || '',
+        customer?.email || '',
+        invoice.invoiceDate ? new Date(invoice.invoiceDate).toLocaleDateString('en-IN') : '',
+        invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString('en-IN') : '',
+        invoice.status || 'draft',
+        (invoice.subtotal || 0).toFixed(2),
+        (invoice.discountAmount || 0).toFixed(2),
+        (invoice.discountPercent || 0).toFixed(2),
+        (invoice.shippingCharge || 0).toFixed(2),
+        (invoice.gstRate || 0).toFixed(2),
+        (invoice.gstAmount || 0).toFixed(2),
+        (invoice.advancePaid || 0).toFixed(2),
+        (invoice.totalAmount || 0).toFixed(2),
+        (invoice.balanceDue || 0).toFixed(2),
+        invoice.paymentMethod || '',
+        invoice.paymentDate ? new Date(invoice.paymentDate).toLocaleDateString('en-IN') : '',
+        (invoice.notes || '').replace(/\n/g, ' ').replace(/,/g, ';'),
+        (invoice.terms || '').replace(/\n/g, ' ').replace(/,/g, ';')
+      ];
+      
+      // Get items for this invoice
+      const items = invoice.items || [];
+      
+      if (items.length === 0) {
+        // No items - just add invoice row with empty item columns
+        const emptyItemData = ['', '', '', '', '', '', ''];
+        const row = [...invoiceData, ...emptyItemData]
+          .map(cell => {
+            const cellStr = String(cell || '');
+            if (cellStr.includes(',') || cellStr.includes('"') || cellStr.includes('\n')) {
+              return `"${cellStr.replace(/"/g, '""')}"`;
+            }
+            return cellStr;
+          })
+          .join(',');
+        csvRows.push(row);
+      } else {
+        // Add one row per item
+        items.forEach((item, itemIndex) => {
+          const itemData = [
+            itemIndex + 1,
+            item.skuName || 'Unknown SKU',
+            `${item.skuName || 'Unknown'} - ${item.packType ? (item.packType.charAt(0).toUpperCase() + item.packType.slice(1)) : ''} Pack`,
+            item.packType ? `${item.packType.charAt(0).toUpperCase() + item.packType.slice(1)} Pack` : '',
+            (item.quantity || 0).toFixed(2),
+            (item.unitPrice || 0).toFixed(2),
+            (item.total || 0).toFixed(2)
+          ];
+          
+          const row = [...invoiceData, ...itemData]
+            .map(cell => {
+              const cellStr = String(cell || '');
+              if (cellStr.includes(',') || cellStr.includes('"') || cellStr.includes('\n')) {
+                return `"${cellStr.replace(/"/g, '""')}"`;
+              }
+              return cellStr;
+            })
+            .join(',');
+          csvRows.push(row);
+        });
+      }
+    });
+    
+    // Combine all rows
+    const csvContent = csvRows.join('\n');
+    
+    // Create and download file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `invoices-export-${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    
+    showToast(`Exported ${invoicesToExport.length} invoice(s) with item details to CSV`, 'success');
+  };
+
   // Get status icon and color
   const getStatusInfo = (status) => {
     switch (status) {
@@ -1744,13 +1878,24 @@ export default function InvoiceManagement() {
           <h1 className="text-2xl font-bold text-gray-900">Invoice Management</h1>
           <p className="text-gray-600 mt-1">Create and manage customer invoices</p>
         </div>
-        <button
-          onClick={() => setShowForm(true)}
-          className="btn-primary flex items-center gap-2"
-        >
-          <Plus className="w-5 h-5" />
-          Create Invoice
-        </button>
+        <div className="flex gap-2">
+          {!showForm && invoices.length > 0 && (
+            <button
+              onClick={exportInvoices}
+              className="btn-secondary flex items-center gap-2"
+            >
+              <Download className="w-5 h-5" />
+              Export
+            </button>
+          )}
+          <button
+            onClick={() => setShowForm(true)}
+            className="btn-primary flex items-center gap-2"
+          >
+            <Plus className="w-5 h-5" />
+            Create Invoice
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
