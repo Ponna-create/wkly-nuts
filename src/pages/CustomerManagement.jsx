@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Plus, Edit, Trash2, Search, X, User, Mail, Phone, MapPin, Building2, AlertTriangle, Merge } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, X, User, Mail, Phone, MapPin, Building2, AlertTriangle, Merge, Download } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 
 export default function CustomerManagement() {
@@ -188,11 +188,92 @@ export default function CustomerManagement() {
     }
   };
 
-  const filteredCustomers = customers.filter((customer) =>
+  // Sort customers by creation date (oldest first) and add row numbers
+  const sortedAndNumberedCustomers = useMemo(() => {
+    // Sort by creation date (oldest first)
+    const sorted = [...customers].sort((a, b) => {
+      const dateA = a.createdAt ? new Date(a.createdAt).getTime() : (a.id || 0);
+      const dateB = b.createdAt ? new Date(b.createdAt).getTime() : (b.id || 0);
+      return dateA - dateB; // Oldest first
+    });
+    
+    // Add row numbers
+    return sorted.map((customer, index) => ({
+      ...customer,
+      rowNumber: index + 1
+    }));
+  }, [customers]);
+
+  const filteredCustomers = sortedAndNumberedCustomers.filter((customer) =>
     customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     (customer.email && customer.email.toLowerCase().includes(searchTerm.toLowerCase())) ||
     (customer.phone && customer.phone.includes(searchTerm))
   );
+
+  // Export customers to CSV
+  const exportCustomers = () => {
+    const customersToExport = filteredCustomers.length > 0 ? filteredCustomers : sortedAndNumberedCustomers;
+    
+    // CSV Headers
+    const headers = [
+      'Row #',
+      'Name',
+      'Phone',
+      'Email',
+      'Address',
+      'City',
+      'State',
+      'Pincode',
+      'GSTIN',
+      'Customer Type',
+      'Notes',
+      'Created Date'
+    ];
+    
+    // CSV Rows
+    const rows = customersToExport.map(customer => [
+      customer.rowNumber || '',
+      customer.name || '',
+      customer.phone || '',
+      customer.email || '',
+      customer.address || '',
+      customer.city || '',
+      customer.state || '',
+      customer.pincode || '',
+      customer.gstin || '',
+      customer.customerType === 'business' ? 'Business' : 'Individual',
+      customer.notes || '',
+      customer.createdAt ? new Date(customer.createdAt).toLocaleDateString('en-IN') : ''
+    ]);
+    
+    // Combine headers and rows
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => 
+        row.map(cell => {
+          // Escape commas and quotes in CSV
+          const cellStr = String(cell || '');
+          if (cellStr.includes(',') || cellStr.includes('"') || cellStr.includes('\n')) {
+            return `"${cellStr.replace(/"/g, '""')}"`;
+          }
+          return cellStr;
+        }).join(',')
+      )
+    ].join('\n');
+    
+    // Create and download file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `customers-export-${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    
+    showToast(`Exported ${customersToExport.length} customer(s) to CSV`, 'success');
+  };
 
   return (
     <div className="space-y-6">
@@ -210,6 +291,15 @@ export default function CustomerManagement() {
             >
               <AlertTriangle className="w-5 h-5" />
               {duplicateGroups.length} Duplicate{duplicateGroups.length > 1 ? 's' : ''} Found
+            </button>
+          )}
+          {!showForm && !showDuplicates && customers.length > 0 && (
+            <button
+              onClick={exportCustomers}
+              className="btn-secondary flex items-center gap-2"
+            >
+              <Download className="w-5 h-5" />
+              Export
             </button>
           )}
           <button
@@ -522,6 +612,7 @@ export default function CustomerManagement() {
                 <table className="w-full">
                   <thead>
                     <tr className="border-b border-gray-200">
+                      <th className="text-center py-3 px-4 font-semibold text-gray-700 w-16">#</th>
                       <th className="text-left py-3 px-4 font-semibold text-gray-700">Name</th>
                       <th className="text-left py-3 px-4 font-semibold text-gray-700">Contact</th>
                       <th className="text-left py-3 px-4 font-semibold text-gray-700">Address</th>
@@ -532,6 +623,9 @@ export default function CustomerManagement() {
                   <tbody>
                     {filteredCustomers.map((customer) => (
                       <tr key={customer.id} className="border-b border-gray-100 hover:bg-gray-50">
+                        <td className="py-4 px-4 text-center">
+                          <div className="font-semibold text-gray-600">{customer.rowNumber || ''}</div>
+                        </td>
                         <td className="py-4 px-4">
                           <div className="font-medium text-gray-900">{customer.name}</div>
                           {customer.gstin && (
