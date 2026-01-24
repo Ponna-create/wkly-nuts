@@ -1525,6 +1525,88 @@ export const dbService = {
     } catch (error) {
       console.error('Error recalculating stock:', error);
     }
+  },
+
+  /**
+   * FIFO Consumption: Deduct quantity from oldest batches first
+   * @param {string} ingredientId - UUID of the ingredient
+   * @param {number} quantityNeeded - Amount to consume
+   * @returns {Promise<{success: boolean, consumed: Array, error?: string}>}
+   */
+  async consumeIngredientFIFO(ingredientId, quantityNeeded) {
+    if (!isSupabaseAvailable()) return { success: false, error: 'Supabase not configured' };
+
+    try {
+      // 1. Get all active batches sorted by expiry (FIFO)
+      const { data: batches, error: fetchError } = await supabase
+        .from('ingredient_batches')
+        .select('*')
+        .eq('ingredient_id', ingredientId)
+        .eq('status', 'active')
+        .gt('quantity_remaining', 0)
+        .order('expiry_date', { ascending: true }); // Oldest first
+
+      if (fetchError) throw fetchError;
+
+      if (!batches || batches.length === 0) {
+        return { success: false, error: 'No active batches available' };
+      }
+
+      // 2. Calculate total available
+      const totalAvailable = batches.reduce((sum, b) => sum + parseFloat(b.quantity_remaining), 0);
+      if (totalAvailable < quantityNeeded) {
+        return {
+          success: false,
+          error: `Insufficient stock. Need: ${quantityNeeded}, Available: ${totalAvailable}`
+        };
+      }
+
+      // 3. Consume from batches (FIFO)
+      let remaining = quantityNeeded;
+      const consumedBatches = [];
+
+      for (const batch of batches) {
+        if (remaining <= 0) break;
+
+        const batchQty = parseFloat(batch.quantity_remaining);
+        const toConsume = Math.min(remaining, batchQty);
+        const newQty = batchQty - toConsume;
+
+        // Update batch
+        const updatePayload = {
+          quantity_remaining: newQty,
+          status: newQty <= 0 ? 'consumed' : 'active'
+        };
+
+        const { error: updateError } = await supabase
+          .from('ingredient_batches')
+          .update(updatePayload)
+          .eq('id', batch.id);
+
+        if (updateError) throw updateError;
+
+        consumedBatches.push({
+          batchId: batch.id,
+          batchNumber: batch.batch_number,
+          consumed: toConsume,
+          remaining: newQty
+        });
+
+        remaining -= toConsume;
+      }
+
+      // 4. Recalculate total stock
+      await this.recalculateIngredientStock(ingredientId);
+
+      return {
+        success: true,
+        consumed: consumedBatches,
+        totalConsumed: quantityNeeded
+      };
+
+    } catch (error) {
+      console.error('Error consuming ingredient (FIFO):', error);
+      return { success: false, error: error.message };
+    }
   }
 };
-

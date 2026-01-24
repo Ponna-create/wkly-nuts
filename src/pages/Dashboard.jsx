@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Users, Package, DollarSign, TrendingUp, ShoppingBag } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import DataManagement from '../components/DataManagement';
+import ProductionSimulator from '../components/ProductionSimulator';
 import logo from '../assets/wkly-nuts-logo.png';
 
 export default function Dashboard() {
@@ -13,7 +14,7 @@ export default function Dashboard() {
   const totalVendors = vendors.length;
   const totalSKUs = skus.length;
   const totalIngredients = vendors.reduce((sum, v) => sum + (v.ingredients?.length || 0), 0);
-  
+
   // Calculate monthly revenue target
   const currentMonth = new Date().getMonth();
   const currentYear = new Date().getFullYear();
@@ -69,9 +70,9 @@ export default function Dashboard() {
       {/* Welcome Section */}
       <div className="bg-gradient-to-r from-primary to-primary-700 rounded-2xl p-8 text-white">
         <div className="flex items-start gap-6">
-          <img 
-            src={logo} 
-            alt="WKLY Nuts Logo" 
+          <img
+            src={logo}
+            alt="WKLY Nuts Logo"
             className="h-20 w-auto object-contain bg-white rounded-lg p-2 hidden sm:block"
           />
           <div className="flex-1">
@@ -105,6 +106,9 @@ export default function Dashboard() {
 
       {/* Data Management Section */}
       <DataManagement />
+
+      {/* Production Simulator (FIFO Demo) */}
+      <ProductionSimulator />
 
       {/* Quick Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">

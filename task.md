@@ -13,12 +13,12 @@
     - [x] Add "Safety Buffer %" field to `PricingStrategy`. <!-- id: 6 -->
     - [ ] Auto-suggest buffer based on historical volatility. <!-- id: 7 -->
 
-## 📦 Phase 2: Inventory & Batch Tracking (Active)
+## 📦 Phase 2: Inventory & Batch Tracking (Complete ✅)
 - [x] **Schema Update**: Create `ingredients` and `ingredient_batches` tables. <!-- id: 8 -->
 - [x] **Data Migration**: Migrate existing vendor stock to "Opening Balance" batches. <!-- id: 9 -->
 - [x] **Backend Services**: Update `supabase.js` to read/write `ingredient_batches`. <!-- id: 10 -->
 - [x] **UI - Inventory Page**: Create new Inventory Dashboard showing Batches. <!-- id: 13 -->
-- [ ] **FIFO Logic**: Update production calculator to consume from oldest batch. <!-- id: 14 -->
+- [x] **FIFO Logic**: Implement automatic batch consumption (oldest first). <!-- id: 14 -->
 
 ## 🏭 Phase 3: Production Realities
 - [ ] **Wastage Tracking**: UI to record scrap/waste during production. <!-- id: 11 -->
