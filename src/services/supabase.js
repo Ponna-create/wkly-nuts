@@ -102,7 +102,7 @@ export const dbService = {
         const priceHistoryEntries = [];
 
         // 2. Compare ingredients to find price changes
-        newIngredients.forEach(newIng => {
+        for (const newIng of newIngredients) {
           const oldIng = oldIngredients.find(o => o.name === newIng.name);
           if (oldIng) {
             const oldPrice = parseFloat(oldIng.pricePerUnit || 0);
@@ -110,16 +110,35 @@ export const dbService = {
 
             // If price changed significantly (more than 0.01 difference)
             if (Math.abs(oldPrice - newPrice) > 0.01) {
+              // Check if history exists to determine if we need a "base" record
+              const { count } = await supabase
+                .from('price_history')
+                .select('*', { count: 'exact', head: true })
+                .eq('vendor_id', vendor.id)
+                .eq('ingredient_name', newIng.name);
+
+              if (count === 0) {
+                // First time logging? Save the OLD price too so we have a baseline
+                priceHistoryEntries.push({
+                  vendor_id: vendor.id,
+                  ingredient_name: newIng.name,
+                  price_per_unit: oldPrice,
+                  unit: newIng.unit,
+                  changed_by: 'system',
+                  created_at: new Date(Date.now() - 1000).toISOString() // 1 second ago
+                });
+              }
+
               priceHistoryEntries.push({
                 vendor_id: vendor.id,
                 ingredient_name: newIng.name,
                 price_per_unit: newPrice,
                 unit: newIng.unit,
-                changed_by: 'system', // or logged in user if auth enabled
+                changed_by: 'system',
               });
             }
           }
-        });
+        }
 
         // 3. Log changes to price_history table
         if (priceHistoryEntries.length > 0) {
@@ -129,7 +148,6 @@ export const dbService = {
 
           if (historyError) {
             console.error('Error logging price history:', historyError);
-            // We don't stop the main update if history logging fails, but we log it
           }
         }
       }
