@@ -17,6 +17,7 @@ const loadFromLocalStorage = () => {
         customers: parsed.customers || [],
         invoices: parsed.invoices || [],
         inventory: parsed.inventory || [],
+        ingredients: parsed.ingredients || [],
         toast: null,
       };
     }
@@ -31,6 +32,7 @@ const loadFromLocalStorage = () => {
     customers: [],
     invoices: [],
     inventory: [],
+    ingredients: [],
     toast: null,
   };
 };
@@ -52,6 +54,7 @@ const initialState = {
   customers: [],
   invoices: [],
   inventory: [],
+  ingredients: [],
   toast: null,
 };
 
@@ -437,9 +440,10 @@ export function AppProvider({ children }) {
         customers: state.customers,
         invoices: state.invoices,
         inventory: state.inventory,
+        ingredients: state.ingredients,
       });
     }
-  }, [state.vendors, state.skus, state.pricingStrategies, state.salesTargets, state.customers, state.invoices, state.inventory, isLoading, useDatabase]);
+  }, [state.vendors, state.skus, state.pricingStrategies, state.salesTargets, state.customers, state.invoices, state.inventory, state.ingredients, isLoading, useDatabase]);
 
   const showToast = useCallback((message, type = 'success') => {
     dispatch({ type: 'SHOW_TOAST', payload: { message, type } });

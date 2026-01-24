@@ -35,7 +35,7 @@ export default function IngredientInventory() {
         receivedDate: new Date().toISOString().split('T')[0]
     });
 
-    const filteredIngredients = ingredients.filter(ing =>
+    const filteredIngredients = (ingredients || []).filter(ing =>
         ing.name.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
