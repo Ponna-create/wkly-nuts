@@ -1396,5 +1396,135 @@ export const dbService = {
       return { error };
     }
   },
+
+  // Raw Material Inventory (Phase 2: Batches)
+  async getIngredients() {
+    if (!isSupabaseAvailable()) return { data: [], error: null };
+    try {
+      const { data, error } = await supabase
+        .from('ingredients')
+        .select(`
+          *,
+          ingredient_batches (
+            id,
+            batch_number,
+            quantity_remaining,
+            expiry_date,
+            status
+          )
+        `)
+        .order('name');
+
+      if (error) throw error;
+      return { data: data || [], error: null };
+    } catch (error) {
+      console.error('Error fetching ingredients:', error);
+      return { data: [], error };
+    }
+  },
+
+  async getIngredientBatches(ingredientId) {
+    if (!isSupabaseAvailable()) return { data: [], error: null };
+    try {
+      const { data, error } = await supabase
+        .from('ingredient_batches')
+        .select(`
+            *,
+            vendors (name)
+        `)
+        .eq('ingredient_id', ingredientId)
+        .order('expiry_date', { ascending: true }); // FIFO: Expiring first
+
+      if (error) throw error;
+      return { data: data || [], error: null };
+    } catch (error) {
+      console.error('Error fetching batches:', error);
+      return { data: [], error };
+    }
+  },
+
+  async addIngredientBatch(batch) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    try {
+      // 1. Create the batch
+      const { data, error } = await supabase
+        .from('ingredient_batches')
+        .insert([{
+          ingredient_id: batch.ingredientId,
+          vendor_id: batch.vendorId,
+          batch_number: batch.batchNumber,
+          quantity_initial: batch.quantity,
+          quantity_remaining: batch.quantity,
+          price_per_unit: batch.price,
+          expiry_date: batch.expiryDate,
+          received_date: batch.receivedDate || new Date().toISOString(),
+          status: 'active'
+        }])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // 2. Update Master Ingredient Total Stock
+      await this.recalculateIngredientStock(batch.ingredientId);
+
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error adding batch:', error);
+      return { data: null, error };
+    }
+  },
+
+  async updateBatchStatus(batchId, status, quantityRemaining = null) {
+    if (!isSupabaseAvailable()) return { error: new Error('Supabase not configured') };
+    try {
+      const updatePayload = { status };
+      if (quantityRemaining !== null) {
+        updatePayload.quantity_remaining = quantityRemaining;
+      }
+
+      const { data, error } = await supabase
+        .from('ingredient_batches')
+        .update(updatePayload)
+        .eq('id', batchId)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Update total stock
+      if (data) {
+        await this.recalculateIngredientStock(data.ingredient_id);
+      }
+
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error updating batch:', error);
+      return { error };
+    }
+  },
+
+  async recalculateIngredientStock(ingredientId) {
+    try {
+      // Sum all active batches
+      const { data, error } = await supabase
+        .from('ingredient_batches')
+        .select('quantity_remaining')
+        .eq('ingredient_id', ingredientId)
+        .eq('status', 'active');
+
+      if (error) throw error;
+
+      const total = data.reduce((sum, b) => sum + parseFloat(b.quantity_remaining || 0), 0);
+
+      await supabase
+        .from('ingredients')
+        .update({ current_stock_total: total })
+        .eq('id', ingredientId);
+
+    } catch (error) {
+      console.error('Error recalculating stock:', error);
+    }
+  }
 };
 

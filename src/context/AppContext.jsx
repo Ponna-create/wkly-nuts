@@ -152,8 +152,8 @@ function appReducer(state, action) {
     case 'ADD_CUSTOMER':
       // Check for duplicate by phone number before adding
       const existingCustomer = state.customers.find(
-        (c) => c.phone && action.payload.phone && 
-        c.phone.replace(/\D/g, '') === action.payload.phone.replace(/\D/g, '')
+        (c) => c.phone && action.payload.phone &&
+          c.phone.replace(/\D/g, '') === action.payload.phone.replace(/\D/g, '')
       );
       if (existingCustomer) {
         return state; // Don't add duplicate
@@ -210,6 +210,17 @@ function appReducer(state, action) {
       return {
         ...state,
         inventory: state.inventory.filter((inv) => inv.id !== action.payload),
+      };
+
+    // Ingredient Actions (Phase 2)
+    case 'LOAD_INGREDIENTS':
+      return { ...state, ingredients: action.payload };
+    case 'UPDATE_INGREDIENT':
+      return {
+        ...state,
+        ingredients: state.ingredients.map(ing =>
+          ing.id === action.payload.id ? action.payload : ing
+        )
       };
 
     // Toast actions
@@ -296,11 +307,10 @@ export function AppProvider({ children }) {
             case 'ADD_CUSTOMER':
               const customerRes = await dbService.createCustomer(action.payload);
               if (customerRes.data) {
-                // Remove the customer with temporary ID and add with database ID
                 const tempId = action.payload.id;
-                dispatchReducer({ 
-                  type: 'REPLACE_CUSTOMER', 
-                  payload: { tempId, customer: { ...customerRes.data, id: customerRes.data.id } } 
+                dispatchReducer({
+                  type: 'REPLACE_CUSTOMER',
+                  payload: { tempId, customer: { ...customerRes.data, id: customerRes.data.id } }
                 });
               }
               break;
@@ -334,6 +344,24 @@ export function AppProvider({ children }) {
             case 'DELETE_INVENTORY':
               await dbService.deleteInventory(action.payload);
               break;
+
+            // Ingredient Batch Actions
+            case 'ADD_BATCH':
+              await dbService.addIngredientBatch(action.payload);
+              // Refresh ingredients to get updated totals structure
+              const refetched = await dbService.getIngredients();
+              if (refetched.data) {
+                dispatchReducer({ type: 'LOAD_INGREDIENTS', payload: refetched.data });
+              }
+              break;
+            case 'UPDATE_BATCH_STATUS':
+              await dbService.updateBatchStatus(action.payload.id, action.payload.status, action.payload.quantity);
+              // Refresh ingredients
+              const refetchedStatus = await dbService.getIngredients();
+              if (refetchedStatus.data) {
+                dispatchReducer({ type: 'LOAD_INGREDIENTS', payload: refetchedStatus.data });
+              }
+              break;
           }
         } catch (error) {
           console.error('Error syncing with database:', error);
@@ -346,12 +374,12 @@ export function AppProvider({ children }) {
   useEffect(() => {
     const loadData = async () => {
       setIsLoading(true);
-      
+
       if (isSupabaseAvailable()) {
         try {
           setUseDatabase(true);
           // Load all data from Supabase
-          const [vendorsRes, skusRes, pricingRes, targetsRes, customersRes, invoicesRes, inventoryRes] = await Promise.all([
+          const [vendorsRes, skusRes, pricingRes, targetsRes, customersRes, invoicesRes, inventoryRes, ingredientsRes] = await Promise.all([
             dbService.getVendors(),
             dbService.getSKUs(),
             dbService.getPricingStrategies(),
@@ -359,6 +387,7 @@ export function AppProvider({ children }) {
             dbService.getCustomers(),
             dbService.getInvoices(),
             dbService.getInventory(),
+            dbService.getIngredients(), // Load ingredients
           ]);
 
           dispatchReducer({
@@ -371,6 +400,7 @@ export function AppProvider({ children }) {
               customers: customersRes.data || [],
               invoices: invoicesRes.data || [],
               inventory: inventoryRes.data || [],
+              ingredients: ingredientsRes.data || [],
             },
           });
         } catch (error) {
@@ -386,7 +416,7 @@ export function AppProvider({ children }) {
         dispatchReducer({ type: 'LOAD_ALL_DATA', payload: localData });
         setUseDatabase(false);
       }
-      
+
       setIsLoading(false);
     };
 

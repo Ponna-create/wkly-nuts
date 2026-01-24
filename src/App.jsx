@@ -13,6 +13,7 @@ import SalesRevenue from './pages/SalesRevenue';
 import VendorComparison from './pages/VendorComparison';
 import CustomerManagement from './pages/CustomerManagement';
 import InventoryManagement from './pages/InventoryManagement';
+import IngredientInventory from './pages/IngredientInventory';
 import InvoiceManagement from './pages/InvoiceManagement';
 
 function App() {
@@ -24,6 +25,7 @@ function App() {
             <Routes>
               <Route path="/" element={<ErrorBoundary><Dashboard /></ErrorBoundary>} />
               <Route path="/vendors" element={<ErrorBoundary><VendorManagement /></ErrorBoundary>} />
+              <Route path="/ingredients" element={<ErrorBoundary><IngredientInventory /></ErrorBoundary>} />
               <Route path="/skus" element={<ErrorBoundary><SKUManagement /></ErrorBoundary>} />
               <Route path="/pricing" element={<ErrorBoundary><PricingStrategy /></ErrorBoundary>} />
               <Route path="/sales" element={<ErrorBoundary><SalesRevenue /></ErrorBoundary>} />

@@ -36,3 +36,17 @@ If you want to see the raw data:
 > [!TIP]
 > **Don't see the History Icon?**
 > Make sure you actually changed the price by more than ₹0.01. The system ignores tiny changes to save space.
+
+## 💡 How This Data Helps You (Business Value)
+You asked: *"Where do we visualize this?"*
+1.  **Visual Check**: The **History Icon** on the Vendor Page is your quick check. "Is Almonds getting expensive?" -> Click icon -> See the trend.
+2.  **Safety Net**: The real power is in the **Pricing Strategy Page**.
+    *   Previously, you guessed the safety margin.
+    *   Now, you can check the history, see that Almonds fluctuate by 15%, and set a **"Volatility Buffer"** of ₹20.
+    *   **Result**: You don't lose money when prices go up next week.
+
+## 📥 Downloading Data
+Currently, this is a **Dashboard View**.
+*   **Export**: We haven't built a "Download Excel" button for history yet. (We can add this later if you need to send reports to investors).
+*   **Database**: The raw data is stored in your private Database Table `price_history`.
+

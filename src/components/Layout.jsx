@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { 
-  LayoutDashboard, 
-  Users, 
-  Package, 
-  DollarSign, 
+import {
+  LayoutDashboard,
+  Users,
+  Package,
+  DollarSign,
   TrendingUp,
   BarChart3,
   Menu,
@@ -12,7 +12,8 @@ import {
   LogOut,
   UserCircle,
   Warehouse,
-  Receipt
+  Receipt,
+  Layers
 } from 'lucide-react';
 import { logout } from './Auth';
 import logo from '../assets/wkly-nuts-logo.png';
@@ -20,12 +21,13 @@ import logo from '../assets/wkly-nuts-logo.png';
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Vendor Management', href: '/vendors', icon: Users },
+  { name: 'Ingredient Inventory', href: '/ingredients', icon: Layers }, // New
   { name: 'SKU Management', href: '/skus', icon: Package },
+  { name: 'Product Inventory', href: '/inventory', icon: Warehouse }, // Renamed
   { name: 'Pricing Strategy', href: '/pricing', icon: DollarSign },
   { name: 'Sales & Revenue', href: '/sales', icon: TrendingUp },
   { name: 'Vendor Comparison', href: '/vendor-comparison', icon: BarChart3 },
   { name: 'Customer Management', href: '/customers', icon: UserCircle },
-  { name: 'Inventory Management', href: '/inventory', icon: Warehouse },
   { name: 'Invoice Management', href: '/invoices', icon: Receipt },
 ];
 
@@ -46,16 +48,15 @@ export default function Layout({ children }) {
 
       {/* Sidebar */}
       <aside
-        className={`fixed top-0 left-0 z-40 h-screen w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out lg:translate-x-0 ${
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
+        className={`fixed top-0 left-0 z-40 h-screen w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+          }`}
       >
         {/* Logo */}
         <div className="flex items-center justify-between h-16 px-6 border-b border-gray-200">
           <div className="flex items-center gap-3">
-            <img 
-              src={logo} 
-              alt="WKLY Nuts Logo" 
+            <img
+              src={logo}
+              alt="WKLY Nuts Logo"
               className="h-10 w-auto object-contain"
             />
             <div>
@@ -80,11 +81,10 @@ export default function Layout({ children }) {
                 key={item.name}
                 to={item.href}
                 onClick={() => setSidebarOpen(false)}
-                className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors duration-200 ${
-                  isActive
+                className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors duration-200 ${isActive
                     ? 'bg-primary text-white'
                     : 'text-gray-700 hover:bg-gray-100'
-                }`}
+                  }`}
               >
                 <item.icon className="w-5 h-5" />
                 <span className="font-medium">{item.name}</span>
@@ -112,11 +112,11 @@ export default function Layout({ children }) {
             </div>
             <div className="flex items-center gap-4">
               <div className="hidden sm:block text-sm text-gray-500">
-                {new Date().toLocaleDateString('en-IN', { 
-                  weekday: 'long', 
-                  year: 'numeric', 
-                  month: 'long', 
-                  day: 'numeric' 
+                {new Date().toLocaleDateString('en-IN', {
+                  weekday: 'long',
+                  year: 'numeric',
+                  month: 'long',
+                  day: 'numeric'
                 })}
               </div>
               <button
