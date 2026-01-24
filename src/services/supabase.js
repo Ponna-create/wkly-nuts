@@ -105,8 +105,8 @@ export const dbService = {
         newIngredients.forEach(newIng => {
           const oldIng = oldIngredients.find(o => o.name === newIng.name);
           if (oldIng) {
-            const oldPrice = parseFloat(oldIng.price || 0);
-            const newPrice = parseFloat(newIng.price || 0);
+            const oldPrice = parseFloat(oldIng.pricePerUnit || 0);
+            const newPrice = parseFloat(newIng.pricePerUnit || 0);
 
             // If price changed significantly (more than 0.01 difference)
             if (Math.abs(oldPrice - newPrice) > 0.01) {
