@@ -1,161 +1,97 @@
-# 🚀 Implementation Plan: Security + Invoice System
+# 🛠️ Complete Implementation Plan: Phase 1 Upgrades
 
-## ✅ Phase 1: Security (COMPLETED)
+**Goal**: Upgrade WKLY Nuts App from a "Calculator" to a "Professional Food Production System".
+**Focus**: **Food Safety** (Batch Tracking) and **Business Intelligence** (Price Volatility).
 
-### 1.1 Authentication Component ✅
-- Created `src/components/Auth.jsx`
-- Simple password-based authentication
-- Password stored in environment variable: `VITE_APP_PASSWORD`
-- Default password: `wklynuts2025` (CHANGE THIS!)
-- Session stored in localStorage
+## User Review Required
+> [!IMPORTANT]
+> **Database Changes**: We will create 2 new tables and modify 1 existing table. You will need to run the provided SQL.
 
-### 1.2 Updated App.jsx ✅
-- Wrapped app with Auth component
-- All routes now require authentication
+## 1. Feature: Vendor Price History & Volatility (Intelligence)
+**Why**: To detect price spikes and auto-suggest "Safety Buffers" in your pricing.
 
-### 1.3 Logout Functionality ✅
-- Added logout button in header
-- Logout function in Auth component
-
-### 1.4 Secure Database Schema ✅
-- Created `database/schema_secure.sql`
-- Includes customer and invoice tables
-- Ready for RLS policy updates
-
-## 📋 Phase 2: Database Setup (NEXT)
-
-### 2.1 Update Supabase Database
-1. Go to Supabase Dashboard → SQL Editor
-2. Run `database/schema_secure.sql`
-3. This will create:
-   - `customers` table
-   - `invoices` table
-   - Auto-invoice number generation
-   - All necessary indexes
-
-### 2.2 Update Environment Variables
-Add to `.env` file:
-```env
-VITE_APP_PASSWORD=your_secure_password_here
+### Database Schema (New Table)
+```sql
+CREATE TABLE price_history (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    vendor_id UUID REFERENCES vendors(id) ON DELETE CASCADE,
+    ingredient_name TEXT NOT NULL,
+    price_per_unit DECIMAL(10,2) NOT NULL,
+    unit TEXT,
+    changed_by TEXT, 
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX idx_ph_vendor ON price_history(vendor_id, ingredient_name);
 ```
 
-Add to Vercel Environment Variables:
-- `VITE_APP_PASSWORD` = your secure password
+### Backend Logic (`src/services/supabase.js`)
+*   **[MODIFY] `updateVendor(vendor)`**:
+    *   Before updating, compare new prices with current DB prices.
+    *   If `NewPrice != OldPrice`, insert record into `price_history`.
+    *   Then update the `vendors` table.
+*   **[NEW] `getPriceVolatility(ingredientName)`**:
+    *   Fetch last 12 months history.
+    *   Calculate `High`, `Low`, and `Variance %`.
 
-## 📝 Phase 3: Customer Management (TODO)
+### Frontend UI
+*   **[MODIFY] Vendor Management**: Add "History" button next to prices. Show small trend chart.
+*   **[MODIFY] Pricing Strategy**: Add "Safety Buffer %" field. Display "Suggested Buffer" calculated from `Variance %`.
 
-### 3.1 Update AppContext
-- Add customers state
-- Add customer actions (ADD, UPDATE, DELETE, LOAD)
-- Sync with Supabase
+---
 
-### 3.2 Create Customer Management Page
-- List all customers
-- Add/Edit/Delete customers
-- Search and filter
-- Customer form with all fields
+## 2. Feature: Batch Tracking & Expiry (Food Safety) 🛡️
+**Why**: To know exactly which batch of Almonds is expiring soon, effectively moving from "Simple Count" to "FIFO Management".
 
-## 🧾 Phase 4: Invoice Management (TODO)
+### Database Schema (New "Ingredients" Table)
+*Currently, ingredients are just a JSON blob inside `vendors`. We need a real table to track stock batches.*
 
-### 4.1 Update AppContext
-- Add invoices state
-- Add invoice actions
-- Sync with Supabase
+```sql
+-- Main Ingredients Table (Global List)
+CREATE TABLE ingredients (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL, -- "Almonds", "Cashews"
+    current_stock_total DECIMAL(10,2) DEFAULT 0,
+    unit TEXT DEFAULT 'g'
+);
 
-### 4.2 Create Invoice Management Page
-- List all invoices
-- Filter by status (draft, sent, paid, overdue)
-- Create new invoice
-- Edit invoice
-- Delete invoice
-- Mark as paid
-
-### 4.3 Invoice Creation Form
-- Select customer
-- Add items (from SKUs)
-- Select pack type (weekly/monthly)
-- Auto-calculate prices from pricing strategies
-- Add tax, discount
-- Generate invoice number automatically
-
-## 📄 Phase 5: PDF Generation (TODO)
-
-### 5.1 Install PDF Library
-```bash
-npm install jspdf jspdf-autotable
+-- Batches Table (The actual physical bags in warehouse)
+CREATE TABLE ingredient_batches (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    ingredient_id UUID REFERENCES ingredients(id),
+    vendor_id UUID REFERENCES vendors(id), 
+    batch_number TEXT, -- "BATCH-2026-A"
+    quantity_initial DECIMAL(10,2),
+    quantity_remaining DECIMAL(10,2),
+    expiry_date DATE,
+    received_date DATE DEFAULT NOW(),
+    status TEXT DEFAULT 'active' -- active, consumed, expired
+);
 ```
 
-### 5.2 Create Invoice PDF Component
-- Professional invoice template
-- Include company logo
-- Customer details
-- Itemized list
-- Tax breakdown
-- Total amount
-- Payment terms
-- GST format (if applicable)
+### Backend Logic
+*   **[NEW] `receiveStock(vendorId, ingredient, quantity, batchNo, expiry)`**:
+    *   Creates a new record in `ingredient_batches`.
+    *   Updates `ingredients.current_stock_total`.
+*   **[MODIFY] Production Deduct Logic**:
+    *   Instead of "reduce total stock", implementation will find the **Oldest Active Batch** (First-In-First-Out).
+    *   Deduct from that batch. If empty, move to next batch.
 
-### 5.3 Add Print/Download Button
-- Generate PDF on click
-- Download as PDF file
-- Print option
+### Frontend UI
+*   **[NEW] Inventory Page**:
+    *   Split into "Summary" (Total Stock) and "Batches" (Details).
+    *   Highlight **Expiring Soon** batches in Red.
+*   **[MODIFY] Production Calculator**:
+    *   Show "Batches Used" summary (e.g., "Using Batch A (Expiring tomorrow) for this run").
 
-## 🔄 Phase 6: Integration (TODO)
+---
 
-### 6.1 Link Invoices with Existing Data
-- Pull SKU data for invoice items
-- Pull pricing from Pricing Strategy
-- Auto-calculate costs
+## 3. Implementation Order
+1.  **Price History** (Easier, Quick Win).
+2.  **Inventory Schema Migration** (Complex, requires splitting JSON data to new Tables).
+3.  **Batch UI** (New inputs for Expiry Dates).
 
-### 6.2 Dashboard Updates
-- Add invoice statistics
-- Recent invoices
-- Pending payments
+---
 
-## 📊 Current Status
-
-- ✅ Phase 1: Security - COMPLETED
-- ⏳ Phase 2: Database Setup - READY (needs manual Supabase update)
-- ⏳ Phase 3: Customer Management - TODO
-- ⏳ Phase 4: Invoice Management - TODO
-- ⏳ Phase 5: PDF Generation - TODO
-- ⏳ Phase 6: Integration - TODO
-
-## 🎯 Next Steps
-
-1. **Update Supabase Database** (5 minutes)
-   - Run `database/schema_secure.sql` in Supabase
-
-2. **Set Password** (2 minutes)
-   - Add `VITE_APP_PASSWORD` to environment variables
-   - Change default password
-
-3. **Test Authentication** (2 minutes)
-   - Run app locally
-   - Verify login works
-   - Test logout
-
-4. **Continue with Customer Management** (Next session)
-
-## 🔒 Security Notes
-
-### Current Security Level: BASIC
-- ✅ Password protection at app level
-- ⚠️ RLS policies still allow all (for internal use)
-- ⚠️ Password in environment variable (not encrypted)
-
-### Recommended Improvements (Future):
-1. Implement Supabase Auth (proper user management)
-2. Update RLS policies to require authentication
-3. Add rate limiting
-4. Encrypt sensitive customer data
-5. Add audit logging
-
-## 📝 Notes
-
-- Password is stored in plain text in environment variable
-- For production, consider implementing Supabase Auth
-- Invoice numbers auto-generate: INV-YYYY-XXXXX
-- All customer/invoice data syncs with Supabase automatically
-- Falls back to localStorage if Supabase not configured
-
+## Verification Plan
+1.  **Price History**: Change a vendor price -> Check if it appears in "History".
+2.  **Batch Tracking**: Add "Batch A" (Expiring Jan) and "Batch B" (Expiring Dec). Run production. Verify "Batch A" stock reduces first.

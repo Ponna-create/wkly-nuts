@@ -9,7 +9,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 // Create Supabase client
-export const supabase = supabaseUrl && supabaseAnonKey 
+export const supabase = supabaseUrl && supabaseAnonKey
   ? createClient(supabaseUrl, supabaseAnonKey)
   : null;
 
@@ -23,15 +23,15 @@ export const dbService = {
   // Vendors
   async getVendors() {
     if (!isSupabaseAvailable()) return { data: [], error: null };
-    
+
     try {
       const { data, error } = await supabase
         .from('vendors')
         .select('*')
         .order('created_at', { ascending: false });
-      
+
       if (error) throw error;
-      
+
       // Transform data to match app structure
       const vendors = (data || []).map(vendor => ({
         id: vendor.id,
@@ -42,7 +42,7 @@ export const dbService = {
         ingredients: vendor.ingredients || [],
         created_at: vendor.created_at,
       }));
-      
+
       return { data: vendors, error: null };
     } catch (error) {
       console.error('Error fetching vendors:', error);
@@ -52,7 +52,7 @@ export const dbService = {
 
   async createVendor(vendor) {
     if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
-    
+
     try {
       const { data, error } = await supabase
         .from('vendors')
@@ -65,10 +65,10 @@ export const dbService = {
         }])
         .select()
         .single();
-      
+
       if (error) throw error;
-      
-      return { 
+
+      return {
         data: {
           id: data.id,
           name: data.name,
@@ -76,8 +76,8 @@ export const dbService = {
           location: data.location,
           email: data.email,
           ingredients: data.ingredients || [],
-        }, 
-        error: null 
+        },
+        error: null
       };
     } catch (error) {
       console.error('Error creating vendor:', error);
@@ -87,8 +87,53 @@ export const dbService = {
 
   async updateVendor(vendor) {
     if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
-    
+
     try {
+      // 1. Fetch current vendor data to compare ingredients
+      const { data: currentVendor, error: fetchError } = await supabase
+        .from('vendors')
+        .select('ingredients')
+        .eq('id', vendor.id)
+        .single();
+
+      if (!fetchError && currentVendor && currentVendor.ingredients) {
+        const oldIngredients = currentVendor.ingredients;
+        const newIngredients = vendor.ingredients || [];
+        const priceHistoryEntries = [];
+
+        // 2. Compare ingredients to find price changes
+        newIngredients.forEach(newIng => {
+          const oldIng = oldIngredients.find(o => o.name === newIng.name);
+          if (oldIng) {
+            const oldPrice = parseFloat(oldIng.price || 0);
+            const newPrice = parseFloat(newIng.price || 0);
+
+            // If price changed significantly (more than 0.01 difference)
+            if (Math.abs(oldPrice - newPrice) > 0.01) {
+              priceHistoryEntries.push({
+                vendor_id: vendor.id,
+                ingredient_name: newIng.name,
+                price_per_unit: newPrice,
+                unit: newIng.unit,
+                changed_by: 'system', // or logged in user if auth enabled
+              });
+            }
+          }
+        });
+
+        // 3. Log changes to price_history table
+        if (priceHistoryEntries.length > 0) {
+          const { error: historyError } = await supabase
+            .from('price_history')
+            .insert(priceHistoryEntries);
+
+          if (historyError) {
+            console.error('Error logging price history:', historyError);
+            // We don't stop the main update if history logging fails, but we log it
+          }
+        }
+      }
+
       const { data, error } = await supabase
         .from('vendors')
         .update({
@@ -101,10 +146,10 @@ export const dbService = {
         .eq('id', vendor.id)
         .select()
         .single();
-      
+
       if (error) throw error;
-      
-      return { 
+
+      return {
         data: {
           id: data.id,
           name: data.name,
@@ -112,8 +157,8 @@ export const dbService = {
           location: data.location,
           email: data.email,
           ingredients: data.ingredients || [],
-        }, 
-        error: null 
+        },
+        error: null
       };
     } catch (error) {
       console.error('Error updating vendor:', error);
@@ -123,13 +168,13 @@ export const dbService = {
 
   async deleteVendor(vendorId) {
     if (!isSupabaseAvailable()) return { error: new Error('Supabase not configured') };
-    
+
     try {
       const { error } = await supabase
         .from('vendors')
         .delete()
         .eq('id', vendorId);
-      
+
       if (error) throw error;
       return { error: null };
     } catch (error) {
@@ -138,18 +183,83 @@ export const dbService = {
     }
   },
 
+  // Price History & Volatility
+  async getPriceHistory(vendorId, ingredientName) {
+    if (!isSupabaseAvailable()) return { data: [], error: null };
+
+    try {
+      const { data, error } = await supabase
+        .from('price_history')
+        .select('*')
+        .eq('vendor_id', vendorId)
+        .eq('ingredient_name', ingredientName)
+        .order('created_at', { ascending: true }); // Oldest first for charts
+
+      if (error) throw error;
+      return { data: data || [], error: null };
+    } catch (error) {
+      console.error('Error fetching price history:', error);
+      return { data: [], error };
+    }
+  },
+
+  async getPriceVolatility(ingredientName) {
+    if (!isSupabaseAvailable()) return { data: null, error: null };
+
+    try {
+      // Get all history for this ingredient across ALL vendors (to see market trend)
+      // Limit to last 12 months roughly (last 50 records for simplicity for now)
+      const { data, error } = await supabase
+        .from('price_history')
+        .select('price_per_unit')
+        .eq('ingredient_name', ingredientName)
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (error) throw error;
+
+      if (!data || data.length < 2) {
+        return { data: { volatility: 0, min: 0, max: 0, trend: 'stable' }, error: null };
+      }
+
+      const prices = data.map(d => parseFloat(d.price_per_unit));
+      const max = Math.max(...prices);
+      const min = Math.min(...prices);
+      const avg = prices.reduce((a, b) => a + b, 0) / prices.length;
+
+      // Calculate volatility score (Standard Deviation or simple Max-Min %)
+      // Using simple range percentage relative to average
+      const range = max - min;
+      const volatilityPercent = (range / avg) * 100;
+
+      return {
+        data: {
+          volatility: parseFloat(volatilityPercent.toFixed(1)),
+          min,
+          max,
+          avg: parseFloat(avg.toFixed(2)),
+          trend: prices[0] > prices[prices.length - 1] ? 'up' : 'down' // Simplistic trend
+        },
+        error: null
+      };
+    } catch (error) {
+      console.error('Error calcluating volatility:', error);
+      return { data: null, error };
+    }
+  },
+
   // SKUs
   async getSKUs() {
     if (!isSupabaseAvailable()) return { data: [], error: null };
-    
+
     try {
       const { data, error } = await supabase
         .from('skus')
         .select('*')
         .order('created_at', { ascending: false });
-      
+
       if (error) throw error;
-      
+
       const skus = (data || []).map(sku => ({
         id: sku.id,
         name: sku.name,
@@ -160,7 +270,7 @@ export const dbService = {
         monthlyPack: sku.monthly_pack || {},
         created_at: sku.created_at,
       }));
-      
+
       return { data: skus, error: null };
     } catch (error) {
       console.error('Error fetching SKUs:', error);
@@ -170,7 +280,7 @@ export const dbService = {
 
   async createSKU(sku) {
     if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
-    
+
     try {
       const { data, error } = await supabase
         .from('skus')
@@ -184,10 +294,10 @@ export const dbService = {
         }])
         .select()
         .single();
-      
+
       if (error) throw error;
-      
-      return { 
+
+      return {
         data: {
           id: data.id,
           name: data.name,
@@ -196,8 +306,8 @@ export const dbService = {
           recipes: data.recipes || {},
           weeklyPack: data.weekly_pack || {},
           monthlyPack: data.monthly_pack || {},
-        }, 
-        error: null 
+        },
+        error: null
       };
     } catch (error) {
       console.error('Error creating SKU:', error);
@@ -207,7 +317,7 @@ export const dbService = {
 
   async updateSKU(sku) {
     if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
-    
+
     try {
       const { data, error } = await supabase
         .from('skus')
@@ -222,10 +332,10 @@ export const dbService = {
         .eq('id', sku.id)
         .select()
         .single();
-      
+
       if (error) throw error;
-      
-      return { 
+
+      return {
         data: {
           id: data.id,
           name: data.name,
@@ -234,8 +344,8 @@ export const dbService = {
           recipes: data.recipes || {},
           weeklyPack: data.weekly_pack || {},
           monthlyPack: data.monthly_pack || {},
-        }, 
-        error: null 
+        },
+        error: null
       };
     } catch (error) {
       console.error('Error updating SKU:', error);
@@ -245,13 +355,13 @@ export const dbService = {
 
   async deleteSKU(skuId) {
     if (!isSupabaseAvailable()) return { error: new Error('Supabase not configured') };
-    
+
     try {
       const { error } = await supabase
         .from('skus')
         .delete()
         .eq('id', skuId);
-      
+
       if (error) throw error;
       return { error: null };
     } catch (error) {
@@ -263,20 +373,20 @@ export const dbService = {
   // Pricing Strategies
   async getPricingStrategies() {
     if (!isSupabaseAvailable()) return { data: [], error: null };
-    
+
     try {
       const { data, error } = await supabase
         .from('pricing_strategies')
         .select('*')
         .order('created_at', { ascending: false });
-      
+
       if (error) throw error;
-      
+
       const strategies = (data || []).map(strategy => {
         // Transform database format to app format
         const costs = strategy.costs || {};
         const margins = strategy.margins || {};
-        
+
         return {
           id: strategy.id,
           skuId: strategy.sku_id,
@@ -290,6 +400,7 @@ export const dbService = {
           marketingCost: costs.marketingCost || 0,
           shippingCost: costs.shippingCost || 0,
           otherCosts: costs.otherCosts || 0,
+          volatilityBuffer: costs.volatilityBuffer || 0,
           totalCost: costs.totalCost || 0,
           // Extract from margins JSON
           profitMargin: margins.profitMargin || 0,
@@ -301,7 +412,7 @@ export const dbService = {
           created_at: strategy.created_at,
         };
       });
-      
+
       return { data: strategies, error: null };
     } catch (error) {
       console.error('Error fetching pricing strategies:', error);
@@ -311,7 +422,7 @@ export const dbService = {
 
   async createPricingStrategy(strategy) {
     if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
-    
+
     try {
       // Transform flat fields to JSON structure if needed
       const costs = strategy.costs || {
@@ -322,14 +433,15 @@ export const dbService = {
         marketingCost: strategy.marketingCost || 0,
         shippingCost: strategy.shippingCost || 0,
         otherCosts: strategy.otherCosts || 0,
+        volatilityBuffer: strategy.volatilityBuffer || 0,
         totalCost: strategy.totalCost || 0,
       };
-      
+
       const margins = strategy.margins || {
         profitMargin: strategy.profitMargin || 0,
         profitAmount: strategy.profitAmount || 0,
       };
-      
+
       const { data, error } = await supabase
         .from('pricing_strategies')
         .insert([{
@@ -341,14 +453,14 @@ export const dbService = {
         }])
         .select()
         .single();
-      
+
       if (error) throw error;
-      
+
       // Transform back to flat format for app
       const costsData = data.costs || {};
       const marginsData = data.margins || {};
-      
-      return { 
+
+      return {
         data: {
           id: data.id,
           skuId: data.sku_id,
@@ -361,12 +473,13 @@ export const dbService = {
           marketingCost: costsData.marketingCost || 0,
           shippingCost: costsData.shippingCost || 0,
           otherCosts: costsData.otherCosts || 0,
+          volatilityBuffer: costsData.volatilityBuffer || 0,
           totalCost: costsData.totalCost || 0,
           profitMargin: marginsData.profitMargin || 0,
           profitAmount: marginsData.profitAmount || 0,
           sellingPrice: data.selling_price || 0,
-        }, 
-        error: null 
+        },
+        error: null
       };
     } catch (error) {
       console.error('Error creating pricing strategy:', error);
@@ -376,7 +489,7 @@ export const dbService = {
 
   async updatePricingStrategy(strategy) {
     if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
-    
+
     try {
       // Transform flat fields to JSON structure if needed
       const costs = strategy.costs || {
@@ -387,14 +500,15 @@ export const dbService = {
         marketingCost: strategy.marketingCost || 0,
         shippingCost: strategy.shippingCost || 0,
         otherCosts: strategy.otherCosts || 0,
+        volatilityBuffer: strategy.volatilityBuffer || 0,
         totalCost: strategy.totalCost || 0,
       };
-      
+
       const margins = strategy.margins || {
         profitMargin: strategy.profitMargin || 0,
         profitAmount: strategy.profitAmount || 0,
       };
-      
+
       const { data, error } = await supabase
         .from('pricing_strategies')
         .update({
@@ -407,14 +521,14 @@ export const dbService = {
         .eq('id', strategy.id)
         .select()
         .single();
-      
+
       if (error) throw error;
-      
+
       // Transform back to flat format for app
       const costsData = data.costs || {};
       const marginsData = data.margins || {};
-      
-      return { 
+
+      return {
         data: {
           id: data.id,
           skuId: data.sku_id,
@@ -427,12 +541,13 @@ export const dbService = {
           marketingCost: costsData.marketingCost || 0,
           shippingCost: costsData.shippingCost || 0,
           otherCosts: costsData.otherCosts || 0,
+          volatilityBuffer: costsData.volatilityBuffer || 0,
           totalCost: costsData.totalCost || 0,
           profitMargin: marginsData.profitMargin || 0,
           profitAmount: marginsData.profitAmount || 0,
           sellingPrice: data.selling_price || 0,
-        }, 
-        error: null 
+        },
+        error: null
       };
     } catch (error) {
       console.error('Error updating pricing strategy:', error);
@@ -442,13 +557,13 @@ export const dbService = {
 
   async deletePricingStrategy(strategyId) {
     if (!isSupabaseAvailable()) return { error: new Error('Supabase not configured') };
-    
+
     try {
       const { error } = await supabase
         .from('pricing_strategies')
         .delete()
         .eq('id', strategyId);
-      
+
       if (error) throw error;
       return { error: null };
     } catch (error) {
@@ -460,15 +575,15 @@ export const dbService = {
   // Sales Targets
   async getSalesTargets() {
     if (!isSupabaseAvailable()) return { data: [], error: null };
-    
+
     try {
       const { data, error } = await supabase
         .from('sales_targets')
         .select('*')
         .order('created_at', { ascending: false });
-      
+
       if (error) throw error;
-      
+
       const targets = (data || []).map(target => ({
         id: target.id,
         month: target.month,
@@ -477,7 +592,7 @@ export const dbService = {
         fixedCosts: target.fixed_costs || {},
         created_at: target.created_at,
       }));
-      
+
       return { data: targets, error: null };
     } catch (error) {
       console.error('Error fetching sales targets:', error);
@@ -487,7 +602,7 @@ export const dbService = {
 
   async createSalesTarget(target) {
     if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
-    
+
     try {
       const { data, error } = await supabase
         .from('sales_targets')
@@ -499,18 +614,18 @@ export const dbService = {
         }])
         .select()
         .single();
-      
+
       if (error) throw error;
-      
-      return { 
+
+      return {
         data: {
           id: data.id,
           month: data.month,
           year: data.year,
           targets: data.targets || [],
           fixedCosts: data.fixed_costs || {},
-        }, 
-        error: null 
+        },
+        error: null
       };
     } catch (error) {
       console.error('Error creating sales target:', error);
@@ -520,7 +635,7 @@ export const dbService = {
 
   async updateSalesTarget(target) {
     if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
-    
+
     try {
       const { data, error } = await supabase
         .from('sales_targets')
@@ -533,18 +648,18 @@ export const dbService = {
         .eq('id', target.id)
         .select()
         .single();
-      
+
       if (error) throw error;
-      
-      return { 
+
+      return {
         data: {
           id: data.id,
           month: data.month,
           year: data.year,
           targets: data.targets || [],
           fixedCosts: data.fixed_costs || {},
-        }, 
-        error: null 
+        },
+        error: null
       };
     } catch (error) {
       console.error('Error updating sales target:', error);
@@ -554,13 +669,13 @@ export const dbService = {
 
   async deleteSalesTarget(targetId) {
     if (!isSupabaseAvailable()) return { error: new Error('Supabase not configured') };
-    
+
     try {
       const { error } = await supabase
         .from('sales_targets')
         .delete()
         .eq('id', targetId);
-      
+
       if (error) throw error;
       return { error: null };
     } catch (error) {
@@ -575,15 +690,15 @@ export const dbService = {
 
   async getCustomers() {
     if (!isSupabaseAvailable()) return { data: [], error: null };
-    
+
     try {
       const { data, error } = await supabase
         .from('customers')
         .select('*')
         .order('created_at', { ascending: false });
-      
+
       if (error) throw error;
-      
+
       const customers = (data || []).map(customer => ({
         id: customer.id,
         name: customer.name,
@@ -598,7 +713,7 @@ export const dbService = {
         notes: customer.notes,
         createdAt: customer.created_at,
       }));
-      
+
       return { data: customers, error: null };
     } catch (error) {
       console.error('Error fetching customers:', error);
@@ -608,7 +723,7 @@ export const dbService = {
 
   async createCustomer(customer) {
     if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
-    
+
     try {
       const { data, error } = await supabase
         .from('customers')
@@ -626,10 +741,10 @@ export const dbService = {
         })
         .select()
         .single();
-      
+
       if (error) throw error;
-      
-      return { 
+
+      return {
         data: {
           id: data.id,
           name: data.name,
@@ -642,8 +757,8 @@ export const dbService = {
           gstin: data.gstin,
           customerType: data.customer_type,
           notes: data.notes,
-        }, 
-        error: null 
+        },
+        error: null
       };
     } catch (error) {
       console.error('Error creating customer:', error);
@@ -653,7 +768,7 @@ export const dbService = {
 
   async updateCustomer(customer) {
     if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
-    
+
     try {
       const { data, error } = await supabase
         .from('customers')
@@ -672,10 +787,10 @@ export const dbService = {
         .eq('id', customer.id)
         .select()
         .single();
-      
+
       if (error) throw error;
-      
-      return { 
+
+      return {
         data: {
           id: data.id,
           name: data.name,
@@ -688,8 +803,8 @@ export const dbService = {
           gstin: data.gstin,
           customerType: data.customer_type,
           notes: data.notes,
-        }, 
-        error: null 
+        },
+        error: null
       };
     } catch (error) {
       console.error('Error updating customer:', error);
@@ -699,13 +814,13 @@ export const dbService = {
 
   async deleteCustomer(customerId) {
     if (!isSupabaseAvailable()) return { error: new Error('Supabase not configured') };
-    
+
     try {
       const { error } = await supabase
         .from('customers')
         .delete()
         .eq('id', customerId);
-      
+
       if (error) throw error;
       return { error: null };
     } catch (error) {
@@ -720,7 +835,7 @@ export const dbService = {
 
   async getInvoices() {
     if (!isSupabaseAvailable()) return { data: [], error: null };
-    
+
     try {
       const { data, error } = await supabase
         .from('invoices')
@@ -736,9 +851,9 @@ export const dbService = {
           )
         `)
         .order('created_at', { ascending: false });
-      
+
       if (error) throw error;
-      
+
       const invoices = (data || []).map(invoice => ({
         id: invoice.id,
         invoiceNumber: invoice.invoice_number,
@@ -751,18 +866,18 @@ export const dbService = {
           address: invoice.customers.address,
           gstin: invoice.customers.gstin,
         } : null,
-          invoiceDate: invoice.invoice_date,
-          dueDate: invoice.due_date,
-          items: invoice.items || [],
-          subtotal: parseFloat(invoice.subtotal || 0),
-          gstRate: parseFloat(invoice.gst_rate || 5),
-          gstAmount: parseFloat(invoice.gst_amount || 0),
-          discountPercent: parseFloat(invoice.discount_percent || 0),
-          discountAmount: parseFloat(invoice.discount_amount || 0),
-          shippingCharge: parseFloat(invoice.shipping_charge || 0),
-          advancePaid: parseFloat(invoice.advance_paid || 0),
-          totalAmount: parseFloat(invoice.total_amount || 0),
-          balanceDue: parseFloat(invoice.balance_due || 0),
+        invoiceDate: invoice.invoice_date,
+        dueDate: invoice.due_date,
+        items: invoice.items || [],
+        subtotal: parseFloat(invoice.subtotal || 0),
+        gstRate: parseFloat(invoice.gst_rate || 5),
+        gstAmount: parseFloat(invoice.gst_amount || 0),
+        discountPercent: parseFloat(invoice.discount_percent || 0),
+        discountAmount: parseFloat(invoice.discount_amount || 0),
+        shippingCharge: parseFloat(invoice.shipping_charge || 0),
+        advancePaid: parseFloat(invoice.advance_paid || 0),
+        totalAmount: parseFloat(invoice.total_amount || 0),
+        balanceDue: parseFloat(invoice.balance_due || 0),
         status: invoice.status,
         paymentMethod: invoice.payment_method,
         paymentDate: invoice.payment_date,
@@ -770,7 +885,7 @@ export const dbService = {
         terms: invoice.terms,
         createdAt: invoice.created_at,
       }));
-      
+
       return { data: invoices, error: null };
     } catch (error) {
       console.error('Error fetching invoices:', error);
@@ -780,7 +895,7 @@ export const dbService = {
 
   async createInvoice(invoice) {
     if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
-    
+
     try {
       // For new invoices, use NULL for invoice_number (will be generated when status changes to 'paid')
       // Only use provided invoiceNumber if it's explicitly set and not 'N/A'
@@ -788,7 +903,7 @@ export const dbService = {
       if (invoice.invoiceNumber && invoice.invoiceNumber !== 'N/A') {
         invoiceNumberValue = invoice.invoiceNumber;
       }
-      
+
       console.log('Creating invoice with data:', {
         invoiceNumber: invoiceNumberValue,
         customerId: invoice.customerId,
@@ -796,7 +911,7 @@ export const dbService = {
         subtotal: invoice.subtotal,
         totalAmount: invoice.totalAmount
       });
-      
+
       const { data, error } = await supabase
         .from('invoices')
         .insert({
@@ -832,7 +947,7 @@ export const dbService = {
           )
         `)
         .single();
-      
+
       if (error) {
         console.error('❌ Supabase error creating invoice:', {
           code: error.code,
@@ -842,17 +957,17 @@ export const dbService = {
         });
         throw error;
       }
-      
+
       // Map invoice_number: if NULL, use 'N/A' for display
       const invoiceNumber = data.invoice_number || 'N/A';
-      
+
       console.log('✅ Invoice created successfully:', {
         id: data.id,
         invoiceNumber: invoiceNumber,
         status: data.status
       });
-      
-      return { 
+
+      return {
         data: {
           id: data.id,
           invoiceNumber: invoiceNumber, // Use 'N/A' if NULL for display consistency
@@ -884,8 +999,8 @@ export const dbService = {
           notes: data.notes,
           terms: data.terms,
           createdAt: data.created_at,
-        }, 
-        error: null 
+        },
+        error: null
       };
     } catch (error) {
       console.error('❌❌❌ Error creating invoice:', {
@@ -901,7 +1016,7 @@ export const dbService = {
 
   async updateInvoice(invoice) {
     if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
-    
+
     try {
       // Prepare update data - explicitly handle invoice_number
       const updateData = {
@@ -924,7 +1039,7 @@ export const dbService = {
         notes: invoice.notes,
         terms: invoice.terms,
       };
-      
+
       // ALWAYS update invoice_number if it's provided (even if it was 'N/A' before)
       // This ensures generated invoice numbers are saved
       if (invoice.invoiceNumber !== undefined && invoice.invoiceNumber !== null) {
@@ -933,14 +1048,14 @@ export const dbService = {
       } else {
         console.log('WARNING: invoiceNumber is undefined or null, not updating invoice_number field');
       }
-      
+
       console.log('Updating invoice in database:', {
         id: invoice.id,
         invoice_number: updateData.invoice_number,
         status: updateData.status,
         full_invoice_number: invoice.invoiceNumber
       });
-      
+
       const { data, error } = await supabase
         .from('invoices')
         .update(updateData)
@@ -957,17 +1072,17 @@ export const dbService = {
           )
         `)
         .single();
-      
+
       if (error) {
         console.error('Supabase update error:', error);
         throw error;
       }
-      
+
       if (!data) {
         throw new Error('No data returned from update - invoice may not exist');
       }
-      
-      return { 
+
+      return {
         data: {
           id: data.id,
           invoiceNumber: data.invoice_number,
@@ -998,8 +1113,8 @@ export const dbService = {
           notes: data.notes,
           terms: data.terms,
           createdAt: data.created_at,
-        }, 
-        error: null 
+        },
+        error: null
       };
     } catch (error) {
       console.error('Error updating invoice:', error);
@@ -1009,13 +1124,13 @@ export const dbService = {
 
   async deleteInvoice(invoiceId) {
     if (!isSupabaseAvailable()) return { error: new Error('Supabase not configured') };
-    
+
     try {
       const { error } = await supabase
         .from('invoices')
         .delete()
         .eq('id', invoiceId);
-      
+
       if (error) throw error;
       return { error: null };
     } catch (error) {
@@ -1030,7 +1145,7 @@ export const dbService = {
 
   async getInventory() {
     if (!isSupabaseAvailable()) return { data: [], error: null };
-    
+
     try {
       const { data, error } = await supabase
         .from('inventory')
@@ -1043,9 +1158,9 @@ export const dbService = {
           )
         `)
         .order('created_at', { ascending: false });
-      
+
       if (error) throw error;
-      
+
       const inventory = (data || []).map(item => ({
         id: item.id,
         skuId: item.sku_id,
@@ -1060,7 +1175,7 @@ export const dbService = {
         notes: item.notes,
         createdAt: item.created_at,
       }));
-      
+
       return { data: inventory, error: null };
     } catch (error) {
       console.error('Error fetching inventory:', error);
@@ -1070,7 +1185,7 @@ export const dbService = {
 
   async getInventoryBySkuId(skuId) {
     if (!isSupabaseAvailable()) return { data: null, error: null };
-    
+
     try {
       const { data, error } = await supabase
         .from('inventory')
@@ -1084,12 +1199,12 @@ export const dbService = {
         `)
         .eq('sku_id', skuId)
         .single();
-      
+
       if (error && error.code !== 'PGRST116') throw error; // PGRST116 = not found
-      
+
       if (!data) return { data: null, error: null };
-      
-      return { 
+
+      return {
         data: {
           id: data.id,
           skuId: data.sku_id,
@@ -1102,8 +1217,8 @@ export const dbService = {
           monthlyPacksAvailable: parseFloat(data.monthly_packs_available || 0),
           lastUpdated: data.last_updated,
           notes: data.notes,
-        }, 
-        error: null 
+        },
+        error: null
       };
     } catch (error) {
       console.error('Error fetching inventory by SKU:', error);
@@ -1113,7 +1228,7 @@ export const dbService = {
 
   async createInventory(inventory) {
     if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
-    
+
     try {
       const { data, error } = await supabase
         .from('inventory')
@@ -1133,10 +1248,10 @@ export const dbService = {
           )
         `)
         .single();
-      
+
       if (error) throw error;
-      
-      return { 
+
+      return {
         data: {
           id: data.id,
           skuId: data.sku_id,
@@ -1149,8 +1264,8 @@ export const dbService = {
           monthlyPacksAvailable: parseFloat(data.monthly_packs_available || 0),
           lastUpdated: data.last_updated,
           notes: data.notes,
-        }, 
-        error: null 
+        },
+        error: null
       };
     } catch (error) {
       console.error('Error creating inventory:', error);
@@ -1160,7 +1275,7 @@ export const dbService = {
 
   async updateInventory(inventory) {
     if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
-    
+
     try {
       const { data, error } = await supabase
         .from('inventory')
@@ -1180,10 +1295,10 @@ export const dbService = {
           )
         `)
         .single();
-      
+
       if (error) throw error;
-      
-      return { 
+
+      return {
         data: {
           id: data.id,
           skuId: data.sku_id,
@@ -1196,8 +1311,8 @@ export const dbService = {
           monthlyPacksAvailable: parseFloat(data.monthly_packs_available || 0),
           lastUpdated: data.last_updated,
           notes: data.notes,
-        }, 
-        error: null 
+        },
+        error: null
       };
     } catch (error) {
       console.error('Error updating inventory:', error);
@@ -1208,12 +1323,12 @@ export const dbService = {
   async updateInventoryStock(skuId, packType, quantity, operation = 'subtract') {
     // operation: 'add' or 'subtract'
     if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
-    
+
     try {
       // First get current inventory
       const currentRes = await this.getInventoryBySkuId(skuId);
       if (currentRes.error) throw currentRes.error;
-      
+
       const current = currentRes.data;
       if (!current) {
         // Create new inventory record if doesn't exist
@@ -1223,23 +1338,23 @@ export const dbService = {
           monthlyPacksAvailable: packType === 'monthly' ? (operation === 'add' ? quantity : -quantity) : 0,
         });
       }
-      
+
       const field = packType === 'weekly' ? 'weekly_packs_available' : 'monthly_packs_available';
-      const currentValue = packType === 'weekly' 
-        ? current.weeklyPacksAvailable 
+      const currentValue = packType === 'weekly'
+        ? current.weeklyPacksAvailable
         : current.monthlyPacksAvailable;
-      
-      const newValue = operation === 'add' 
-        ? currentValue + quantity 
+
+      const newValue = operation === 'add'
+        ? currentValue + quantity
         : Math.max(0, currentValue - quantity); // Don't go below 0
-      
+
       const updateData = {
         id: current.id,
         weeklyPacksAvailable: packType === 'weekly' ? newValue : current.weeklyPacksAvailable,
         monthlyPacksAvailable: packType === 'monthly' ? newValue : current.monthlyPacksAvailable,
         notes: current.notes,
       };
-      
+
       return await this.updateInventory(updateData);
     } catch (error) {
       console.error('Error updating inventory stock:', error);
@@ -1249,13 +1364,13 @@ export const dbService = {
 
   async deleteInventory(inventoryId) {
     if (!isSupabaseAvailable()) return { error: new Error('Supabase not configured') };
-    
+
     try {
       const { error } = await supabase
         .from('inventory')
         .delete()
         .eq('id', inventoryId);
-      
+
       if (error) throw error;
       return { error: null };
     } catch (error) {

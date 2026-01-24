@@ -1,6 +1,117 @@
 import React, { useState } from 'react';
 import { Plus, Edit, Trash2, Search, X, Star } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { dbService } from '../services/supabase';
+import { LineChart, TrendingUp, TrendingDown, History } from 'lucide-react';
+
+const VolatilityBadge = ({ volatility, trend }) => {
+  if (!volatility && volatility !== 0) return null;
+
+  let color = 'bg-gray-100 text-gray-800';
+  if (volatility > 20) color = 'bg-red-100 text-red-800';
+  else if (volatility > 10) color = 'bg-yellow-100 text-yellow-800';
+  else color = 'bg-green-100 text-green-800';
+
+  return (
+    <div className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${color}`}>
+      {trend === 'up' ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+      {volatility}% Volatility
+    </div>
+  );
+};
+
+const PriceHistoryModal = ({ isOpen, onClose, vendorId, ingredientName, unit }) => {
+  const [history, setHistory] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [volatilityData, setVolatilityData] = React.useState(null);
+
+  React.useEffect(() => {
+    if (isOpen && vendorId && ingredientName) {
+      setLoading(true);
+      Promise.all([
+        dbService.getPriceHistory(vendorId, ingredientName),
+        dbService.getPriceVolatility(ingredientName)
+      ]).then(([historyRes, volRes]) => {
+        setHistory(historyRes.data);
+        setVolatilityData(volRes.data);
+        setLoading(false);
+      });
+    }
+  }, [isOpen, vendorId, ingredientName]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg max-w-lg w-full p-6 shadow-xl">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-bold">Price History: {ingredientName}</h3>
+          <button onClick={onClose}><X className="w-5 h-5" /></button>
+        </div>
+
+        {loading ? (
+          <div className="text-center py-8">Loading history...</div>
+        ) : (
+          <div className="space-y-4">
+            {/* Volatility Summary */}
+            {volatilityData && (
+              <div className="flex gap-4 p-3 bg-gray-50 rounded-lg text-sm">
+                <div>
+                  <span className="text-gray-500 block">Current Trend</span>
+                  <VolatilityBadge volatility={volatilityData.volatility} trend={volatilityData.trend} />
+                </div>
+                <div>
+                  <span className="text-gray-500 block">12-Month High</span>
+                  <span className="font-semibold">₹{volatilityData.max}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500 block">12-Month Low</span>
+                  <span className="font-semibold">₹{volatilityData.min}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500 block">Average</span>
+                  <span className="font-semibold">₹{volatilityData.avg}</span>
+                </div>
+              </div>
+            )}
+
+            {/* History List */}
+            <div className="max-h-60 overflow-y-auto border rounded-lg">
+              <table className="w-full text-sm text-left">
+                <thead className="bg-gray-100 text-gray-700">
+                  <tr>
+                    <th className="p-2">Date</th>
+                    <th className="p-2">Price</th>
+                    <th className="p-2">Change</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {history.length === 0 ? (
+                    <tr><td colSpan="3" className="p-4 text-center text-gray-500">No history found</td></tr>
+                  ) : (
+                    history.map((record, i) => {
+                      const prevPrice = i > 0 ? history[i - 1].price_per_unit : record.price_per_unit;
+                      const diff = record.price_per_unit - prevPrice;
+                      return (
+                        <tr key={record.id} className="border-b last:border-0 hover:bg-gray-50">
+                          <td className="p-2">{new Date(record.created_at).toLocaleDateString()}</td>
+                          <td className="p-2 font-medium">₹{record.price_per_unit}</td>
+                          <td className={`p-2 ${diff > 0 ? 'text-red-500' : diff < 0 ? 'text-green-500' : 'text-gray-400'}`}>
+                            {i === 0 ? '-' : `${diff > 0 ? '+' : ''}${diff.toFixed(2)}`}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 export default function VendorManagement() {
   const { state, dispatch, showToast } = useApp();
@@ -9,6 +120,11 @@ export default function VendorManagement() {
   const [editingVendor, setEditingVendor] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [editingIngredient, setEditingIngredient] = useState(null);
+
+  // History Modal State
+  const [historyModalOpen, setHistoryModalOpen] = useState(false);
+  const [selectedHistoryItem, setSelectedHistoryItem] = useState({ vendorId: null, ingredient: null });
+
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
@@ -24,6 +140,12 @@ export default function VendorManagement() {
     quality: 5,
     notes: '',
   });
+
+  const openHistory = (e, vendorId, ingredient) => {
+    e.stopPropagation();
+    setSelectedHistoryItem({ vendorId, ingredient });
+    setHistoryModalOpen(true);
+  };
 
   const resetForm = () => {
     setFormData({
@@ -108,7 +230,7 @@ export default function VendorManagement() {
 
     setFormData({
       ...formData,
-      ingredients: formData.ingredients.map(ing => 
+      ingredients: formData.ingredients.map(ing =>
         ing.id === editingIngredient.id ? { ...updatedIngredient, id: editingIngredient.id } : ing
       ),
     });
@@ -193,6 +315,13 @@ export default function VendorManagement() {
 
   return (
     <div className="space-y-6">
+      <PriceHistoryModal
+        isOpen={historyModalOpen}
+        onClose={() => setHistoryModalOpen(false)}
+        vendorId={selectedHistoryItem.vendorId}
+        ingredientName={selectedHistoryItem.ingredient?.name}
+        unit={selectedHistoryItem.ingredient?.unit}
+      />
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
@@ -303,9 +432,8 @@ export default function VendorManagement() {
                           {[...Array(5)].map((_, i) => (
                             <Star
                               key={i}
-                              className={`w-4 h-4 ${
-                                i < ing.quality ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300'
-                              }`}
+                              className={`w-4 h-4 ${i < ing.quality ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300'
+                                }`}
                             />
                           ))}
                         </div>
@@ -379,8 +507,8 @@ export default function VendorManagement() {
                       onClick={(e) => e.stopPropagation()}
                       onMouseDown={(e) => e.stopPropagation()}
                       className="input-field w-24"
-                      style={{ 
-                        zIndex: 99999, 
+                      style={{
+                        zIndex: 99999,
                         position: 'relative',
                         pointerEvents: 'auto',
                         cursor: 'pointer'
@@ -417,11 +545,10 @@ export default function VendorManagement() {
                         className="focus:outline-none"
                       >
                         <Star
-                          className={`w-6 h-6 ${
-                            rating <= currentIngredient.quality
+                          className={`w-6 h-6 ${rating <= currentIngredient.quality
                               ? 'text-yellow-400 fill-yellow-400'
                               : 'text-gray-300'
-                          }`}
+                            }`}
                         />
                       </button>
                     ))}
@@ -536,6 +663,13 @@ export default function VendorManagement() {
                         <div className="flex justify-between items-start mb-1">
                           <span className="font-medium text-gray-900">{ing.name}</span>
                           <div className="flex items-center gap-1">
+                            <button
+                              onClick={(e) => openHistory(e, vendor.id, ing)}
+                              className="bg-purple-100 text-purple-700 p-1 rounded hover:bg-purple-200 transition-colors"
+                              title="View Price History"
+                            >
+                              <History className="w-3 h-3" />
+                            </button>
                             {[...Array(ing.quality)].map((_, i) => (
                               <Star
                                 key={i}

@@ -5,7 +5,7 @@ import { useApp } from '../context/AppContext';
 export default function PricingStrategy() {
   const { state, dispatch, showToast } = useApp();
   const { skus, pricingStrategies } = state || { skus: [], pricingStrategies: [] };
-  
+
   // Safety check - ensure state is available
   if (!state) {
     return <div className="p-6">Loading...</div>;
@@ -29,7 +29,7 @@ export default function PricingStrategy() {
   const handleSKUChange = (skuId) => {
     const sku = skus.find((s) => String(s.id) === String(skuId));
     setSelectedSKU(sku);
-    
+
     // Check if pricing exists for this SKU and pack type
     const existingPricing = pricingStrategies.find(
       (p) => String(p.skuId) === String(skuId) && p.packType === packType
@@ -43,6 +43,7 @@ export default function PricingStrategy() {
         marketingCost: existingPricing.marketingCost,
         shippingCost: existingPricing.shippingCost,
         otherCosts: existingPricing.otherCosts,
+        volatilityBuffer: existingPricing.volatilityBuffer,
         profitMargin: existingPricing.profitMargin,
         sellingPrice: existingPricing.sellingPrice,
       });
@@ -55,6 +56,7 @@ export default function PricingStrategy() {
         marketingCost: '',
         shippingCost: '',
         otherCosts: '',
+        volatilityBuffer: '',
         profitMargin: 30,
         sellingPrice: '',
       });
@@ -76,6 +78,7 @@ export default function PricingStrategy() {
           marketingCost: existingPricing.marketingCost,
           shippingCost: existingPricing.shippingCost,
           otherCosts: existingPricing.otherCosts,
+          volatilityBuffer: existingPricing.volatilityBuffer,
           profitMargin: existingPricing.profitMargin,
           sellingPrice: existingPricing.sellingPrice,
         });
@@ -87,6 +90,7 @@ export default function PricingStrategy() {
           marketingCost: '',
           shippingCost: '',
           otherCosts: '',
+          volatilityBuffer: '',
           profitMargin: 30,
           sellingPrice: '',
         });
@@ -114,11 +118,14 @@ export default function PricingStrategy() {
     const marketing = parseFloat(formData.marketingCost || 0);
     const shipping = parseFloat(formData.shippingCost || 0);
     const other = parseFloat(formData.otherCosts || 0);
+    const buffer = parseFloat(formData.volatilityBuffer || 0); // New buffer field
 
-    return rawMaterial + sachetPkg + packBox + operating + marketing + shipping + other;
+    // Total cost now includes the volatility buffer (safety margin)
+    return rawMaterial + buffer + sachetPkg + packBox + operating + marketing + shipping + other;
   };
 
   const calculateSuggestedPrice = () => {
+    // Total cost already includes buffer
     const totalCost = calculateTotalCost();
     const margin = parseFloat(formData.profitMargin || 0) / 100;
     return totalCost * (1 + margin);
@@ -164,6 +171,7 @@ export default function PricingStrategy() {
       marketingCost: parseFloat(formData.marketingCost || 0),
       shippingCost: parseFloat(formData.shippingCost || 0),
       otherCosts: parseFloat(formData.otherCosts || 0),
+      volatilityBuffer: parseFloat(formData.volatilityBuffer || 0),
       totalCost,
       profitMargin: finalProfitMargin,
       profitAmount: finalProfitAmount,
@@ -218,8 +226,8 @@ export default function PricingStrategy() {
               onClick={(e) => e.stopPropagation()}
               onMouseDown={(e) => e.stopPropagation()}
               className="input-field"
-              style={{ 
-                zIndex: 99999, 
+              style={{
+                zIndex: 99999,
                 position: 'relative',
                 pointerEvents: 'auto',
                 cursor: 'pointer'
@@ -238,21 +246,19 @@ export default function PricingStrategy() {
             <div className="flex gap-2">
               <button
                 onClick={() => handlePackTypeChange('weekly')}
-                className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
-                  packType === 'weekly'
-                    ? 'bg-primary text-white'
-                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                }`}
+                className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${packType === 'weekly'
+                  ? 'bg-primary text-white'
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
               >
                 Weekly Pack (7 sachets)
               </button>
               <button
                 onClick={() => handlePackTypeChange('monthly')}
-                className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
-                  packType === 'monthly'
-                    ? 'bg-accent text-white'
-                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                }`}
+                className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${packType === 'monthly'
+                  ? 'bg-accent text-white'
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
               >
                 Monthly Pack (28 sachets)
               </button>
@@ -276,6 +282,29 @@ export default function PricingStrategy() {
                 </div>
                 <p className="text-sm text-primary-600 mt-1">
                   Based on recipe for {getSachetsCount()} sachets
+                </p>
+              </div>
+
+              {/* Volatility Buffer (New) */}
+              <div className="bg-orange-50 p-4 rounded-lg border border-orange-200">
+                <label className="label text-orange-800">Volatility Buffer (Safety Margin)</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-orange-500">
+                    ₹
+                  </span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={formData.volatilityBuffer || ''}
+                    onChange={(e) =>
+                      setFormData({ ...formData, volatilityBuffer: e.target.value })
+                    }
+                    className="input-field pl-8 border-orange-300 focus:ring-orange-500"
+                    placeholder="0.00"
+                  />
+                </div>
+                <p className="text-xs text-orange-600 mt-1">
+                  Add buffer for price fluctuations (e.g. 10% of raw material)
                 </p>
               </div>
 
@@ -514,9 +543,8 @@ export default function PricingStrategy() {
                         <div className="flex justify-between items-center mb-2">
                           <span className="text-lg font-bold text-gray-900">Profit:</span>
                           <span
-                            className={`text-2xl font-bold ${
-                              profitFromManualPrice.profit >= 0 ? 'text-green-600' : 'text-red-600'
-                            }`}
+                            className={`text-2xl font-bold ${profitFromManualPrice.profit >= 0 ? 'text-green-600' : 'text-red-600'
+                              }`}
                           >
                             ₹{profitFromManualPrice.profit.toFixed(2)}
                           </span>
@@ -524,11 +552,10 @@ export default function PricingStrategy() {
                         <div className="flex justify-between items-center">
                           <span className="text-gray-700">Profit Margin:</span>
                           <span
-                            className={`text-xl font-semibold ${
-                              profitFromManualPrice.profitMargin >= 0
-                                ? 'text-green-600'
-                                : 'text-red-600'
-                            }`}
+                            className={`text-xl font-semibold ${profitFromManualPrice.profitMargin >= 0
+                              ? 'text-green-600'
+                              : 'text-red-600'
+                              }`}
                           >
                             {profitFromManualPrice.profitMargin.toFixed(2)}%
                           </span>
@@ -644,11 +671,10 @@ export default function PricingStrategy() {
                     <td className="p-3 font-medium">{pricing.skuName}</td>
                     <td className="p-3">
                       <span
-                        className={`px-2 py-1 rounded text-xs font-semibold ${
-                          pricing.packType === 'weekly'
-                            ? 'bg-blue-100 text-blue-700'
-                            : 'bg-accent-100 text-accent-700'
-                        }`}
+                        className={`px-2 py-1 rounded text-xs font-semibold ${pricing.packType === 'weekly'
+                          ? 'bg-blue-100 text-blue-700'
+                          : 'bg-accent-100 text-accent-700'
+                          }`}
                       >
                         {pricing.packType === 'weekly' ? 'Weekly' : 'Monthly'}
                       </span>
