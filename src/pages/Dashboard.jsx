@@ -4,6 +4,9 @@ import { Users, Package, DollarSign, TrendingUp, ShoppingBag } from 'lucide-reac
 import { useApp } from '../context/AppContext';
 import DataManagement from '../components/DataManagement';
 import ProductionSimulator from '../components/ProductionSimulator';
+import DashboardStats from '../components/DashboardStats';
+import TopItems from '../components/TopItems';
+import RecentActivity from '../components/RecentActivity';
 import logo from '../assets/wkly-nuts-logo.png';
 
 export default function Dashboard() {
@@ -23,41 +26,6 @@ export default function Dashboard() {
   );
   const monthlyRevenue = currentTarget?.targets.reduce((sum, t) => sum + t.projectedRevenue, 0) || 0;
 
-  const cards = [
-    {
-      title: 'Vendor Management',
-      description: 'Manage vendors and ingredients',
-      icon: Users,
-      href: '/vendors',
-      color: 'bg-blue-500',
-      stats: `${totalVendors} Vendors, ${totalIngredients} Ingredients`,
-    },
-    {
-      title: 'SKU Management',
-      description: 'Create and manage product SKUs',
-      icon: Package,
-      href: '/skus',
-      color: 'bg-primary',
-      stats: `${totalSKUs} Active SKUs`,
-    },
-    {
-      title: 'Pricing Strategy',
-      description: 'Set prices and profit margins',
-      icon: DollarSign,
-      href: '/pricing',
-      color: 'bg-accent',
-      stats: `${pricingStrategies.length} Pricing Strategies`,
-    },
-    {
-      title: 'Sales & Revenue',
-      description: 'Track targets and projections',
-      icon: TrendingUp,
-      href: '/sales',
-      color: 'bg-green-500',
-      stats: `₹${monthlyRevenue.toLocaleString('en-IN')} Monthly Target`,
-    },
-  ];
-
   const quickStats = [
     { label: 'Total Vendors', value: totalVendors, icon: Users, color: 'text-blue-600' },
     { label: 'Total SKUs', value: totalSKUs, icon: Package, color: 'text-primary' },
@@ -65,38 +33,42 @@ export default function Dashboard() {
     { label: 'Pricing Strategies', value: pricingStrategies.length, icon: DollarSign, color: 'text-green-600' },
   ];
 
+  const quickActions = [
+    { title: 'Add Vendor', href: '/vendors', icon: Users, color: 'bg-blue-500' },
+    { title: 'Create SKU', href: '/skus', icon: Package, color: 'bg-primary' },
+    { title: 'Set Pricing', href: '/pricing', icon: DollarSign, color: 'bg-accent' },
+    { title: 'Track Sales', href: '/sales', icon: TrendingUp, color: 'bg-green-500' },
+  ];
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* Welcome Section */}
-      <div className="bg-gradient-to-r from-primary to-primary-700 rounded-2xl p-8 text-white">
-        <div className="flex items-start gap-6">
+      <div className="bg-gradient-to-r from-primary to-primary-700 rounded-2xl p-6 text-white">
+        <div className="flex items-start gap-4">
           <img
             src={logo}
             alt="WKLY Nuts Logo"
-            className="h-20 w-auto object-contain bg-white rounded-lg p-2 hidden sm:block"
+            className="h-16 w-auto object-contain bg-white rounded-lg p-2 hidden sm:block"
           />
           <div className="flex-1">
-            <h1 className="text-3xl font-bold mb-2">Welcome to WKLY Nuts Production Manager</h1>
-            <p className="text-primary-100 text-lg">
+            <h1 className="text-2xl font-bold mb-1">Welcome to WKLY Nuts Production Manager</h1>
+            <p className="text-primary-100">
               Manage your entire production workflow from vendors to sales targets
             </p>
-            <div className="mt-3 space-y-2">
-              <p className="text-primary-200 text-sm">
-                ✅ All data is automatically saved and will persist across sessions
-              </p>
+            <div className="mt-2 flex items-center gap-2">
               {isLoading ? (
-                <div className="inline-block bg-primary-800 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-lg">
-                  ⏳ Loading database connection...
+                <div className="inline-block bg-primary-800 text-white px-3 py-1 rounded-lg text-xs font-medium">
+                  ⏳ Loading...
                 </div>
               ) : useDatabase ? (
-                <div className="inline-block bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-lg flex items-center gap-2">
+                <div className="inline-block bg-green-600 text-white px-3 py-1 rounded-lg text-xs font-medium flex items-center gap-1">
                   <span>🗄️</span>
                   <span>Database Connected</span>
                 </div>
               ) : (
-                <div className="inline-block bg-yellow-600 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-lg flex items-center gap-2">
+                <div className="inline-block bg-yellow-600 text-white px-3 py-1 rounded-lg text-xs font-medium flex items-center gap-1">
                   <span>💾</span>
-                  <span>Using Local Storage (Database not configured)</span>
+                  <span>Local Storage</span>
                 </div>
               )}
             </div>
@@ -104,83 +76,95 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Data Management Section */}
-      <DataManagement />
-
-      {/* Production Simulator (FIFO Demo) */}
-      <ProductionSimulator />
-
-      {/* Quick Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        {quickStats.map((stat, index) => (
-          <div key={index} className="card">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500 mb-1">{stat.label}</p>
-                <p className="text-3xl font-bold text-gray-900">{stat.value}</p>
+      {/* Main Layout: Content + Sidebar */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        {/* Main Content Area (3 columns) */}
+        <div className="lg:col-span-3 space-y-6">
+          {/* Quick Stats Row */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {quickStats.map((stat, index) => (
+              <div key={index} className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">{stat.label}</p>
+                    <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
+                  </div>
+                  <div className={`${stat.color} bg-opacity-10 p-2 rounded-lg`}>
+                    <stat.icon className={`w-6 h-6 ${stat.color}`} />
+                  </div>
+                </div>
               </div>
-              <div className={`${stat.color} bg-opacity-10 p-3 rounded-lg`}>
-                <stat.icon className={`w-8 h-8 ${stat.color}`} />
-              </div>
-            </div>
+            ))}
           </div>
-        ))}
-      </div>
 
-      {/* Main Navigation Cards */}
-      <div>
-        <h2 className="text-2xl font-bold text-gray-900 mb-6">Quick Access</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {cards.map((card, index) => (
-            <Link
-              key={index}
-              to={card.href}
-              className="card group hover:scale-[1.02] transition-transform duration-200"
-            >
-              <div className="flex items-start gap-4">
-                <div className={`${card.color} p-4 rounded-xl text-white`}>
-                  <card.icon className="w-8 h-8" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-xl font-bold text-gray-900 mb-2 group-hover:text-primary transition-colors">
-                    {card.title}
-                  </h3>
-                  <p className="text-gray-600 mb-3">{card.description}</p>
-                  <p className="text-sm font-medium text-primary">{card.stats}</p>
-                </div>
-              </div>
-            </Link>
-          ))}
+          {/* Top Items Widget */}
+          <TopItems />
+
+          {/* Data Management Section */}
+          <DataManagement />
+
+          {/* Production Simulator */}
+          <ProductionSimulator />
+
+          {/* Recent Activity */}
+          <RecentActivity />
         </div>
-      </div>
 
-      {/* Recent Activity or Tips */}
-      <div className="bg-gradient-to-br from-accent-50 to-primary-50 rounded-2xl p-8 border border-accent-100">
-        <h2 className="text-xl font-bold text-gray-900 mb-4">Getting Started</h2>
-        <div className="space-y-3 text-gray-700">
-          <div className="flex items-start gap-3">
-            <div className="w-6 h-6 bg-primary text-white rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0">
-              1
+        {/* Right Sidebar (1 column) */}
+        <div className="lg:col-span-1 space-y-6">
+          {/* Dashboard Stats */}
+          <DashboardStats />
+
+          {/* Quick Actions */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+            <h3 className="text-sm font-bold text-gray-900 mb-3">Quick Actions</h3>
+            <div className="space-y-2">
+              {quickActions.map((action, index) => (
+                <Link
+                  key={index}
+                  to={action.href}
+                  className="flex items-center gap-3 p-3 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors group"
+                >
+                  <div className={`${action.color} p-2 rounded-lg text-white`}>
+                    <action.icon className="w-4 h-4" />
+                  </div>
+                  <span className="text-sm font-medium text-gray-700 group-hover:text-gray-900">
+                    {action.title}
+                  </span>
+                </Link>
+              ))}
             </div>
-            <p><span className="font-semibold">Add Vendors:</span> Start by adding your ingredient suppliers with their contact details and available ingredients.</p>
           </div>
-          <div className="flex items-start gap-3">
-            <div className="w-6 h-6 bg-primary text-white rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0">
-              2
+
+          {/* Getting Started Tips */}
+          <div className="bg-gradient-to-br from-accent-50 to-primary-50 rounded-lg border border-accent-100 p-4">
+            <h3 className="text-sm font-bold text-gray-900 mb-3">Getting Started</h3>
+            <div className="space-y-2 text-xs text-gray-700">
+              <div className="flex items-start gap-2">
+                <div className="w-5 h-5 bg-primary text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">
+                  1
+                </div>
+                <p><span className="font-semibold">Add Vendors</span> with ingredients</p>
+              </div>
+              <div className="flex items-start gap-2">
+                <div className="w-5 h-5 bg-primary text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">
+                  2
+                </div>
+                <p><span className="font-semibold">Create SKUs</span> with recipes</p>
+              </div>
+              <div className="flex items-start gap-2">
+                <div className="w-5 h-5 bg-primary text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">
+                  3
+                </div>
+                <p><span className="font-semibold">Set Pricing</span> and margins</p>
+              </div>
+              <div className="flex items-start gap-2">
+                <div className="w-5 h-5 bg-primary text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">
+                  4
+                </div>
+                <p><span className="font-semibold">Track Sales</span> targets</p>
+              </div>
             </div>
-            <p><span className="font-semibold">Create SKUs:</span> Build your product recipes (Day Pack, Night Pack) with ingredient quantities per sachet.</p>
-          </div>
-          <div className="flex items-start gap-3">
-            <div className="w-6 h-6 bg-primary text-white rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0">
-              3
-            </div>
-            <p><span className="font-semibold">Set Pricing:</span> Calculate costs and set profit margins for both Weekly and Monthly packs.</p>
-          </div>
-          <div className="flex items-start gap-3">
-            <div className="w-6 h-6 bg-primary text-white rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0">
-              4
-            </div>
-            <p><span className="font-semibold">Plan Sales:</span> Set monthly targets and track revenue projections.</p>
           </div>
         </div>
       </div>
