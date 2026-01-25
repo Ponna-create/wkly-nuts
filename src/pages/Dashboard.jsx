@@ -7,6 +7,7 @@ import ProductionSimulator from '../components/ProductionSimulator';
 import DashboardStats from '../components/DashboardStats';
 import TopItems from '../components/TopItems';
 import RecentActivity from '../components/RecentActivity';
+import DashboardTabs from '../components/DashboardTabs';
 import logo from '../assets/wkly-nuts-logo.png';
 
 export default function Dashboard() {
@@ -76,7 +77,11 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* Dashboard Tabs */}
+      <DashboardTabs activeTab="home" />
+
       {/* Main Layout: Content + Sidebar */}
+
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Main Content Area (3 columns) */}
         <div className="lg:col-span-3 space-y-6">
@@ -168,6 +173,6 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
-    </div>
+    </div >
   );
 }
