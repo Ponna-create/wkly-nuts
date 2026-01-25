@@ -1,34 +1,31 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard,
-  Users,
+  Home,
   Package,
-  DollarSign,
+  Warehouse,
   TrendingUp,
+  ShoppingCart,
   BarChart3,
+  FileText,
   Menu,
   X,
   LogOut,
   UserCircle,
-  Warehouse,
-  Receipt,
-  Layers
+  Layers,
+  LayoutDashboard
 } from 'lucide-react';
 import { logout } from './Auth';
 import logo from '../assets/wkly-nuts-logo.png';
 
 const navigation = [
-  { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-  { name: 'Vendor Management', href: '/vendors', icon: Users },
-  { name: 'Ingredient Inventory', href: '/ingredients', icon: Layers }, // New
-  { name: 'SKU Management', href: '/skus', icon: Package },
-  { name: 'Product Inventory', href: '/inventory', icon: Warehouse }, // Renamed
-  { name: 'Pricing Strategy', href: '/pricing', icon: DollarSign },
-  { name: 'Sales & Revenue', href: '/sales', icon: TrendingUp },
-  { name: 'Vendor Comparison', href: '/vendor-comparison', icon: BarChart3 },
-  { name: 'Customer Management', href: '/customers', icon: UserCircle },
-  { name: 'Invoice Management', href: '/invoices', icon: Receipt },
+  { name: 'Home', href: '/', icon: Home },
+  { name: 'Items', href: '/skus', icon: Package },
+  { name: 'Inventory', href: '/inventory', icon: Warehouse },
+  { name: 'Sales', href: '/sales', icon: TrendingUp },
+  { name: 'Purchase', href: '/vendors', icon: ShoppingCart },
+  { name: 'Reports', href: '/vendor-comparison', icon: BarChart3 },
+  { name: 'Documents', href: '/invoices', icon: FileText },
 ];
 
 export default function Layout({ children }) {
@@ -48,32 +45,32 @@ export default function Layout({ children }) {
 
       {/* Sidebar */}
       <aside
-        className={`fixed top-0 left-0 z-40 h-screen w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        className={`fixed top-0 left-0 z-40 h-screen w-64 bg-slate-900 shadow-lg transform transition-transform duration-300 ease-in-out lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
       >
         {/* Logo */}
-        <div className="flex items-center justify-between h-16 px-6 border-b border-gray-200">
+        <div className="flex items-center justify-between h-16 px-6 border-b border-slate-800">
           <div className="flex items-center gap-3">
             <img
               src={logo}
               alt="WKLY Nuts Logo"
-              className="h-10 w-auto object-contain"
+              className="h-10 w-auto object-contain bg-white rounded p-1"
             />
             <div>
-              <h1 className="text-lg font-bold text-primary">WKLY Nuts</h1>
-              <p className="text-xs text-gray-500">Production Manager</p>
+              <h1 className="text-lg font-bold text-white">WKLY Nuts</h1>
+              <p className="text-[10px] text-slate-400 uppercase tracking-wider">Production Manager</p>
             </div>
           </div>
           <button
             onClick={() => setSidebarOpen(false)}
-            className="lg:hidden text-gray-500 hover:text-gray-700"
+            className="lg:hidden text-slate-400 hover:text-white"
           >
             <X className="w-6 h-6" />
           </button>
         </div>
 
         {/* Navigation */}
-        <nav className="px-4 py-6 space-y-2">
+        <nav className="px-4 py-6 space-y-1">
           {navigation.map((item) => {
             const isActive = location.pathname === item.href;
             return (
@@ -81,12 +78,12 @@ export default function Layout({ children }) {
                 key={item.name}
                 to={item.href}
                 onClick={() => setSidebarOpen(false)}
-                className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors duration-200 ${isActive
-                    ? 'bg-primary text-white'
-                    : 'text-gray-700 hover:bg-gray-100'
+                className={`flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-200 ${isActive
+                  ? 'bg-primary text-white shadow-md'
+                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
                   }`}
               >
-                <item.icon className="w-5 h-5" />
+                <item.icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-slate-400'}`} />
                 <span className="font-medium">{item.name}</span>
               </Link>
             );
