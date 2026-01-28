@@ -13,7 +13,8 @@ import {
   LogOut,
   UserCircle,
   Layers,
-  LayoutDashboard
+  LayoutDashboard,
+  Users
 } from 'lucide-react';
 import { logout } from './Auth';
 import logo from '../assets/wkly-nuts-logo.png';
@@ -25,6 +26,7 @@ const navigation = [
   { name: 'Sales', href: '/sales', icon: TrendingUp },
   { name: 'Purchase', href: '/vendors', icon: ShoppingCart },
   { name: 'Reports', href: '/vendor-comparison', icon: BarChart3 },
+  { name: 'Customers', href: '/customers', icon: Users },
   { name: 'Documents', href: '/invoices', icon: FileText },
 ];
 
