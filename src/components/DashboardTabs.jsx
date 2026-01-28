@@ -6,7 +6,9 @@ import {
     TrendingUp,
     ShoppingCart,
     BarChart3,
-    FileText
+    BarChart3,
+    FileText,
+    Users
 } from 'lucide-react';
 
 const tabs = [
@@ -16,6 +18,7 @@ const tabs = [
     { id: 'sales', name: 'Sales', icon: TrendingUp, href: '/sales' },
     { id: 'purchase', name: 'Purchase', icon: ShoppingCart, href: '/vendors' },
     { id: 'reports', name: 'Reports', icon: BarChart3, href: '/vendor-comparison' },
+    { id: 'customers', name: 'Customers', icon: Users, href: '/customers' },
     { id: 'documents', name: 'Documents', icon: FileText, href: '/invoices' },
 ];
 

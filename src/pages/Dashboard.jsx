@@ -11,7 +11,7 @@ import logo from '../assets/wkly-nuts-logo.png';
 
 export default function Dashboard() {
   const { state, isLoading, useDatabase } = useApp();
-  const { vendors, skus, pricingStrategies, salesTargets } = state;
+  const { vendors, skus, pricingStrategies, salesTargets, customers } = state;
 
   // Calculate stats
   const totalVendors = vendors.length;
@@ -28,6 +28,7 @@ export default function Dashboard() {
 
   const quickStats = [
     { label: 'Total Vendors', value: totalVendors, icon: Users, color: 'text-blue-600' },
+    { label: 'Total Customers', value: customers.length, icon: Users, color: 'text-indigo-600' },
     { label: 'Total SKUs', value: totalSKUs, icon: Package, color: 'text-primary' },
     { label: 'Total Ingredients', value: totalIngredients, icon: ShoppingBag, color: 'text-orange-600' },
     { label: 'Pricing Strategies', value: pricingStrategies.length, icon: DollarSign, color: 'text-green-600' },
@@ -35,6 +36,7 @@ export default function Dashboard() {
 
   const quickActions = [
     { title: 'Add Vendor', href: '/vendors', icon: Users, color: 'bg-blue-500' },
+    { title: 'Manage Customers', href: '/customers', icon: Users, color: 'bg-indigo-500' },
     { title: 'Create SKU', href: '/skus', icon: Package, color: 'bg-primary' },
     { title: 'Set Pricing', href: '/pricing', icon: DollarSign, color: 'bg-accent' },
     { title: 'Track Sales', href: '/sales', icon: TrendingUp, color: 'bg-green-500' },
@@ -151,17 +153,23 @@ export default function Dashboard() {
                 <div className="w-5 h-5 bg-primary text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">
                   2
                 </div>
-                <p><span className="font-semibold">Create SKUs</span> with recipes</p>
+                <p><span className="font-semibold">Manage Customers</span> and contacts</p>
               </div>
               <div className="flex items-start gap-2">
                 <div className="w-5 h-5 bg-primary text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">
                   3
                 </div>
-                <p><span className="font-semibold">Set Pricing</span> and margins</p>
+                <p><span className="font-semibold">Create SKUs</span> with recipes</p>
               </div>
               <div className="flex items-start gap-2">
                 <div className="w-5 h-5 bg-primary text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">
                   4
+                </div>
+                <p><span className="font-semibold">Set Pricing</span> and margins</p>
+              </div>
+              <div className="flex items-start gap-2">
+                <div className="w-5 h-5 bg-primary text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">
+                  5
                 </div>
                 <p><span className="font-semibold">Track Sales</span> targets</p>
               </div>
