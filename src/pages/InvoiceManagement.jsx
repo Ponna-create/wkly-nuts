@@ -31,11 +31,20 @@ export default function InvoiceManagement() {
 
   const [currentItem, setCurrentItem] = useState({
     skuId: '',
-    packType: 'weekly', // 'weekly', 'monthly', or 'single' for single unit SKUs
+    packType: 'weekly', // 'weekly', 'monthly', '0.5kg', '1kg', or 'single'
     quantity: '',
     unitPrice: '',
     priceOverridden: false,
   });
+
+  // Format pack type for display (table, PDF, CSV)
+  const getPackTypeLabel = (packType) => {
+    if (!packType) return 'N/A';
+    if (packType === '0.5kg') return '0.5 kg';
+    if (packType === '1kg') return '1 kg';
+    if (packType === 'single') return 'Single Unit';
+    return `${packType.charAt(0).toUpperCase() + packType.slice(1)} Pack`;
+  };
 
   // Get pricing for SKU and pack type
   const getPricingForSku = (skuId, packType) => {
@@ -44,11 +53,11 @@ export default function InvoiceManagement() {
     );
   };
 
-  // Get stock for SKU and pack type
+  // Get stock for SKU and pack type (0.5kg/1kg use single-unit pool)
   const getStockForSku = (skuId, packType) => {
     const inv = inventory.find(inv => String(inv.skuId) === String(skuId));
     if (!inv) return 0;
-    if (packType === 'single') {
+    if (packType === 'single' || packType === '0.5kg' || packType === '1kg') {
       return inv.singleUnitsAvailable || 0;
     }
     return packType === 'weekly' ? inv.weeklyPacksAvailable : inv.monthlyPacksAvailable;
@@ -59,8 +68,8 @@ export default function InvoiceManagement() {
     const sku = skus.find(s => String(s.id) === String(skuId));
     if (!sku) return;
 
-    // Auto-set packType based on SKU type
-    const defaultPackType = sku.skuType === 'single' ? 'single' : 'weekly';
+    // Auto-set packType based on SKU type (single-unit SKUs get 0.5kg as default)
+    const defaultPackType = sku.skuType === 'single' ? '0.5kg' : 'weekly';
 
     setCurrentItem({
       ...currentItem,
@@ -141,7 +150,7 @@ export default function InvoiceManagement() {
 
     // Check stock availability
     const availableStock = getStockForSku(currentItem.skuId, currentItem.packType);
-    const isSingleUnit = sku?.skuType === 'single';
+    const isSingleUnit = sku?.skuType === 'single' || currentItem.packType === '0.5kg' || currentItem.packType === '1kg';
     if (availableStock < quantity) {
       const confirm = window.confirm(
         `Warning: Only ${availableStock.toFixed(2)} ${isSingleUnit ? 'units' : 'packs'} available. Do you want to proceed?`
@@ -1222,7 +1231,7 @@ export default function InvoiceManagement() {
       const tableData = invoice.items.map((item, index) => [
         (index + 1).toString(),
         item.skuName || 'Unknown SKU',
-        item.packType ? `${item.packType.charAt(0).toUpperCase() + item.packType.slice(1)} Pack` : 'N/A',
+        getPackTypeLabel(item.packType),
         (item.quantity || 0).toFixed(2),
         `Rs. ${(item.unitPrice || 0).toFixed(2)}`, // Using Rs. instead of ₹
         `Rs. ${(item.total || 0).toFixed(2)}`, // Using Rs. instead of ₹
@@ -1816,8 +1825,8 @@ export default function InvoiceManagement() {
           const itemData = [
             itemIndex + 1,
             item.skuName || 'Unknown SKU',
-            `${item.skuName || 'Unknown'} - ${item.packType ? (item.packType.charAt(0).toUpperCase() + item.packType.slice(1)) : ''} Pack`,
-            item.packType ? `${item.packType.charAt(0).toUpperCase() + item.packType.slice(1)} Pack` : '',
+            `${item.skuName || 'Unknown'} - ${getPackTypeLabel(item.packType)}`,
+            getPackTypeLabel(item.packType),
             (item.quantity || 0).toFixed(2),
             (item.unitPrice || 0).toFixed(2),
             (item.total || 0).toFixed(2)
@@ -2015,8 +2024,20 @@ export default function InvoiceManagement() {
                 const isSingleUnit = selectedSku?.skuType === 'single';
                 
                 if (isSingleUnit) {
-                  // Hide pack type selector for single unit SKUs
-                  return null;
+                  // Single-unit SKUs (e.g. dates): show weight pack types
+                  return (
+                    <div>
+                      <label className="label">Pack Type</label>
+                      <select
+                        value={currentItem.packType}
+                        onChange={(e) => handlePackTypeChange(e.target.value)}
+                        className="input-field"
+                      >
+                        <option value="0.5kg">0.5 kg</option>
+                        <option value="1kg">1 kg</option>
+                      </select>
+                    </div>
+                  );
                 }
                 
                 return (
@@ -2046,7 +2067,7 @@ export default function InvoiceManagement() {
                 />
                 {currentItem.skuId && (() => {
                   const selectedSku = skus.find(s => String(s.id) === String(currentItem.skuId));
-                  const isSingleUnit = selectedSku?.skuType === 'single';
+                  const isSingleUnit = selectedSku?.skuType === 'single' || currentItem.packType === '0.5kg' || currentItem.packType === '1kg';
                   const stock = getStockForSku(currentItem.skuId, currentItem.packType);
                   
                   return (
@@ -2109,7 +2130,7 @@ export default function InvoiceManagement() {
                       <tr key={item.id} className="border-t hover:bg-gray-50">
                         <td className="py-2 px-4">{item.skuName}</td>
                         <td className="py-2 px-4 capitalize">
-                          {item.packType === 'single' ? 'Single Unit' : `${item.packType} Pack`}
+                          {getPackTypeLabel(item.packType)}
                         </td>
                         <td className="py-2 px-4 text-right">{item.quantity}</td>
                         <td className="py-2 px-4 text-right">

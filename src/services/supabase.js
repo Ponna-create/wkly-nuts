@@ -1342,6 +1342,11 @@ export const dbService = {
     // operation: 'add' or 'subtract'
     if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
 
+    // Single-unit pack types (0.5kg, 1kg, single): DB has no single_units_available column yet - skip update
+    if (packType === 'single' || packType === '0.5kg' || packType === '1kg') {
+      return { data: null, error: null };
+    }
+
     try {
       // First get current inventory
       const currentRes = await this.getInventoryBySkuId(skuId);
