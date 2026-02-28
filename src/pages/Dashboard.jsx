@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Users, Package, DollarSign, TrendingUp, ShoppingBag } from 'lucide-react';
+import { Users, Package, DollarSign, TrendingUp, ShoppingBag, Truck, AlertCircle } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import DataManagement from '../components/DataManagement';
 import ProductionSimulator from '../components/ProductionSimulator';
@@ -11,7 +11,7 @@ import logo from '../assets/wkly-nuts-logo.png';
 
 export default function Dashboard() {
   const { state, isLoading, useDatabase } = useApp();
-  const { vendors, skus, pricingStrategies, salesTargets, customers } = state;
+  const { vendors, skus, pricingStrategies, salesTargets, customers, salesOrders } = state;
 
   // Calculate stats
   const totalVendors = vendors.length;
@@ -34,7 +34,22 @@ export default function Dashboard() {
     { label: 'Pricing Strategies', value: pricingStrategies.length, icon: DollarSign, color: 'text-green-600' },
   ];
 
+  // Order pipeline stats
+  const orderPipeline = [
+    { label: 'Follow-up', count: (salesOrders || []).filter(o => o.status === 'follow_up').length, color: 'bg-blue-500', href: '/orders' },
+    { label: 'Packing', count: (salesOrders || []).filter(o => o.status === 'packing').length, color: 'bg-yellow-500', href: '/orders' },
+    { label: 'Packed', count: (salesOrders || []).filter(o => o.status === 'packed').length, color: 'bg-orange-500', href: '/orders' },
+    { label: 'Dispatched', count: (salesOrders || []).filter(o => o.status === 'dispatched').length, color: 'bg-purple-500', href: '/orders' },
+    { label: 'In Transit', count: (salesOrders || []).filter(o => o.status === 'in_transit').length, color: 'bg-indigo-500', href: '/orders' },
+    { label: 'Delivered', count: (salesOrders || []).filter(o => o.status === 'delivered').length, color: 'bg-green-500', href: '/orders' },
+  ];
+  const totalOrders = (salesOrders || []).length;
+  const todayRevenue = (salesOrders || [])
+    .filter(o => o.order_date === new Date().toISOString().split('T')[0])
+    .reduce((sum, o) => sum + (o.total_amount || 0), 0);
+
   const quickActions = [
+    { title: 'New Order', href: '/orders', icon: Truck, color: 'bg-teal-500' },
     { title: 'Add Vendor', href: '/vendors', icon: Users, color: 'bg-blue-500' },
     { title: 'Manage Customers', href: '/customers', icon: Users, color: 'bg-indigo-500' },
     { title: 'Create SKU', href: '/skus', icon: Package, color: 'bg-primary' },
@@ -99,6 +114,43 @@ export default function Dashboard() {
               </div>
             ))}
           </div>
+
+          {/* Order Pipeline Widget */}
+          {totalOrders > 0 && (
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-bold text-gray-900">Order Pipeline</h3>
+                <Link to="/orders" className="text-xs text-teal-600 hover:text-teal-700 font-medium">
+                  View All ({totalOrders})
+                </Link>
+              </div>
+              <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+                {orderPipeline.map((step) => (
+                  <Link key={step.label} to={step.href} className="text-center group">
+                    <div className={`${step.color} text-white text-xl font-bold rounded-lg p-3 group-hover:opacity-90 transition`}>
+                      {step.count}
+                    </div>
+                    <p className="text-xs text-gray-600 mt-1 font-medium">{step.label}</p>
+                  </Link>
+                ))}
+              </div>
+              {todayRevenue > 0 && (
+                <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">
+                  <span className="text-xs text-gray-500">Today's Revenue</span>
+                  <span className="text-sm font-bold text-teal-600">₹{todayRevenue.toFixed(2)}</span>
+                </div>
+              )}
+              {/* Action needed alerts */}
+              {orderPipeline.find(s => s.label === 'Dispatched')?.count > 0 && (
+                <div className="mt-2 flex items-center gap-2 p-2 bg-purple-50 rounded-lg">
+                  <AlertCircle className="w-4 h-4 text-purple-600" />
+                  <span className="text-xs text-purple-700 font-medium">
+                    {orderPipeline.find(s => s.label === 'Dispatched').count} orders need tracking numbers
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Top Items Widget */}
           <TopItems />

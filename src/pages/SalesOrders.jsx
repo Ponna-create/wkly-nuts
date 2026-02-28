@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Filter, Search, Eye, Edit2, Trash2, Download, Zap } from 'lucide-react';
+import { Plus, Search, Eye, Trash2, Zap, Camera, FileSpreadsheet, MessageCircle } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
 import NewOrderForm from '../components/sales/NewOrderForm';
 import OrderDetailView from '../components/sales/OrderDetailView';
 import BulkTrackingEntry from '../components/sales/BulkTrackingEntry';
+import QRScanner from '../components/sales/QRScanner';
+import ZohoImport from '../components/sales/ZohoImport';
 
 export default function SalesOrders() {
   const { state, dispatch, showToast } = useApp();
@@ -13,6 +15,8 @@ export default function SalesOrders() {
   const [showNewOrderForm, setShowNewOrderForm] = useState(false);
   const [showDetailView, setShowDetailView] = useState(false);
   const [showTrackingEntry, setShowTrackingEntry] = useState(false);
+  const [showQRScanner, setShowQRScanner] = useState(false);
+  const [showZohoImport, setShowZohoImport] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [filterStatus, setFilterStatus] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
@@ -28,7 +32,6 @@ export default function SalesOrders() {
     { label: 'Delivered', value: 'delivered', color: 'bg-green-100', count: orders.filter(o => o.status === 'delivered').length },
   ];
 
-  // Load orders
   useEffect(() => {
     loadOrders();
   }, []);
@@ -45,13 +48,13 @@ export default function SalesOrders() {
     setLoading(false);
   };
 
-  // Filter orders
   const filteredOrders = orders.filter(order => {
     const matchesStatus = filterStatus === 'all' || order.status === filterStatus;
     const matchesSearch =
-      order.order_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (order.customer_name && order.customer_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (order.shipping_address && order.shipping_address.toLowerCase().includes(searchTerm.toLowerCase()));
+      (order.order_number || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (order.customer_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (order.shipping_address || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (order.tracking_number || '').toLowerCase().includes(searchTerm.toLowerCase());
     return matchesStatus && matchesSearch;
   });
 
@@ -68,8 +71,7 @@ export default function SalesOrders() {
       cancelled: { bg: 'bg-gray-100', text: 'text-gray-800', label: 'Cancelled' },
       returned: { bg: 'bg-pink-100', text: 'text-pink-800', label: 'Returned' },
     };
-    const badge = badges[status] || badges.packing;
-    return badge;
+    return badges[status] || badges.packing;
   };
 
   const getSourceIcon = (source) => {
@@ -89,11 +91,6 @@ export default function SalesOrders() {
     setShowDetailView(true);
   };
 
-  const handleEditOrder = (order) => {
-    // Will open edit form
-    setSelectedOrder(order);
-  };
-
   const handleDeleteOrder = async (orderId) => {
     if (!window.confirm('Are you sure you want to delete this order?')) return;
     const { error } = await dbService.deleteSalesOrder(orderId);
@@ -101,6 +98,12 @@ export default function SalesOrders() {
       showToast('Error deleting order', 'error');
     } else {
       showToast('Order deleted successfully', 'success');
+      loadOrders();
+    }
+  };
+
+  const handleScanComplete = (scannedOrders) => {
+    if (scannedOrders.length > 0) {
       loadOrders();
     }
   };
@@ -113,20 +116,35 @@ export default function SalesOrders() {
           <h1 className="text-3xl font-bold text-gray-900">Sales Orders</h1>
           <p className="text-gray-600 mt-1">Manage customer orders from enquiry to delivery</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button
             onClick={() => setShowNewOrderForm(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition"
+            className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition text-sm font-medium"
           >
             <Plus className="w-4 h-4" />
             New Order
           </button>
           <button
+            onClick={() => setShowQRScanner(true)}
+            className="flex items-center gap-2 px-3 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition text-sm font-medium"
+            title="Scan QR for dispatch"
+          >
+            <Camera className="w-4 h-4" />
+            Scan
+          </button>
+          <button
             onClick={() => setShowTrackingEntry(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition"
+            className="flex items-center gap-2 px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition text-sm font-medium"
           >
             <Zap className="w-4 h-4" />
             Tracking
+          </button>
+          <button
+            onClick={() => setShowZohoImport(true)}
+            className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm font-medium"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            Import
           </button>
         </div>
       </div>
@@ -148,13 +166,13 @@ export default function SalesOrders() {
         ))}
       </div>
 
-      {/* Search & Filter */}
+      {/* Search */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="flex-1 relative">
           <Search className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
           <input
             type="text"
-            placeholder="Search by order #, customer name, or address..."
+            placeholder="Search by order #, customer, address, or tracking #..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
@@ -170,12 +188,20 @@ export default function SalesOrders() {
       ) : filteredOrders.length === 0 ? (
         <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
           <p className="text-gray-500 mb-4">No orders found</p>
-          <button
-            onClick={() => setShowNewOrderForm(true)}
-            className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700"
-          >
-            Create First Order
-          </button>
+          <div className="flex gap-3 justify-center">
+            <button
+              onClick={() => setShowNewOrderForm(true)}
+              className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 text-sm font-medium"
+            >
+              Create First Order
+            </button>
+            <button
+              onClick={() => setShowZohoImport(true)}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
+            >
+              Import from CSV
+            </button>
+          </div>
         </div>
       ) : (
         <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
@@ -197,13 +223,15 @@ export default function SalesOrders() {
                   const badge = getStatusBadge(order.status);
                   return (
                     <tr key={order.id} className="border-b border-gray-200 hover:bg-gray-50 transition">
-                      <td className="px-4 py-3 text-sm font-medium text-teal-600">{order.order_number}</td>
+                      <td className="px-4 py-3 text-sm font-medium text-teal-600 cursor-pointer" onClick={() => handleViewOrder(order)}>
+                        {order.order_number}
+                      </td>
                       <td className="px-4 py-3 text-sm">
                         <div className="font-medium text-gray-900">{order.customer_name || 'N/A'}</div>
                         {order.phone && <div className="text-xs text-gray-500">{order.phone}</div>}
                       </td>
                       <td className="px-4 py-3 text-sm">
-                        <span className="text-lg">{getSourceIcon(order.order_source)}</span>
+                        <span className="text-lg" title={order.order_source}>{getSourceIcon(order.order_source)}</span>
                       </td>
                       <td className="px-4 py-3 text-sm font-medium text-gray-900">₹{order.total_amount?.toFixed(2) || '0.00'}</td>
                       <td className="px-4 py-3 text-sm">
@@ -213,17 +241,17 @@ export default function SalesOrders() {
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-600">{order.order_date}</td>
                       <td className="px-4 py-3 text-right">
-                        <div className="flex justify-end gap-2">
+                        <div className="flex justify-end gap-1">
                           <button
                             onClick={() => handleViewOrder(order)}
-                            className="p-1 text-gray-600 hover:text-teal-600 hover:bg-gray-100 rounded transition"
-                            title="View"
+                            className="p-1.5 text-gray-600 hover:text-teal-600 hover:bg-teal-50 rounded transition"
+                            title="View Order"
                           >
                             <Eye className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => handleDeleteOrder(order.id)}
-                            className="p-1 text-gray-600 hover:text-red-600 hover:bg-gray-100 rounded transition"
+                            className="p-1.5 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded transition"
                             title="Delete"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -235,6 +263,16 @@ export default function SalesOrders() {
                 })}
               </tbody>
             </table>
+          </div>
+          {/* Summary bar */}
+          <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 flex items-center justify-between text-sm">
+            <span className="text-gray-600">
+              {filteredOrders.length} order{filteredOrders.length !== 1 ? 's' : ''}
+              {filterStatus !== 'all' ? ` (${getStatusBadge(filterStatus).label})` : ''}
+            </span>
+            <span className="font-medium text-gray-900">
+              Total: ₹{filteredOrders.reduce((sum, o) => sum + (o.total_amount || 0), 0).toFixed(2)}
+            </span>
           </div>
         </div>
       )}
@@ -263,8 +301,25 @@ export default function SalesOrders() {
       {showTrackingEntry && (
         <BulkTrackingEntry
           orders={orders.filter(o => o.status === 'dispatched')}
-          onClose={() => setShowTrackingEntry(false)}
+          onClose={() => {
+            setShowTrackingEntry(false);
+            loadOrders();
+          }}
           onUpdate={() => loadOrders()}
+        />
+      )}
+
+      {showQRScanner && (
+        <QRScanner
+          onClose={() => setShowQRScanner(false)}
+          onScanComplete={handleScanComplete}
+        />
+      )}
+
+      {showZohoImport && (
+        <ZohoImport
+          onClose={() => setShowZohoImport(false)}
+          onImportComplete={() => loadOrders()}
         />
       )}
     </div>
