@@ -1613,5 +1613,244 @@ export const dbService = {
       console.error('Error consuming ingredient (FIFO):', error);
       return { success: false, error: error.message };
     }
+  },
+
+  // Sales Orders (Phase 1)
+  async getSalesOrders() {
+    if (!isSupabaseAvailable()) return { data: [], error: null };
+
+    try {
+      const { data, error } = await supabase
+        .from('sales_orders')
+        .select(`
+          *,
+          customers (
+            id,
+            name,
+            email,
+            phone,
+            address,
+            city,
+            state,
+            pincode
+          )
+        `)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      return { data: data || [], error: null };
+    } catch (error) {
+      console.error('Error fetching sales orders:', error);
+      return { data: [], error };
+    }
+  },
+
+  async getSalesOrderById(orderId) {
+    if (!isSupabaseAvailable()) return { data: null, error: null };
+
+    try {
+      const { data, error } = await supabase
+        .from('sales_orders')
+        .select(`
+          *,
+          customers (
+            id,
+            name,
+            email,
+            phone,
+            address,
+            city,
+            state,
+            pincode,
+            gstin
+          ),
+          invoices (
+            id,
+            invoice_number,
+            status
+          )
+        `)
+        .eq('id', orderId)
+        .single();
+
+      if (error) throw error;
+
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error fetching sales order:', error);
+      return { data: null, error };
+    }
+  },
+
+  async createSalesOrder(order) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+
+    try {
+      // Generate order number
+      const { data: seqData } = await supabase.rpc('nextval', { name: 'sales_order_number_seq' });
+      const orderNumber = `SO-${new Date().getFullYear()}-${String(seqData || 1).padStart(5, '0')}`;
+
+      const { data, error } = await supabase
+        .from('sales_orders')
+        .insert([{
+          order_number: orderNumber,
+          customer_id: order.customerId,
+          customer_name: order.customerName,
+          order_date: order.orderDate || new Date().toISOString().split('T')[0],
+          order_source: order.orderSource,
+          items: order.items || [],
+          subtotal: order.subtotal || 0,
+          gst_rate: order.gstRate || 5,
+          gst_amount: order.gstAmount || 0,
+          discount_percent: order.discountPercent || 0,
+          discount_amount: order.discountAmount || 0,
+          shipping_charge: order.shippingCharge || 0,
+          total_amount: order.totalAmount || 0,
+          payment_method: order.paymentMethod,
+          payment_status: order.paymentStatus || 'pending',
+          amount_paid: order.amountPaid || 0,
+          balance_due: order.balanceDue || 0,
+          payment_date: order.paymentDate,
+          transaction_id: order.transactionId,
+          status: order.status || 'packing',
+          follow_up_date: order.followUpDate,
+          follow_up_notes: order.followUpNotes,
+          shipping_address: order.shippingAddress,
+          courier_name: order.courierName,
+          tracking_number: order.trackingNumber,
+          dispatch_date: order.dispatchDate,
+          estimated_delivery_date: order.estimatedDeliveryDate,
+          actual_delivery_date: order.actualDeliveryDate,
+          shipping_weight: order.shippingWeight,
+          qr_code_data: order.qrCodeData,
+          invoice_id: order.invoiceId,
+          zoho_order_id: order.zohoOrderId,
+          notes: order.notes,
+          internal_notes: order.internalNotes
+        }])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error creating sales order:', error);
+      return { data: null, error };
+    }
+  },
+
+  async updateSalesOrder(order) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+
+    try {
+      const { data, error } = await supabase
+        .from('sales_orders')
+        .update({
+          customer_id: order.customerId,
+          customer_name: order.customerName,
+          order_source: order.orderSource,
+          items: order.items || [],
+          subtotal: order.subtotal,
+          gst_rate: order.gstRate,
+          gst_amount: order.gstAmount,
+          discount_percent: order.discountPercent,
+          discount_amount: order.discountAmount,
+          shipping_charge: order.shippingCharge,
+          total_amount: order.totalAmount,
+          payment_method: order.paymentMethod,
+          payment_status: order.paymentStatus,
+          amount_paid: order.amountPaid,
+          balance_due: order.balanceDue,
+          payment_date: order.paymentDate,
+          transaction_id: order.transactionId,
+          status: order.status,
+          follow_up_date: order.followUpDate,
+          follow_up_notes: order.followUpNotes,
+          shipping_address: order.shippingAddress,
+          courier_name: order.courierName,
+          tracking_number: order.trackingNumber,
+          dispatch_date: order.dispatchDate,
+          estimated_delivery_date: order.estimatedDeliveryDate,
+          actual_delivery_date: order.actualDeliveryDate,
+          shipping_weight: order.shippingWeight,
+          qr_code_data: order.qrCodeData,
+          invoice_id: order.invoiceId,
+          feedback_sent: order.feedbackSent,
+          feedback_rating: order.feedbackRating,
+          feedback_text: order.feedbackText,
+          feedback_date: order.feedbackDate,
+          notes: order.notes,
+          internal_notes: order.internalNotes
+        })
+        .eq('id', order.id)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error updating sales order:', error);
+      return { data: null, error };
+    }
+  },
+
+  async deleteSalesOrder(orderId) {
+    if (!isSupabaseAvailable()) return { error: new Error('Supabase not configured') };
+
+    try {
+      const { error } = await supabase
+        .from('sales_orders')
+        .delete()
+        .eq('id', orderId);
+
+      if (error) throw error;
+
+      return { error: null };
+    } catch (error) {
+      console.error('Error deleting sales order:', error);
+      return { error };
+    }
+  },
+
+  async getSalesOrdersByStatus(status) {
+    if (!isSupabaseAvailable()) return { data: [], error: null };
+
+    try {
+      const { data, error } = await supabase
+        .from('sales_orders')
+        .select('*')
+        .eq('status', status)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      return { data: data || [], error: null };
+    } catch (error) {
+      console.error('Error fetching orders by status:', error);
+      return { data: [], error };
+    }
+  },
+
+  async getSalesOrdersByDate(startDate, endDate) {
+    if (!isSupabaseAvailable()) return { data: [], error: null };
+
+    try {
+      const { data, error } = await supabase
+        .from('sales_orders')
+        .select('*')
+        .gte('order_date', startDate)
+        .lte('order_date', endDate)
+        .order('order_date', { ascending: false });
+
+      if (error) throw error;
+
+      return { data: data || [], error: null };
+    } catch (error) {
+      console.error('Error fetching orders by date:', error);
+      return { data: [], error };
+    }
   }
 };

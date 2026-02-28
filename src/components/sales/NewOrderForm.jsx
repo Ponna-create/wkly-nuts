@@ -1,0 +1,470 @@
+import React, { useState, useEffect } from 'react';
+import { X, Plus, Trash2 } from 'lucide-react';
+import { useApp } from '../../context/AppContext';
+import { dbService } from '../../services/supabase';
+
+export default function NewOrderForm({ onClose }) {
+  const { state, dispatch, showToast } = useApp();
+  const [loading, setLoading] = useState(false);
+  const [customers, setCustomers] = useState([]);
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [newCustomerMode, setNewCustomerMode] = useState(false);
+  const [showCustomerForm, setShowCustomerForm] = useState(false);
+
+  const [formData, setFormData] = useState({
+    customerName: '',
+    orderSource: 'whatsapp',
+    items: [],
+    subtotal: 0,
+    gstRate: 5,
+    gstAmount: 0,
+    discountPercent: 0,
+    discountAmount: 0,
+    shippingCharge: 0,
+    totalAmount: 0,
+    paymentMethod: 'upi',
+    paymentStatus: 'received',
+    amountPaid: 0,
+    transactionId: '',
+    status: 'packing',
+    shippingAddress: '',
+  });
+
+  const [newItem, setNewItem] = useState({
+    skuId: '',
+    skuName: '',
+    packType: 'weekly',
+    quantity: 1,
+    unitPrice: 0,
+    total: 0,
+  });
+
+  const [newCustomer, setNewCustomer] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    address: '',
+    city: '',
+    state: '',
+    pincode: '',
+  });
+
+  // Load customers and SKUs
+  useEffect(() => {
+    setCustomers(state.customers || []);
+  }, [state.customers]);
+
+  // Calculate totals
+  useEffect(() => {
+    const subtotal = formData.items.reduce((sum, item) => sum + (item.total || 0), 0);
+    const gstAmount = (subtotal * formData.gstRate) / 100;
+    const discountAmount = formData.discountPercent > 0
+      ? (subtotal * formData.discountPercent) / 100
+      : formData.discountAmount;
+    const totalAmount = subtotal + gstAmount - discountAmount + (formData.shippingCharge || 0);
+
+    setFormData(prev => ({
+      ...prev,
+      subtotal,
+      gstAmount,
+      discountAmount,
+      totalAmount,
+      amountPaid: formData.paymentStatus === 'received' ? totalAmount : formData.amountPaid,
+    }));
+  }, [formData.items, formData.gstRate, formData.discountPercent, formData.discountAmount, formData.shippingCharge]);
+
+  const handleAddItem = () => {
+    if (!newItem.skuName || !newItem.quantity) {
+      showToast('Please fill all item details', 'error');
+      return;
+    }
+
+    const itemTotal = newItem.quantity * newItem.unitPrice;
+    setFormData(prev => ({
+      ...prev,
+      items: [
+        ...prev.items,
+        {
+          ...newItem,
+          total: itemTotal,
+        }
+      ]
+    }));
+
+    setNewItem({
+      skuId: '',
+      skuName: '',
+      packType: 'weekly',
+      quantity: 1,
+      unitPrice: 0,
+      total: 0,
+    });
+  };
+
+  const handleRemoveItem = (index) => {
+    setFormData(prev => ({
+      ...prev,
+      items: prev.items.filter((_, i) => i !== index)
+    }));
+  };
+
+  const handleCreateCustomer = async () => {
+    if (!newCustomer.name || !newCustomer.phone) {
+      showToast('Name and phone are required', 'error');
+      return;
+    }
+
+    const { data, error } = await dbService.createCustomer({
+      id: `temp-${Date.now()}`,
+      ...newCustomer
+    });
+
+    if (error) {
+      showToast('Error creating customer', 'error');
+      return;
+    }
+
+    dispatch({
+      type: 'ADD_CUSTOMER',
+      payload: data
+    });
+
+    setFormData(prev => ({
+      ...prev,
+      customerName: newCustomer.name,
+      shippingAddress: `${newCustomer.address}, ${newCustomer.city}, ${newCustomer.state} ${newCustomer.pincode}`
+    }));
+
+    setNewCustomer({ name: '', email: '', phone: '', address: '', city: '', state: '', pincode: '' });
+    setShowCustomerForm(false);
+    setNewCustomerMode(false);
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    if (!formData.customerName || formData.items.length === 0) {
+      showToast('Please select customer and add items', 'error');
+      return;
+    }
+
+    setLoading(true);
+
+    const { data, error } = await dbService.createSalesOrder({
+      ...formData,
+      customerId: selectedCustomer?.id,
+    });
+
+    if (error) {
+      showToast('Error creating order', 'error');
+      console.error(error);
+    } else {
+      showToast('Order created successfully!', 'success');
+      dispatch({
+        type: 'ADD_SALES_ORDER',
+        payload: data
+      });
+      onClose();
+    }
+
+    setLoading(false);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        {/* Header */}
+        <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
+          <h2 className="text-2xl font-bold text-gray-900">Create New Order</h2>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          {/* Customer Section */}
+          <div className="space-y-3">
+            <label className="block text-sm font-semibold text-gray-900">Customer *</label>
+            {!newCustomerMode ? (
+              <div className="space-y-2">
+                <select
+                  value={selectedCustomer?.id || ''}
+                  onChange={(e) => {
+                    const customer = customers.find(c => c.id === e.target.value);
+                    setSelectedCustomer(customer);
+                    if (customer) {
+                      setFormData(prev => ({
+                        ...prev,
+                        customerName: customer.name,
+                        shippingAddress: customer.address || ''
+                      }));
+                    }
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                >
+                  <option value="">-- Select Customer --</option>
+                  {customers.map(c => (
+                    <option key={c.id} value={c.id}>{c.name} ({c.phone})</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setNewCustomerMode(true)}
+                  className="text-teal-600 hover:text-teal-700 text-sm font-medium"
+                >
+                  + Add New Customer
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3 p-4 bg-gray-50 rounded-lg">
+                <input
+                  type="text"
+                  placeholder="Customer Name *"
+                  value={newCustomer.name}
+                  onChange={(e) => setNewCustomer(prev => ({ ...prev, name: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                />
+                <input
+                  type="tel"
+                  placeholder="Phone *"
+                  value={newCustomer.phone}
+                  onChange={(e) => setNewCustomer(prev => ({ ...prev, phone: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                />
+                <input
+                  type="email"
+                  placeholder="Email"
+                  value={newCustomer.email}
+                  onChange={(e) => setNewCustomer(prev => ({ ...prev, email: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                />
+                <textarea
+                  placeholder="Address"
+                  value={newCustomer.address}
+                  onChange={(e) => setNewCustomer(prev => ({ ...prev, address: e.target.value }))}
+                  rows="2"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                />
+                <div className="grid grid-cols-3 gap-2">
+                  <input
+                    type="text"
+                    placeholder="City"
+                    value={newCustomer.city}
+                    onChange={(e) => setNewCustomer(prev => ({ ...prev, city: e.target.value }))}
+                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  />
+                  <input
+                    type="text"
+                    placeholder="State"
+                    value={newCustomer.state}
+                    onChange={(e) => setNewCustomer(prev => ({ ...prev, state: e.target.value }))}
+                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Pincode"
+                    value={newCustomer.pincode}
+                    onChange={(e) => setNewCustomer(prev => ({ ...prev, pincode: e.target.value }))}
+                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCreateCustomer}
+                    className="flex-1 px-3 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 text-sm font-medium"
+                  >
+                    Create Customer
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewCustomerMode(false)}
+                    className="flex-1 px-3 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 text-sm font-medium"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Order Source */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-semibold text-gray-900 mb-2">Order Source</label>
+              <select
+                value={formData.orderSource}
+                onChange={(e) => setFormData(prev => ({ ...prev, orderSource: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
+              >
+                <option value="whatsapp">WhatsApp</option>
+                <option value="website">Website</option>
+                <option value="instagram">Instagram</option>
+                <option value="meta_ad">Meta Ad</option>
+                <option value="walkin">Walk-in</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-900 mb-2">Payment Method</label>
+              <select
+                value={formData.paymentMethod}
+                onChange={(e) => setFormData(prev => ({ ...prev, paymentMethod: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
+              >
+                <option value="upi">UPI</option>
+                <option value="cod">COD</option>
+                <option value="bank_transfer">Bank Transfer</option>
+                <option value="gpay">Google Pay</option>
+                <option value="phonepe">PhonePe</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Items Section */}
+          <div className="space-y-3">
+            <label className="block text-sm font-semibold text-gray-900">Items *</label>
+
+            {/* Add Item Form */}
+            <div className="p-4 bg-gray-50 rounded-lg space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <input
+                  type="text"
+                  placeholder="Product Name"
+                  value={newItem.skuName}
+                  onChange={(e) => setNewItem(prev => ({ ...prev, skuName: e.target.value }))}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                />
+                <select
+                  value={newItem.packType}
+                  onChange={(e) => setNewItem(prev => ({ ...prev, packType: e.target.value }))}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                >
+                  <option value="weekly">Weekly Pack</option>
+                  <option value="monthly">Monthly Pack</option>
+                </select>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <input
+                  type="number"
+                  placeholder="Quantity"
+                  min="1"
+                  value={newItem.quantity}
+                  onChange={(e) => setNewItem(prev => ({ ...prev, quantity: parseInt(e.target.value) || 0 }))}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                />
+                <input
+                  type="number"
+                  placeholder="Price"
+                  min="0"
+                  step="0.01"
+                  value={newItem.unitPrice}
+                  onChange={(e) => setNewItem(prev => ({ ...prev, unitPrice: parseFloat(e.target.value) || 0 }))}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddItem}
+                  className="px-3 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 text-sm font-medium flex items-center justify-center gap-1"
+                >
+                  <Plus className="w-4 h-4" /> Add
+                </button>
+              </div>
+            </div>
+
+            {/* Items List */}
+            {formData.items.length > 0 && (
+              <div className="space-y-2">
+                {formData.items.map((item, idx) => (
+                  <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div className="flex-1">
+                      <p className="font-medium text-gray-900">{item.skuName} ({item.packType})</p>
+                      <p className="text-sm text-gray-600">{item.quantity} x ₹{item.unitPrice} = ₹{item.total}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveItem(idx)}
+                      className="p-2 text-red-600 hover:bg-red-100 rounded"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Summary Section */}
+          <div className="p-4 bg-gray-50 rounded-lg space-y-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-600">Subtotal:</span>
+              <span className="font-medium">₹{formData.subtotal.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-600">GST ({formData.gstRate}%):</span>
+              <span className="font-medium">₹{formData.gstAmount.toFixed(2)}</span>
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="number"
+                placeholder="Discount %"
+                min="0"
+                max="100"
+                value={formData.discountPercent}
+                onChange={(e) => setFormData(prev => ({ ...prev, discountPercent: parseFloat(e.target.value) || 0, discountAmount: 0 }))}
+                className="flex-1 px-2 py-1 border border-gray-300 rounded text-sm"
+              />
+              <span className="text-gray-600">- ₹{formData.discountAmount.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-600">Shipping:</span>
+              <input
+                type="number"
+                min="0"
+                value={formData.shippingCharge}
+                onChange={(e) => setFormData(prev => ({ ...prev, shippingCharge: parseFloat(e.target.value) || 0 }))}
+                className="w-20 px-2 py-1 border border-gray-300 rounded text-sm text-right"
+              />
+            </div>
+            <div className="border-t border-gray-200 pt-2 flex justify-between font-bold">
+              <span>Total:</span>
+              <span className="text-teal-600">₹{formData.totalAmount.toFixed(2)}</span>
+            </div>
+          </div>
+
+          {/* Transaction ID (for UPI) */}
+          {formData.paymentMethod === 'upi' && (
+            <div>
+              <label className="block text-sm font-semibold text-gray-900 mb-2">Transaction ID</label>
+              <input
+                type="text"
+                placeholder="UPI Transaction ID"
+                value={formData.transactionId}
+                onChange={(e) => setFormData(prev => ({ ...prev, transactionId: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              />
+            </div>
+          )}
+
+          {/* Buttons */}
+          <div className="flex gap-3 justify-end">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 font-medium text-gray-700"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 font-medium disabled:opacity-50"
+            >
+              {loading ? 'Creating...' : 'Create Order'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}

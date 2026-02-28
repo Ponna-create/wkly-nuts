@@ -15,6 +15,7 @@ import CustomerManagement from './pages/CustomerManagement';
 import InventoryManagement from './pages/InventoryManagement';
 import IngredientInventory from './pages/IngredientInventory';
 import InvoiceManagement from './pages/InvoiceManagement';
+import SalesOrders from './pages/SalesOrders';
 
 function App() {
   return (
@@ -24,6 +25,7 @@ function App() {
           <Layout>
             <Routes>
               <Route path="/" element={<ErrorBoundary><Dashboard /></ErrorBoundary>} />
+              <Route path="/orders" element={<ErrorBoundary><SalesOrders /></ErrorBoundary>} />
               <Route path="/vendors" element={<ErrorBoundary><VendorManagement /></ErrorBoundary>} />
               <Route path="/ingredients" element={<ErrorBoundary><IngredientInventory /></ErrorBoundary>} />
               <Route path="/skus" element={<ErrorBoundary><SKUManagement /></ErrorBoundary>} />

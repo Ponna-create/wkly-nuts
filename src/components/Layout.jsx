@@ -14,13 +14,15 @@ import {
   UserCircle,
   Layers,
   LayoutDashboard,
-  Users
+  Users,
+  Truck
 } from 'lucide-react';
 import { logout } from './Auth';
 import logo from '../assets/wkly-nuts-logo.png';
 
 const navigation = [
   { name: 'Home', href: '/', icon: Home },
+  { name: 'Sales Orders', href: '/orders', icon: Truck },
   { name: 'Items', href: '/skus', icon: Package },
   { name: 'Inventory', href: '/inventory', icon: Warehouse },
   { name: 'Sales', href: '/sales', icon: TrendingUp },

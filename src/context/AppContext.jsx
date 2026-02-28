@@ -55,6 +55,7 @@ const initialState = {
   invoices: [],
   inventory: [],
   ingredients: [],
+  salesOrders: [],
   toast: null,
 };
 
@@ -85,6 +86,25 @@ function appReducer(state, action) {
         customers: action.payload.customers || [],
         invoices: action.payload.invoices || [],
         inventory: action.payload.inventory || [],
+        salesOrders: action.payload.salesOrders || [],
+      };
+
+    // Sales Order actions
+    case 'LOAD_SALES_ORDERS':
+      return { ...state, salesOrders: action.payload };
+    case 'ADD_SALES_ORDER':
+      return { ...state, salesOrders: [...state.salesOrders, action.payload] };
+    case 'UPDATE_SALES_ORDER':
+      return {
+        ...state,
+        salesOrders: state.salesOrders.map((o) =>
+          o.id === action.payload.id ? action.payload : o
+        ),
+      };
+    case 'DELETE_SALES_ORDER':
+      return {
+        ...state,
+        salesOrders: state.salesOrders.filter((o) => o.id !== action.payload),
       };
 
     // Vendor actions
@@ -382,7 +402,7 @@ export function AppProvider({ children }) {
         try {
           setUseDatabase(true);
           // Load all data from Supabase
-          const [vendorsRes, skusRes, pricingRes, targetsRes, customersRes, invoicesRes, inventoryRes, ingredientsRes] = await Promise.all([
+          const [vendorsRes, skusRes, pricingRes, targetsRes, customersRes, invoicesRes, inventoryRes, ingredientsRes, salesOrdersRes] = await Promise.all([
             dbService.getVendors(),
             dbService.getSKUs(),
             dbService.getPricingStrategies(),
@@ -391,6 +411,7 @@ export function AppProvider({ children }) {
             dbService.getInvoices(),
             dbService.getInventory(),
             dbService.getIngredients(), // Load ingredients
+            dbService.getSalesOrders(), // Load sales orders
           ]);
 
           dispatchReducer({
@@ -404,6 +425,7 @@ export function AppProvider({ children }) {
               invoices: invoicesRes.data || [],
               inventory: inventoryRes.data || [],
               ingredients: ingredientsRes.data || [],
+              salesOrders: salesOrdersRes.data || [],
             },
           });
         } catch (error) {
