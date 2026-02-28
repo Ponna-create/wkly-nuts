@@ -28,6 +28,8 @@ export default function NewOrderForm({ onClose }) {
     transactionId: '',
     status: 'packing',
     shippingAddress: '',
+    followUpDate: '',
+    followUpNotes: '',
   });
 
   const [newItem, setNewItem] = useState({
@@ -143,8 +145,14 @@ export default function NewOrderForm({ onClose }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!formData.customerName || formData.items.length === 0) {
-      showToast('Please select customer and add items', 'error');
+    if (!formData.customerName) {
+      showToast('Please select or add a customer', 'error');
+      return;
+    }
+
+    // Items required only for confirmed orders, not follow-ups
+    if (formData.status !== 'follow_up' && formData.items.length === 0) {
+      showToast('Please add at least one item', 'error');
       return;
     }
 
@@ -153,6 +161,8 @@ export default function NewOrderForm({ onClose }) {
     const { data, error } = await dbService.createSalesOrder({
       ...formData,
       customerId: selectedCustomer?.id,
+      followUpDate: formData.followUpDate || null,
+      followUpNotes: formData.followUpNotes || null,
     });
 
     if (error) {
@@ -289,7 +299,61 @@ export default function NewOrderForm({ onClose }) {
             )}
           </div>
 
-          {/* Order Source */}
+          {/* Order Type / Status */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-900 mb-2">Order Type</label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setFormData(prev => ({ ...prev, status: 'follow_up', paymentStatus: 'pending' }))}
+                className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium border-2 transition ${
+                  formData.status === 'follow_up'
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                Follow-up (Lead)
+              </button>
+              <button
+                type="button"
+                onClick={() => setFormData(prev => ({ ...prev, status: 'packing', paymentStatus: 'received' }))}
+                className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium border-2 transition ${
+                  formData.status === 'packing'
+                    ? 'border-teal-500 bg-teal-50 text-teal-700'
+                    : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                Confirmed Order
+              </button>
+            </div>
+          </div>
+
+          {/* Follow-up Fields */}
+          {formData.status === 'follow_up' && (
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg space-y-3">
+              <div>
+                <label className="block text-sm font-semibold text-blue-900 mb-1">Follow-up Date</label>
+                <input
+                  type="date"
+                  value={formData.followUpDate}
+                  onChange={(e) => setFormData(prev => ({ ...prev, followUpDate: e.target.value }))}
+                  className="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-blue-900 mb-1">Notes</label>
+                <textarea
+                  placeholder="What did the customer enquire about? Any preferences?"
+                  value={formData.followUpNotes}
+                  onChange={(e) => setFormData(prev => ({ ...prev, followUpNotes: e.target.value }))}
+                  rows="2"
+                  className="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Order Source & Payment */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-semibold text-gray-900 mb-2">Order Source</label>
