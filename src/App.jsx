@@ -22,6 +22,8 @@ import Documents from './pages/Documents';
 import ProductionRuns from './pages/ProductionRuns';
 import PackagingMaterials from './pages/PackagingMaterials';
 import Reports from './pages/Reports';
+import HelpGuide from './pages/HelpGuide';
+import BackupSettings from './pages/BackupSettings';
 
 function App() {
   return (
@@ -47,6 +49,8 @@ function App() {
               <Route path="/inventory" element={<ErrorBoundary><InventoryManagement /></ErrorBoundary>} />
               <Route path="/invoices" element={<ErrorBoundary><InvoiceManagement /></ErrorBoundary>} />
               <Route path="/reports" element={<ErrorBoundary><Reports /></ErrorBoundary>} />
+              <Route path="/help" element={<ErrorBoundary><HelpGuide /></ErrorBoundary>} />
+              <Route path="/settings" element={<ErrorBoundary><BackupSettings /></ErrorBoundary>} />
             </Routes>
           </Layout>
           <Toast />

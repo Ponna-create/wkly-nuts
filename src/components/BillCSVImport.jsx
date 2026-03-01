@@ -23,6 +23,28 @@ For purchase orders: date,vendor,item_name,quantity,unit,unit_price,gst_percent,
 
 Please output ONLY the CSV data with headers, no other text.`;
 
+// Auto-detect expense category from description/item text
+function detectCategory(text) {
+  const t = (text || '').toLowerCase();
+  // Raw materials - nuts, seeds, dates, dry fruits
+  if (/almond|cashew|pistachio|walnut|peanut|raisin|date|fig|apricot|seed|flax|sunflower|pumpkin|chia|sesame|melon|makhana|fox.?nut|cranberr|berry/.test(t)) return 'raw_materials';
+  // Packaging
+  if (/box|sachet|pouch|bag|label|sticker|tape|carton|wrapper|nitrogen|n2|shrink|seal|zipper/.test(t)) return 'packaging';
+  // Shipping/Courier
+  if (/courier|shipping|delivery|freight|transport|st courier|delhivery|bluedart|dtdc|speed post|postage/.test(t)) return 'courier';
+  // Advertising
+  if (/ad\b|ads\b|advertis|meta|facebook|instagram|google|campaign|marketing|promo|poster|banner|influencer/.test(t)) return 'advertising';
+  // Rent
+  if (/rent|lease|office space|godown|warehouse space/.test(t)) return 'rent';
+  // Utilities
+  if (/electric|water|internet|wifi|phone|recharge|gas|power/.test(t)) return 'utilities';
+  // Equipment
+  if (/machine|sealer|printer|scale|weighing|label printer|helett|laptop|computer/.test(t)) return 'equipment';
+  // Salary
+  if (/salary|wage|labour|labor|helper|worker|staff|payroll/.test(t)) return 'salary';
+  return 'misc';
+}
+
 function parseCSV(text) {
   const lines = text.trim().split('\n').filter(l => l.trim());
   if (lines.length < 2) return { headers: [], rows: [] };
@@ -103,7 +125,7 @@ export default function BillCSVImport({ type = 'expense', onClose, onImportCompl
           const expenseData = {
             expense_date: row.date || new Date().toISOString().split('T')[0],
             description: row.description || row.item || '',
-            category: row.category || 'misc',
+            category: row.category || detectCategory(row.description || row.item || row.vendor || ''),
             vendor_name: row.vendor || '',
             amount: parseFloat(row.amount) || 0,
             gst_amount: parseFloat(row.gst_amount || row.gst) || 0,
