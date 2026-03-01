@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Copy, ExternalLink, Check, MessageCircle, Settings, Save } from 'lucide-react';
+import { X, Copy, ExternalLink, Check, MessageCircle, Settings, Save, Loader2 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 
 const ST_COURIER_TRACKING_URL = 'https://stcourier.com/track/shipment';
@@ -71,27 +71,53 @@ WKLY Nuts Team`,
   },
 };
 
-// Load saved templates from localStorage
-const loadTemplates = () => {
+// ========================================
+// Template Storage: Vercel KV (primary) + localStorage (fallback)
+// ========================================
+const loadTemplatesFromKV = async () => {
   try {
-    const saved = localStorage.getItem('wklyNutsWhatsAppTemplates');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      // Merge with defaults to handle new templates added in updates
-      return { ...DEFAULT_TEMPLATES, ...parsed };
+    const res = await fetch('/api/settings?key=whatsapp_templates');
+    if (res.ok) {
+      const { data } = await res.json();
+      if (data) {
+        // Save to localStorage as cache
+        localStorage.setItem('wklyNutsWhatsAppTemplates', JSON.stringify(data));
+        return { ...DEFAULT_TEMPLATES, ...data };
+      }
     }
   } catch (e) {
-    console.error('Error loading templates:', e);
+    console.warn('Could not load templates from Vercel KV, using local:', e.message);
   }
+  return null;
+};
+
+const saveTemplatesToKV = async (templates) => {
+  try {
+    const res = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'whatsapp_templates', value: templates }),
+    });
+    if (res.ok) return true;
+  } catch (e) {
+    console.warn('Could not save templates to Vercel KV:', e.message);
+  }
+  return false;
+};
+
+// Load from localStorage (instant, used as fallback and initial state)
+const loadTemplatesLocal = () => {
+  try {
+    const saved = localStorage.getItem('wklyNutsWhatsAppTemplates');
+    if (saved) return { ...DEFAULT_TEMPLATES, ...JSON.parse(saved) };
+  } catch (e) { /* ignore */ }
   return DEFAULT_TEMPLATES;
 };
 
-const saveTemplates = (templates) => {
+const saveTemplatesLocal = (templates) => {
   try {
     localStorage.setItem('wklyNutsWhatsAppTemplates', JSON.stringify(templates));
-  } catch (e) {
-    console.error('Error saving templates:', e);
-  }
+  } catch (e) { /* ignore */ }
 };
 
 // Replace variables in template with order data
@@ -100,18 +126,15 @@ const fillTemplate = (template, order) => {
     .map(i => `  ${i.sku_name || i.skuName} (${i.pack_type || i.packType}) x${i.quantity}`)
     .join('\n');
 
-  // Parse city and pincode from shipping address
   const address = order.shipping_address || '';
   const pincodeMatch = address.match(/(\d{6})/);
   const pincode = pincodeMatch ? pincodeMatch[1] : '';
-  // Try to get city - last part before pincode or after last comma
   let city = '';
   if (order.shipping_city) {
     city = order.shipping_city;
   } else {
     const parts = address.split(',').map(p => p.trim());
     if (parts.length >= 2) {
-      // Get the part before pincode, or second-to-last
       city = parts[parts.length - 2]?.replace(/\d{6}/, '').trim() || parts[0];
     } else {
       city = address.replace(/\d{6}/, '').trim();
@@ -133,10 +156,11 @@ const fillTemplate = (template, order) => {
 
 export default function WhatsAppSender({ order, onClose }) {
   const { showToast } = useApp();
-  const [templates, setTemplates] = useState(loadTemplates());
+  const [templates, setTemplates] = useState(loadTemplatesLocal());
   const [showTemplateEditor, setShowTemplateEditor] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState(null);
   const [editTemplateText, setEditTemplateText] = useState('');
+  const [saving, setSaving] = useState(false);
 
   const defaultKey =
     order.status === 'follow_up' ? 'follow_up' :
@@ -147,6 +171,17 @@ export default function WhatsAppSender({ order, onClose }) {
   const [selectedTemplate, setSelectedTemplate] = useState(defaultKey);
   const [message, setMessage] = useState(fillTemplate(templates[defaultKey].template, order));
   const [copied, setCopied] = useState(false);
+
+  // On mount, try loading from Vercel KV (async, updates if different)
+  useEffect(() => {
+    loadTemplatesFromKV().then(kvTemplates => {
+      if (kvTemplates) {
+        setTemplates(kvTemplates);
+        // Refresh current message with KV template
+        setMessage(fillTemplate(kvTemplates[defaultKey]?.template || templates[defaultKey].template, order));
+      }
+    });
+  }, []);
 
   const handleTemplateChange = (templateKey) => {
     setSelectedTemplate(templateKey);
@@ -174,7 +209,8 @@ export default function WhatsAppSender({ order, onClose }) {
     setShowTemplateEditor(true);
   };
 
-  const saveTemplate = () => {
+  const saveTemplate = async () => {
+    setSaving(true);
     const updated = {
       ...templates,
       [editingTemplate]: {
@@ -183,14 +219,20 @@ export default function WhatsAppSender({ order, onClose }) {
       },
     };
     setTemplates(updated);
-    saveTemplates(updated);
-    // Refresh current message if editing current template
+
+    // Save to localStorage immediately
+    saveTemplatesLocal(updated);
+
+    // Save to Vercel KV (shared across devices)
+    const kvSaved = await saveTemplatesToKV(updated);
+
     if (editingTemplate === selectedTemplate) {
       setMessage(fillTemplate(editTemplateText, order));
     }
     setShowTemplateEditor(false);
     setEditingTemplate(null);
-    showToast('Template saved!', 'success');
+    setSaving(false);
+    showToast(kvSaved ? 'Template saved (synced to cloud)!' : 'Template saved locally!', 'success');
   };
 
   const resetTemplate = () => {
@@ -266,14 +308,10 @@ export default function WhatsAppSender({ order, onClose }) {
                 <h3 className="text-sm font-semibold text-blue-900">
                   Edit: {templates[editingTemplate]?.label}
                 </h3>
-                <div className="flex gap-2">
-                  <button
-                    onClick={resetTemplate}
-                    className="text-xs px-2 py-1 text-blue-600 hover:bg-blue-100 rounded"
-                  >
-                    Reset to Default
-                  </button>
-                </div>
+                <button onClick={resetTemplate}
+                  className="text-xs px-2 py-1 text-blue-600 hover:bg-blue-100 rounded">
+                  Reset to Default
+                </button>
               </div>
               <textarea
                 value={editTemplateText}
@@ -282,17 +320,14 @@ export default function WhatsAppSender({ order, onClose }) {
                 className="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono"
               />
               <div className="flex gap-2 mt-2">
-                <button
-                  onClick={saveTemplate}
-                  className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
-                >
-                  <Save className="w-3 h-3" />
-                  Save Template
+                <button onClick={saveTemplate} disabled={saving}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
+                  {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                  {saving ? 'Saving...' : 'Save Template'}
                 </button>
                 <button
                   onClick={() => { setShowTemplateEditor(false); setEditingTemplate(null); }}
-                  className="px-3 py-1.5 text-gray-600 hover:bg-gray-200 rounded-lg text-sm"
-                >
+                  className="px-3 py-1.5 text-gray-600 hover:bg-gray-200 rounded-lg text-sm">
                   Cancel
                 </button>
               </div>
@@ -313,27 +348,16 @@ export default function WhatsAppSender({ order, onClose }) {
 
           {/* Actions */}
           <div className="flex gap-3 pt-4 border-t border-gray-200">
-            <button
-              onClick={handleCopy}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 font-medium text-gray-700"
-            >
+            <button onClick={handleCopy}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 font-medium text-gray-700">
               {copied ? (
-                <>
-                  <Check className="w-4 h-4 text-green-600" />
-                  Copied!
-                </>
+                <><Check className="w-4 h-4 text-green-600" />Copied!</>
               ) : (
-                <>
-                  <Copy className="w-4 h-4" />
-                  Copy Message
-                </>
+                <><Copy className="w-4 h-4" />Copy Message</>
               )}
             </button>
-            <button
-              onClick={handleOpenWhatsApp}
-              disabled={!order.phone}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-            >
+            <button onClick={handleOpenWhatsApp} disabled={!order.phone}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed">
               <ExternalLink className="w-4 h-4" />
               Open WhatsApp
             </button>
@@ -348,4 +372,4 @@ export default function WhatsAppSender({ order, onClose }) {
 }
 
 // Export for bulk use
-export { fillTemplate, loadTemplates, ST_COURIER_TRACKING_URL };
+export { fillTemplate, loadTemplatesLocal as loadTemplates, ST_COURIER_TRACKING_URL };

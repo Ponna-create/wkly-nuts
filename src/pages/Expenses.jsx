@@ -3,8 +3,9 @@ import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
 import {
   Plus, Search, Filter, X, Edit2, Trash2, Receipt,
-  IndianRupee, Calendar, TrendingUp, ChevronDown, ChevronUp
+  IndianRupee, Calendar, TrendingUp, ChevronDown, ChevronUp, FileSpreadsheet
 } from 'lucide-react';
+import BillCSVImport from '../components/BillCSVImport';
 
 const CATEGORIES = [
   { value: 'raw_materials', label: 'Raw Materials' },
@@ -30,6 +31,7 @@ export default function Expenses() {
   const [search, setSearch] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
   const [expandedId, setExpandedId] = useState(null);
+  const [showCSVImport, setShowCSVImport] = useState(false);
 
   const loadExpenses = useCallback(async () => {
     setLoading(true);
@@ -132,13 +134,23 @@ export default function Expenses() {
             {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
           </select>
         </div>
-        <button
-          onClick={() => { setEditingExpense(null); setShowForm(true); }}
-          className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 text-sm font-medium"
-        >
-          <Plus className="w-4 h-4" />
-          Add Expense
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowCSVImport(true)}
+            className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
+            title="Import expenses from CSV (use ChatGPT/Gemini to convert bills)"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            Import Bill
+          </button>
+          <button
+            onClick={() => { setEditingExpense(null); setShowForm(true); }}
+            className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 text-sm font-medium"
+          >
+            <Plus className="w-4 h-4" />
+            Add Expense
+          </button>
+        </div>
       </div>
 
       {/* Expense List */}
@@ -246,6 +258,14 @@ export default function Expenses() {
             setShowForm(false);
             setEditingExpense(null);
           }}
+        />
+      )}
+
+      {showCSVImport && (
+        <BillCSVImport
+          type="expense"
+          onClose={() => setShowCSVImport(false)}
+          onImportComplete={() => loadExpenses()}
         />
       )}
     </div>

@@ -3,8 +3,9 @@ import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
 import {
   Plus, Search, X, Edit2, Trash2, Package, ChevronDown, ChevronUp,
-  IndianRupee, Truck, CheckCircle, Clock, AlertCircle
+  IndianRupee, Truck, CheckCircle, Clock, AlertCircle, FileSpreadsheet
 } from 'lucide-react';
+import BillCSVImport from '../components/BillCSVImport';
 
 const STATUS_CONFIG = {
   draft: { label: 'Draft', color: 'bg-gray-100 text-gray-700', icon: Clock },
@@ -21,6 +22,7 @@ export default function PurchaseOrders() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [showCSVImport, setShowCSVImport] = useState(false);
   const [editingPO, setEditingPO] = useState(null);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
@@ -100,10 +102,17 @@ export default function PurchaseOrders() {
             {Object.entries(STATUS_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
           </select>
         </div>
-        <button onClick={() => { setEditingPO(null); setShowForm(true); }}
-          className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 text-sm font-medium">
-          <Plus className="w-4 h-4" /> New PO
-        </button>
+        <div className="flex gap-2">
+          <button onClick={() => setShowCSVImport(true)}
+            className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
+            title="Import POs from CSV (use ChatGPT/Gemini to convert bills)">
+            <FileSpreadsheet className="w-4 h-4" /> Import Bill
+          </button>
+          <button onClick={() => { setEditingPO(null); setShowForm(true); }}
+            className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 text-sm font-medium">
+            <Plus className="w-4 h-4" /> New PO
+          </button>
+        </div>
       </div>
 
       {/* PO List */}
@@ -242,6 +251,14 @@ export default function PurchaseOrders() {
             setShowForm(false);
             setEditingPO(null);
           }}
+        />
+      )}
+
+      {showCSVImport && (
+        <BillCSVImport
+          type="purchase_order"
+          onClose={() => setShowCSVImport(false)}
+          onImportComplete={() => loadOrders()}
         />
       )}
     </div>
