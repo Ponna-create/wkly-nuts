@@ -2147,5 +2147,141 @@ export const dbService = {
       console.error('Error deleting purchase order:', error);
       return { error };
     }
+  },
+
+  // ==========================================
+  // PRODUCTION RUNS
+  // ==========================================
+
+  async getProductionRuns() {
+    if (!isSupabaseAvailable()) return { data: [], error: null };
+    try {
+      const { data, error } = await supabase
+        .from('production_runs')
+        .select('*')
+        .order('batch_date', { ascending: false });
+      if (error) throw error;
+      return { data: data || [], error: null };
+    } catch (error) {
+      console.error('Error fetching production runs:', error);
+      return { data: [], error };
+    }
+  },
+
+  async createProductionRun(run) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    try {
+      const { data: seqData } = await supabase.rpc('nextval', { name: 'production_run_number_seq' });
+      const runNumber = `PR-${new Date().getFullYear()}-${String(seqData || 1).padStart(5, '0')}`;
+
+      // Get SKU instance numbers if quantity > 0
+      let instanceStart = null;
+      let instanceEnd = null;
+      if (run.plannedQuantity > 0 && run.skuCode) {
+        const dateStr = (run.batchDate || new Date().toISOString().split('T')[0]).replace(/-/g, '').slice(4); // MMDD
+        try {
+          const { data: instanceData } = await supabase.rpc('get_next_sku_instance', {
+            p_sku_code: run.skuCode,
+            p_date: run.batchDate || new Date().toISOString().split('T')[0],
+            p_quantity: run.plannedQuantity,
+          });
+          if (instanceData && instanceData[0]) {
+            const year = (run.batchDate || new Date().toISOString().split('T')[0]).slice(0, 4);
+            instanceStart = `${run.skuCode}-${year}-${dateStr}-${String(instanceData[0].start_num).padStart(3, '0')}`;
+            instanceEnd = `${run.skuCode}-${year}-${dateStr}-${String(instanceData[0].end_num).padStart(3, '0')}`;
+          }
+        } catch (e) {
+          console.warn('Could not generate SKU instance numbers:', e);
+        }
+      }
+
+      const { data, error } = await supabase
+        .from('production_runs')
+        .insert([{
+          run_number: runNumber,
+          sku_id: run.skuId,
+          sku_name: run.skuName,
+          sku_code: run.skuCode,
+          batch_date: run.batchDate || new Date().toISOString().split('T')[0],
+          planned_quantity: run.plannedQuantity || 0,
+          actual_quantity: run.actualQuantity || 0,
+          pack_type: run.packType || 'weekly',
+          status: run.status || 'planned',
+          ingredients_used: run.ingredientsUsed || [],
+          packaging_used: run.packagingUsed || [],
+          instance_start: instanceStart,
+          instance_end: instanceEnd,
+          ingredient_cost: run.ingredientCost || 0,
+          packaging_cost: run.packagingCost || 0,
+          labor_cost: run.laborCost || 0,
+          total_cost: run.totalCost || 0,
+          cost_per_unit: run.costPerUnit || 0,
+          notes: run.notes,
+        }])
+        .select()
+        .single();
+
+      if (error) throw error;
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error creating production run:', error);
+      return { data: null, error };
+    }
+  },
+
+  async updateProductionRun(run) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    try {
+      const updateData = {
+        status: run.status,
+        actual_quantity: run.actual_quantity,
+        rejected_quantity: run.rejected_quantity,
+        ingredients_used: run.ingredients_used,
+        packaging_used: run.packaging_used,
+        quality_status: run.quality_status,
+        quality_notes: run.quality_notes,
+        ingredient_cost: run.ingredient_cost,
+        packaging_cost: run.packaging_cost,
+        labor_cost: run.labor_cost,
+        total_cost: run.total_cost,
+        cost_per_unit: run.cost_per_unit,
+        notes: run.notes,
+      };
+
+      if (run.status === 'in_progress' && !run.started_at) {
+        updateData.started_at = new Date().toISOString();
+      }
+      if (run.status === 'completed' && !run.completed_at) {
+        updateData.completed_at = new Date().toISOString();
+      }
+      if (run.quality_status && run.quality_status !== 'pending') {
+        updateData.quality_checked_at = new Date().toISOString();
+      }
+
+      const { data, error } = await supabase
+        .from('production_runs')
+        .update(updateData)
+        .eq('id', run.id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error updating production run:', error);
+      return { data: null, error };
+    }
+  },
+
+  async deleteProductionRun(id) {
+    if (!isSupabaseAvailable()) return { error: new Error('Supabase not configured') };
+    try {
+      const { error } = await supabase.from('production_runs').delete().eq('id', id);
+      if (error) throw error;
+      return { error: null };
+    } catch (error) {
+      console.error('Error deleting production run:', error);
+      return { error };
+    }
   }
 };

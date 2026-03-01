@@ -17,7 +17,8 @@ import {
   Users,
   Truck,
   Receipt,
-  FolderOpen
+  FolderOpen,
+  Factory
 } from 'lucide-react';
 import { logout } from './Auth';
 import logo from '../assets/wkly-nuts-logo.png';
@@ -27,6 +28,7 @@ const navigation = [
   { name: 'Sales Orders', href: '/orders', icon: Truck },
   { name: 'Purchase Orders', href: '/purchase-orders', icon: ShoppingCart },
   { name: 'Expenses', href: '/expenses', icon: Receipt },
+  { name: 'Production', href: '/production', icon: Factory },
   { name: 'Items', href: '/skus', icon: Package },
   { name: 'Inventory', href: '/inventory', icon: Warehouse },
   { name: 'Sales', href: '/sales', icon: TrendingUp },

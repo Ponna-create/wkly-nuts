@@ -59,6 +59,7 @@ const initialState = {
   expenses: [],
   purchaseOrders: [],
   documents: [],
+  productionRuns: [],
   toast: null,
 };
 
@@ -93,6 +94,7 @@ function appReducer(state, action) {
         expenses: action.payload.expenses || [],
         purchaseOrders: action.payload.purchaseOrders || [],
         documents: action.payload.documents || [],
+        productionRuns: action.payload.productionRuns || [],
       };
 
     // Sales Order actions
@@ -280,6 +282,16 @@ function appReducer(state, action) {
     case 'DELETE_DOCUMENT':
       return { ...state, documents: state.documents.filter(d => d.id !== action.payload) };
 
+    // Production Run actions
+    case 'LOAD_PRODUCTION_RUNS':
+      return { ...state, productionRuns: action.payload };
+    case 'ADD_PRODUCTION_RUN':
+      return { ...state, productionRuns: [...state.productionRuns, action.payload] };
+    case 'UPDATE_PRODUCTION_RUN':
+      return { ...state, productionRuns: state.productionRuns.map(r => r.id === action.payload.id ? action.payload : r) };
+    case 'DELETE_PRODUCTION_RUN':
+      return { ...state, productionRuns: state.productionRuns.filter(r => r.id !== action.payload) };
+
     // Toast actions
     case 'SHOW_TOAST':
       return { ...state, toast: action.payload };
@@ -436,7 +448,7 @@ export function AppProvider({ children }) {
         try {
           setUseDatabase(true);
           // Load all data from Supabase
-          const [vendorsRes, skusRes, pricingRes, targetsRes, customersRes, invoicesRes, inventoryRes, ingredientsRes, salesOrdersRes, expensesRes, purchaseOrdersRes, documentsRes] = await Promise.all([
+          const [vendorsRes, skusRes, pricingRes, targetsRes, customersRes, invoicesRes, inventoryRes, ingredientsRes, salesOrdersRes, expensesRes, purchaseOrdersRes, documentsRes, productionRunsRes] = await Promise.all([
             dbService.getVendors(),
             dbService.getSKUs(),
             dbService.getPricingStrategies(),
@@ -449,6 +461,7 @@ export function AppProvider({ children }) {
             dbService.getExpenses(),
             dbService.getPurchaseOrders(),
             dbService.getDocuments(),
+            dbService.getProductionRuns(),
           ]);
 
           dispatchReducer({
@@ -466,6 +479,7 @@ export function AppProvider({ children }) {
               expenses: expensesRes.data || [],
               purchaseOrders: purchaseOrdersRes.data || [],
               documents: documentsRes.data || [],
+              productionRuns: productionRunsRes.data || [],
             },
           });
         } catch (error) {

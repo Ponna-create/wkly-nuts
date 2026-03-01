@@ -19,6 +19,7 @@ import SalesOrders from './pages/SalesOrders';
 import Expenses from './pages/Expenses';
 import PurchaseOrders from './pages/PurchaseOrders';
 import Documents from './pages/Documents';
+import ProductionRuns from './pages/ProductionRuns';
 
 function App() {
   return (
@@ -32,6 +33,7 @@ function App() {
               <Route path="/purchase-orders" element={<ErrorBoundary><PurchaseOrders /></ErrorBoundary>} />
               <Route path="/expenses" element={<ErrorBoundary><Expenses /></ErrorBoundary>} />
               <Route path="/documents" element={<ErrorBoundary><Documents /></ErrorBoundary>} />
+              <Route path="/production" element={<ErrorBoundary><ProductionRuns /></ErrorBoundary>} />
               <Route path="/vendors" element={<ErrorBoundary><VendorManagement /></ErrorBoundary>} />
               <Route path="/ingredients" element={<ErrorBoundary><IngredientInventory /></ErrorBoundary>} />
               <Route path="/skus" element={<ErrorBoundary><SKUManagement /></ErrorBoundary>} />
