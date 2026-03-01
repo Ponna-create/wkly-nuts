@@ -1852,5 +1852,300 @@ export const dbService = {
       console.error('Error fetching orders by date:', error);
       return { data: [], error };
     }
+  },
+
+  // ==========================================
+  // EXPENSES
+  // ==========================================
+
+  async getExpenses() {
+    if (!isSupabaseAvailable()) return { data: [], error: null };
+    try {
+      const { data, error } = await supabase
+        .from('expenses')
+        .select('*')
+        .order('payment_date', { ascending: false });
+      if (error) throw error;
+      return { data: data || [], error: null };
+    } catch (error) {
+      console.error('Error fetching expenses:', error);
+      return { data: [], error };
+    }
+  },
+
+  async createExpense(expense) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    try {
+      const { data: seqData } = await supabase.rpc('nextval', { name: 'expense_number_seq' });
+      const expenseNumber = `EXP-${new Date().getFullYear()}-${String(seqData || 1).padStart(5, '0')}`;
+
+      const { data, error } = await supabase
+        .from('expenses')
+        .insert([{
+          expense_number: expenseNumber,
+          category: expense.category,
+          subcategory: expense.subcategory,
+          description: expense.description,
+          vendor_id: expense.vendorId,
+          vendor_name: expense.vendorName,
+          payee_name: expense.payeeName,
+          amount: expense.amount || 0,
+          gst_amount: expense.gstAmount || 0,
+          total_amount: expense.totalAmount || 0,
+          payment_method: expense.paymentMethod,
+          payment_status: expense.paymentStatus || 'paid',
+          transaction_id: expense.transactionId,
+          payment_date: expense.paymentDate || new Date().toISOString().split('T')[0],
+          bill_number: expense.billNumber,
+          bill_date: expense.billDate,
+          bill_image_url: expense.billImageUrl,
+          purchase_order_id: expense.purchaseOrderId,
+          sales_order_id: expense.salesOrderId,
+          notes: expense.notes,
+          is_recurring: expense.isRecurring || false,
+          recurring_frequency: expense.recurringFrequency,
+        }])
+        .select()
+        .single();
+
+      if (error) throw error;
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error creating expense:', error);
+      return { data: null, error };
+    }
+  },
+
+  async updateExpense(expense) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    try {
+      const { data, error } = await supabase
+        .from('expenses')
+        .update({
+          category: expense.category,
+          subcategory: expense.subcategory,
+          description: expense.description,
+          vendor_name: expense.vendor_name,
+          payee_name: expense.payee_name,
+          amount: expense.amount,
+          gst_amount: expense.gst_amount,
+          total_amount: expense.total_amount,
+          payment_method: expense.payment_method,
+          payment_status: expense.payment_status,
+          transaction_id: expense.transaction_id,
+          payment_date: expense.payment_date,
+          bill_number: expense.bill_number,
+          bill_date: expense.bill_date,
+          bill_image_url: expense.bill_image_url,
+          notes: expense.notes,
+        })
+        .eq('id', expense.id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error updating expense:', error);
+      return { data: null, error };
+    }
+  },
+
+  async deleteExpense(id) {
+    if (!isSupabaseAvailable()) return { error: new Error('Supabase not configured') };
+    try {
+      const { error } = await supabase.from('expenses').delete().eq('id', id);
+      if (error) throw error;
+      return { error: null };
+    } catch (error) {
+      console.error('Error deleting expense:', error);
+      return { error };
+    }
+  },
+
+  // ==========================================
+  // DOCUMENTS
+  // ==========================================
+
+  async getDocuments() {
+    if (!isSupabaseAvailable()) return { data: [], error: null };
+    try {
+      const { data, error } = await supabase
+        .from('documents')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return { data: data || [], error: null };
+    } catch (error) {
+      console.error('Error fetching documents:', error);
+      return { data: [], error };
+    }
+  },
+
+  async uploadDocument(file, metadata) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    try {
+      // Upload file to Supabase Storage
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+      const filePath = `documents/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('wkly-nuts-docs')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      // Get public URL
+      const { data: urlData } = supabase.storage
+        .from('wkly-nuts-docs')
+        .getPublicUrl(filePath);
+
+      // Save document record
+      const { data, error } = await supabase
+        .from('documents')
+        .insert([{
+          name: metadata.name || file.name,
+          description: metadata.description,
+          document_type: metadata.documentType || 'misc',
+          file_url: urlData.publicUrl,
+          file_name: file.name,
+          file_size: file.size,
+          file_type: file.type,
+          expense_id: metadata.expenseId,
+          vendor_id: metadata.vendorId,
+          sales_order_id: metadata.salesOrderId,
+          tags: metadata.tags || [],
+        }])
+        .select()
+        .single();
+
+      if (error) throw error;
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error uploading document:', error);
+      return { data: null, error };
+    }
+  },
+
+  async deleteDocument(id) {
+    if (!isSupabaseAvailable()) return { error: new Error('Supabase not configured') };
+    try {
+      const { error } = await supabase.from('documents').delete().eq('id', id);
+      if (error) throw error;
+      return { error: null };
+    } catch (error) {
+      console.error('Error deleting document:', error);
+      return { error };
+    }
+  },
+
+  // ==========================================
+  // PURCHASE ORDERS
+  // ==========================================
+
+  async getPurchaseOrders() {
+    if (!isSupabaseAvailable()) return { data: [], error: null };
+    try {
+      const { data, error } = await supabase
+        .from('purchase_orders')
+        .select('*')
+        .order('order_date', { ascending: false });
+      if (error) throw error;
+      return { data: data || [], error: null };
+    } catch (error) {
+      console.error('Error fetching purchase orders:', error);
+      return { data: [], error };
+    }
+  },
+
+  async createPurchaseOrder(po) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    try {
+      const { data: seqData } = await supabase.rpc('nextval', { name: 'purchase_order_number_seq' });
+      const poNumber = `PO-${new Date().getFullYear()}-${String(seqData || 1).padStart(5, '0')}`;
+
+      const { data, error } = await supabase
+        .from('purchase_orders')
+        .insert([{
+          po_number: poNumber,
+          vendor_id: po.vendorId,
+          vendor_name: po.vendorName,
+          order_date: po.orderDate || new Date().toISOString().split('T')[0],
+          expected_delivery_date: po.expectedDeliveryDate,
+          items: po.items || [],
+          subtotal: po.subtotal || 0,
+          gst_amount: po.gstAmount || 0,
+          shipping_charge: po.shippingCharge || 0,
+          total_amount: po.totalAmount || 0,
+          payment_method: po.paymentMethod,
+          payment_status: po.paymentStatus || 'pending',
+          amount_paid: po.amountPaid || 0,
+          payment_date: po.paymentDate,
+          transaction_id: po.transactionId,
+          status: po.status || 'ordered',
+          bill_number: po.billNumber,
+          bill_image_url: po.billImageUrl,
+          quality_notes: po.qualityNotes,
+          notes: po.notes,
+        }])
+        .select()
+        .single();
+
+      if (error) throw error;
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error creating purchase order:', error);
+      return { data: null, error };
+    }
+  },
+
+  async updatePurchaseOrder(po) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    try {
+      const { data, error } = await supabase
+        .from('purchase_orders')
+        .update({
+          vendor_name: po.vendor_name,
+          expected_delivery_date: po.expected_delivery_date,
+          actual_delivery_date: po.actual_delivery_date,
+          items: po.items,
+          subtotal: po.subtotal,
+          gst_amount: po.gst_amount,
+          shipping_charge: po.shipping_charge,
+          total_amount: po.total_amount,
+          payment_method: po.payment_method,
+          payment_status: po.payment_status,
+          amount_paid: po.amount_paid,
+          payment_date: po.payment_date,
+          transaction_id: po.transaction_id,
+          status: po.status,
+          bill_number: po.bill_number,
+          bill_image_url: po.bill_image_url,
+          quality_notes: po.quality_notes,
+          notes: po.notes,
+        })
+        .eq('id', po.id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error updating purchase order:', error);
+      return { data: null, error };
+    }
+  },
+
+  async deletePurchaseOrder(id) {
+    if (!isSupabaseAvailable()) return { error: new Error('Supabase not configured') };
+    try {
+      const { error } = await supabase.from('purchase_orders').delete().eq('id', id);
+      if (error) throw error;
+      return { error: null };
+    } catch (error) {
+      console.error('Error deleting purchase order:', error);
+      return { error };
+    }
   }
 };

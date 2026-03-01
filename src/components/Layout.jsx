@@ -15,7 +15,9 @@ import {
   Layers,
   LayoutDashboard,
   Users,
-  Truck
+  Truck,
+  Receipt,
+  FolderOpen
 } from 'lucide-react';
 import { logout } from './Auth';
 import logo from '../assets/wkly-nuts-logo.png';
@@ -23,13 +25,16 @@ import logo from '../assets/wkly-nuts-logo.png';
 const navigation = [
   { name: 'Home', href: '/', icon: Home },
   { name: 'Sales Orders', href: '/orders', icon: Truck },
+  { name: 'Purchase Orders', href: '/purchase-orders', icon: ShoppingCart },
+  { name: 'Expenses', href: '/expenses', icon: Receipt },
   { name: 'Items', href: '/skus', icon: Package },
   { name: 'Inventory', href: '/inventory', icon: Warehouse },
   { name: 'Sales', href: '/sales', icon: TrendingUp },
-  { name: 'Purchase', href: '/vendors', icon: ShoppingCart },
-  { name: 'Reports', href: '/vendor-comparison', icon: BarChart3 },
+  { name: 'Vendors', href: '/vendors', icon: ShoppingCart },
   { name: 'Customers', href: '/customers', icon: Users },
-  { name: 'Documents', href: '/invoices', icon: FileText },
+  { name: 'Documents', href: '/documents', icon: FolderOpen },
+  { name: 'Invoices', href: '/invoices', icon: FileText },
+  { name: 'Reports', href: '/vendor-comparison', icon: BarChart3 },
 ];
 
 export default function Layout({ children }) {

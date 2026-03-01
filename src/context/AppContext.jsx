@@ -56,6 +56,9 @@ const initialState = {
   inventory: [],
   ingredients: [],
   salesOrders: [],
+  expenses: [],
+  purchaseOrders: [],
+  documents: [],
   toast: null,
 };
 
@@ -87,6 +90,9 @@ function appReducer(state, action) {
         invoices: action.payload.invoices || [],
         inventory: action.payload.inventory || [],
         salesOrders: action.payload.salesOrders || [],
+        expenses: action.payload.expenses || [],
+        purchaseOrders: action.payload.purchaseOrders || [],
+        documents: action.payload.documents || [],
       };
 
     // Sales Order actions
@@ -246,6 +252,34 @@ function appReducer(state, action) {
         )
       };
 
+    // Expense actions
+    case 'LOAD_EXPENSES':
+      return { ...state, expenses: action.payload };
+    case 'ADD_EXPENSE':
+      return { ...state, expenses: [...state.expenses, action.payload] };
+    case 'UPDATE_EXPENSE':
+      return { ...state, expenses: state.expenses.map(e => e.id === action.payload.id ? action.payload : e) };
+    case 'DELETE_EXPENSE':
+      return { ...state, expenses: state.expenses.filter(e => e.id !== action.payload) };
+
+    // Purchase Order actions
+    case 'LOAD_PURCHASE_ORDERS':
+      return { ...state, purchaseOrders: action.payload };
+    case 'ADD_PURCHASE_ORDER':
+      return { ...state, purchaseOrders: [...state.purchaseOrders, action.payload] };
+    case 'UPDATE_PURCHASE_ORDER':
+      return { ...state, purchaseOrders: state.purchaseOrders.map(p => p.id === action.payload.id ? action.payload : p) };
+    case 'DELETE_PURCHASE_ORDER':
+      return { ...state, purchaseOrders: state.purchaseOrders.filter(p => p.id !== action.payload) };
+
+    // Document actions
+    case 'LOAD_DOCUMENTS':
+      return { ...state, documents: action.payload };
+    case 'ADD_DOCUMENT':
+      return { ...state, documents: [...state.documents, action.payload] };
+    case 'DELETE_DOCUMENT':
+      return { ...state, documents: state.documents.filter(d => d.id !== action.payload) };
+
     // Toast actions
     case 'SHOW_TOAST':
       return { ...state, toast: action.payload };
@@ -402,7 +436,7 @@ export function AppProvider({ children }) {
         try {
           setUseDatabase(true);
           // Load all data from Supabase
-          const [vendorsRes, skusRes, pricingRes, targetsRes, customersRes, invoicesRes, inventoryRes, ingredientsRes, salesOrdersRes] = await Promise.all([
+          const [vendorsRes, skusRes, pricingRes, targetsRes, customersRes, invoicesRes, inventoryRes, ingredientsRes, salesOrdersRes, expensesRes, purchaseOrdersRes, documentsRes] = await Promise.all([
             dbService.getVendors(),
             dbService.getSKUs(),
             dbService.getPricingStrategies(),
@@ -410,8 +444,11 @@ export function AppProvider({ children }) {
             dbService.getCustomers(),
             dbService.getInvoices(),
             dbService.getInventory(),
-            dbService.getIngredients(), // Load ingredients
-            dbService.getSalesOrders(), // Load sales orders
+            dbService.getIngredients(),
+            dbService.getSalesOrders(),
+            dbService.getExpenses(),
+            dbService.getPurchaseOrders(),
+            dbService.getDocuments(),
           ]);
 
           dispatchReducer({
@@ -426,6 +463,9 @@ export function AppProvider({ children }) {
               inventory: inventoryRes.data || [],
               ingredients: ingredientsRes.data || [],
               salesOrders: salesOrdersRes.data || [],
+              expenses: expensesRes.data || [],
+              purchaseOrders: purchaseOrdersRes.data || [],
+              documents: documentsRes.data || [],
             },
           });
         } catch (error) {
