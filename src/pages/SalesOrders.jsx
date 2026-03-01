@@ -5,6 +5,7 @@ import { dbService } from '../services/supabase';
 import NewOrderForm from '../components/sales/NewOrderForm';
 import OrderDetailView from '../components/sales/OrderDetailView';
 import BulkTrackingEntry from '../components/sales/BulkTrackingEntry';
+import BulkWhatsAppSend from '../components/sales/BulkWhatsAppSend';
 import QRScanner from '../components/sales/QRScanner';
 import ZohoImport from '../components/sales/ZohoImport';
 
@@ -17,6 +18,7 @@ export default function SalesOrders() {
   const [showTrackingEntry, setShowTrackingEntry] = useState(false);
   const [showQRScanner, setShowQRScanner] = useState(false);
   const [showZohoImport, setShowZohoImport] = useState(false);
+  const [showBulkWhatsApp, setShowBulkWhatsApp] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [filterStatus, setFilterStatus] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
@@ -138,6 +140,14 @@ export default function SalesOrders() {
           >
             <Zap className="w-4 h-4" />
             Tracking
+          </button>
+          <button
+            onClick={() => setShowBulkWhatsApp(true)}
+            className="flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm font-medium"
+            title="Bulk send tracking via WhatsApp"
+          >
+            <MessageCircle className="w-4 h-4" />
+            Bulk WA
           </button>
           <button
             onClick={() => setShowZohoImport(true)}
@@ -320,6 +330,13 @@ export default function SalesOrders() {
         <ZohoImport
           onClose={() => setShowZohoImport(false)}
           onImportComplete={() => loadOrders()}
+        />
+      )}
+
+      {showBulkWhatsApp && (
+        <BulkWhatsAppSend
+          orders={orders}
+          onClose={() => setShowBulkWhatsApp(false)}
         />
       )}
     </div>

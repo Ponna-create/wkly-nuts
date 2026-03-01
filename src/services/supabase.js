@@ -2283,5 +2283,133 @@ export const dbService = {
       console.error('Error deleting production run:', error);
       return { error };
     }
-  }
+  },
+
+  // ==========================================
+  // PACKAGING MATERIALS
+  // ==========================================
+  async getPackagingMaterials() {
+    if (!isSupabaseAvailable()) return { data: [], error: null };
+    try {
+      const { data, error } = await supabase
+        .from('packaging_materials')
+        .select('*')
+        .order('category', { ascending: true })
+        .order('name', { ascending: true });
+      if (error) throw error;
+      return { data: data || [], error: null };
+    } catch (error) {
+      console.error('Error fetching packaging materials:', error);
+      return { data: [], error };
+    }
+  },
+
+  async createPackagingMaterial(material) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    try {
+      const { data, error } = await supabase
+        .from('packaging_materials')
+        .insert([{
+          name: material.name,
+          category: material.category || 'other',
+          unit: material.unit || 'pcs',
+          current_stock: material.current_stock || 0,
+          min_stock: material.min_stock || 0,
+          cost_per_unit: material.cost_per_unit || 0,
+          vendor_name: material.vendor_name,
+          notes: material.notes,
+        }])
+        .select()
+        .single();
+      if (error) throw error;
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error creating packaging material:', error);
+      return { data: null, error };
+    }
+  },
+
+  async updatePackagingMaterial(material) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    try {
+      const updateData = {};
+      if (material.name !== undefined) updateData.name = material.name;
+      if (material.category !== undefined) updateData.category = material.category;
+      if (material.unit !== undefined) updateData.unit = material.unit;
+      if (material.current_stock !== undefined) updateData.current_stock = material.current_stock;
+      if (material.min_stock !== undefined) updateData.min_stock = material.min_stock;
+      if (material.cost_per_unit !== undefined) updateData.cost_per_unit = material.cost_per_unit;
+      if (material.vendor_name !== undefined) updateData.vendor_name = material.vendor_name;
+      if (material.notes !== undefined) updateData.notes = material.notes;
+      if (material.last_purchase_date !== undefined) updateData.last_purchase_date = material.last_purchase_date;
+      if (material.last_purchase_qty !== undefined) updateData.last_purchase_qty = material.last_purchase_qty;
+      if (material.last_purchase_cost !== undefined) updateData.last_purchase_cost = material.last_purchase_cost;
+
+      const { data, error } = await supabase
+        .from('packaging_materials')
+        .update(updateData)
+        .eq('id', material.id)
+        .select()
+        .single();
+      if (error) throw error;
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error updating packaging material:', error);
+      return { data: null, error };
+    }
+  },
+
+  async deletePackagingMaterial(id) {
+    if (!isSupabaseAvailable()) return { error: new Error('Supabase not configured') };
+    try {
+      const { error } = await supabase.from('packaging_materials').delete().eq('id', id);
+      if (error) throw error;
+      return { error: null };
+    } catch (error) {
+      console.error('Error deleting packaging material:', error);
+      return { error };
+    }
+  },
+
+  // Packaging Transactions
+  async getPackagingTransactions() {
+    if (!isSupabaseAvailable()) return { data: [], error: null };
+    try {
+      const { data, error } = await supabase
+        .from('packaging_transactions')
+        .select('*')
+        .order('transaction_date', { ascending: false })
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return { data: data || [], error: null };
+    } catch (error) {
+      console.error('Error fetching packaging transactions:', error);
+      return { data: [], error };
+    }
+  },
+
+  async createPackagingTransaction(txn) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    try {
+      const { data, error } = await supabase
+        .from('packaging_transactions')
+        .insert([{
+          material_id: txn.material_id,
+          type: txn.type || 'purchase',
+          quantity: txn.quantity || 0,
+          unit_cost: txn.unit_cost || 0,
+          total_cost: txn.total_cost || 0,
+          production_run_id: txn.production_run_id || null,
+          reference_note: txn.reference_note,
+          transaction_date: txn.transaction_date || new Date().toISOString().split('T')[0],
+        }])
+        .select()
+        .single();
+      if (error) throw error;
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error creating packaging transaction:', error);
+      return { data: null, error };
+    }
+  },
 };

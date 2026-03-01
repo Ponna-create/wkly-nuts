@@ -18,7 +18,8 @@ import {
   Truck,
   Receipt,
   FolderOpen,
-  Factory
+  Factory,
+  Box
 } from 'lucide-react';
 import { logout } from './Auth';
 import logo from '../assets/wkly-nuts-logo.png';
@@ -29,6 +30,7 @@ const navigation = [
   { name: 'Purchase Orders', href: '/purchase-orders', icon: ShoppingCart },
   { name: 'Expenses', href: '/expenses', icon: Receipt },
   { name: 'Production', href: '/production', icon: Factory },
+  { name: 'Packaging', href: '/packaging', icon: Box },
   { name: 'Items', href: '/skus', icon: Package },
   { name: 'Inventory', href: '/inventory', icon: Warehouse },
   { name: 'Sales', href: '/sales', icon: TrendingUp },
@@ -36,7 +38,7 @@ const navigation = [
   { name: 'Customers', href: '/customers', icon: Users },
   { name: 'Documents', href: '/documents', icon: FolderOpen },
   { name: 'Invoices', href: '/invoices', icon: FileText },
-  { name: 'Reports', href: '/vendor-comparison', icon: BarChart3 },
+  { name: 'Reports', href: '/reports', icon: BarChart3 },
 ];
 
 export default function Layout({ children }) {

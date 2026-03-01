@@ -20,6 +20,8 @@ import Expenses from './pages/Expenses';
 import PurchaseOrders from './pages/PurchaseOrders';
 import Documents from './pages/Documents';
 import ProductionRuns from './pages/ProductionRuns';
+import PackagingMaterials from './pages/PackagingMaterials';
+import Reports from './pages/Reports';
 
 function App() {
   return (
@@ -34,6 +36,7 @@ function App() {
               <Route path="/expenses" element={<ErrorBoundary><Expenses /></ErrorBoundary>} />
               <Route path="/documents" element={<ErrorBoundary><Documents /></ErrorBoundary>} />
               <Route path="/production" element={<ErrorBoundary><ProductionRuns /></ErrorBoundary>} />
+              <Route path="/packaging" element={<ErrorBoundary><PackagingMaterials /></ErrorBoundary>} />
               <Route path="/vendors" element={<ErrorBoundary><VendorManagement /></ErrorBoundary>} />
               <Route path="/ingredients" element={<ErrorBoundary><IngredientInventory /></ErrorBoundary>} />
               <Route path="/skus" element={<ErrorBoundary><SKUManagement /></ErrorBoundary>} />
@@ -43,6 +46,7 @@ function App() {
               <Route path="/customers" element={<ErrorBoundary><CustomerManagement /></ErrorBoundary>} />
               <Route path="/inventory" element={<ErrorBoundary><InventoryManagement /></ErrorBoundary>} />
               <Route path="/invoices" element={<ErrorBoundary><InvoiceManagement /></ErrorBoundary>} />
+              <Route path="/reports" element={<ErrorBoundary><Reports /></ErrorBoundary>} />
             </Routes>
           </Layout>
           <Toast />
