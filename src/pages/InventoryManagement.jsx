@@ -1,355 +1,372 @@
-import React, { useState, useMemo } from 'react';
-import { Plus, Edit, Trash2, Search, X, Package, AlertTriangle, CheckCircle } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Plus, Edit, Trash2, Search, X, Package, AlertTriangle, CheckCircle, Layers, Leaf, Box } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { dbService } from '../services/supabase';
 
 export default function InventoryManagement() {
   const { state, dispatch, showToast } = useApp();
   const { inventory, skus } = state;
+  const [activeTab, setActiveTab] = useState('finished');
   const [showForm, setShowForm] = useState(false);
   const [editingInventory, setEditingInventory] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [formData, setFormData] = useState({
-    skuId: '',
-    weeklyPacksAvailable: '',
-    monthlyPacksAvailable: '',
-    notes: '',
-  });
+  const [formData, setFormData] = useState({ skuId: '', weeklyPacksAvailable: '', monthlyPacksAvailable: '', notes: '' });
 
-  // Get SKUs that don't have inventory yet
+  // Raw materials & packaging state
+  const [ingredients, setIngredients] = useState([]);
+  const [packagingMaterials, setPackagingMaterials] = useState([]);
+  const [loadingExtra, setLoadingExtra] = useState(true);
+
+  useEffect(() => {
+    loadExtraData();
+  }, []);
+
+  const loadExtraData = async () => {
+    setLoadingExtra(true);
+    const [ingRes, pkgRes] = await Promise.all([
+      dbService.getIngredients(),
+      dbService.getPackagingMaterials(),
+    ]);
+    setIngredients(ingRes.data || []);
+    setPackagingMaterials(pkgRes.data || []);
+    setLoadingExtra(false);
+  };
+
   const skusWithoutInventory = useMemo(() => {
     const inventorySkuIds = new Set(inventory.map(inv => inv.skuId));
     return skus.filter(sku => !inventorySkuIds.has(sku.id));
   }, [skus, inventory]);
 
-  const resetForm = () => {
-    setFormData({
-      skuId: '',
-      weeklyPacksAvailable: '',
-      monthlyPacksAvailable: '',
-      notes: '',
-    });
-    setEditingInventory(null);
-    setShowForm(false);
-  };
+  const resetForm = () => { setFormData({ skuId: '', weeklyPacksAvailable: '', monthlyPacksAvailable: '', notes: '' }); setEditingInventory(null); setShowForm(false); };
 
   const handleSaveInventory = () => {
-    if (!formData.skuId) {
-      showToast('Please select a SKU', 'error');
-      return;
-    }
-
-    const inventoryData = {
+    if (!formData.skuId) { showToast('Please select a SKU', 'error'); return; }
+    const data = {
       skuId: formData.skuId,
       weeklyPacksAvailable: parseFloat(formData.weeklyPacksAvailable) || 0,
       monthlyPacksAvailable: parseFloat(formData.monthlyPacksAvailable) || 0,
       notes: formData.notes || '',
     };
-
     if (editingInventory) {
-      dispatch({
-        type: 'UPDATE_INVENTORY',
-        payload: { ...inventoryData, id: editingInventory.id },
-      });
-      showToast('Stock updated successfully', 'success');
+      dispatch({ type: 'UPDATE_INVENTORY', payload: { ...data, id: editingInventory.id } });
+      showToast('Stock updated', 'success');
     } else {
-      dispatch({
-        type: 'ADD_INVENTORY',
-        payload: { ...inventoryData, id: Date.now() + Math.random() },
-      });
-      showToast('Stock added successfully', 'success');
+      dispatch({ type: 'ADD_INVENTORY', payload: { ...data, id: Date.now() + Math.random() } });
+      showToast('Stock added', 'success');
     }
-
     resetForm();
   };
 
   const handleEdit = (inv) => {
-    setFormData({
-      skuId: inv.skuId,
-      weeklyPacksAvailable: inv.weeklyPacksAvailable.toString(),
-      monthlyPacksAvailable: inv.monthlyPacksAvailable.toString(),
-      notes: inv.notes || '',
-    });
+    setFormData({ skuId: inv.skuId, weeklyPacksAvailable: inv.weeklyPacksAvailable.toString(), monthlyPacksAvailable: inv.monthlyPacksAvailable.toString(), notes: inv.notes || '' });
     setEditingInventory(inv);
     setShowForm(true);
   };
 
-  const handleDelete = (inventoryId) => {
-    if (window.confirm('Are you sure you want to delete this inventory record? This action cannot be undone.')) {
-      dispatch({ type: 'DELETE_INVENTORY', payload: inventoryId });
-      showToast('Inventory record deleted', 'success');
+  const handleDelete = (id) => {
+    if (window.confirm('Delete this inventory record?')) {
+      dispatch({ type: 'DELETE_INVENTORY', payload: id });
+      showToast('Deleted', 'success');
     }
   };
 
-  // Get stock status
   const getStockStatus = (weekly, monthly) => {
     const total = weekly + monthly;
     if (total === 0) return { label: 'Out of Stock', color: 'bg-red-100 text-red-800', icon: AlertTriangle };
     if (total < 5) return { label: 'Low Stock', color: 'bg-yellow-100 text-yellow-800', icon: AlertTriangle };
-    if (total < 10) return { label: 'Medium Stock', color: 'bg-blue-100 text-blue-800', icon: CheckCircle };
+    if (total < 10) return { label: 'Medium', color: 'bg-blue-100 text-blue-800', icon: CheckCircle };
     return { label: 'In Stock', color: 'bg-green-100 text-green-800', icon: CheckCircle };
   };
 
-  // Filter inventory by search term
   const filteredInventory = useMemo(() => {
     if (!searchTerm) return inventory;
     const term = searchTerm.toLowerCase();
-    return inventory.filter(inv => 
-      inv.sku?.name?.toLowerCase().includes(term) ||
-      inv.sku?.description?.toLowerCase().includes(term)
-    );
+    return inventory.filter(inv => inv.sku?.name?.toLowerCase().includes(term));
   }, [inventory, searchTerm]);
 
-  // Create inventory map for quick lookup
-  const inventoryMap = useMemo(() => {
-    const map = new Map();
-    inventory.forEach(inv => {
-      map.set(inv.skuId, inv);
-    });
-    return map;
-  }, [inventory]);
+  // Summary stats
+  const totalFinishedGoods = inventory.reduce((s, i) => s + (i.weeklyPacksAvailable || 0) + (i.monthlyPacksAvailable || 0), 0);
+  const lowStockIngredients = ingredients.filter(i => i.current_stock_total <= (i.safety_stock_level || 0));
+  const lowStockPackaging = packagingMaterials.filter(p => (p.current_stock || 0) <= (p.min_stock || 0));
+
+  const tabs = [
+    { id: 'finished', label: 'Finished Goods', icon: Package, count: inventory.length, color: 'teal' },
+    { id: 'raw', label: 'Raw Materials', icon: Leaf, count: ingredients.length, color: 'amber' },
+    { id: 'packaging', label: 'Packaging', icon: Box, count: packagingMaterials.length, color: 'indigo' },
+  ];
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Inventory Management</h1>
-          <p className="text-gray-600 mt-1">Track stock levels for your SKUs</p>
+      {/* Summary Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+          <p className="text-sm text-gray-500">Finished Goods</p>
+          <p className="text-2xl font-bold text-teal-600">{totalFinishedGoods}</p>
+          <p className="text-xs text-gray-400">total packs</p>
         </div>
-        <button
-          onClick={() => setShowForm(true)}
-          className="btn-primary flex items-center gap-2"
-        >
-          <Plus className="w-5 h-5" />
-          Add Stock
-        </button>
+        <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+          <p className="text-sm text-gray-500">Raw Materials</p>
+          <p className="text-2xl font-bold text-amber-600">{ingredients.length}</p>
+          <p className="text-xs text-gray-400">ingredients tracked</p>
+        </div>
+        <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+          <p className="text-sm text-gray-500">Packaging Items</p>
+          <p className="text-2xl font-bold text-indigo-600">{packagingMaterials.length}</p>
+          <p className="text-xs text-gray-400">materials tracked</p>
+        </div>
+        <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+          <p className="text-sm text-gray-500">Low Stock Alerts</p>
+          <p className="text-2xl font-bold text-red-600">{lowStockIngredients.length + lowStockPackaging.length}</p>
+          <p className="text-xs text-gray-400">items need attention</p>
+        </div>
       </div>
 
-      {/* Search Bar */}
-      {!showForm && inventory.length > 0 && (
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-          <input
-            type="text"
-            placeholder="Search by SKU name..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="input-field pl-10"
-          />
-        </div>
-      )}
+      {/* Tabs */}
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {tabs.map(tab => {
+          const Icon = tab.icon;
+          return (
+            <button key={tab.id} onClick={() => { setActiveTab(tab.id); setSearchTerm(''); }}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition ${
+                activeTab === tab.id
+                  ? `bg-${tab.color}-600 text-white`
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+              style={activeTab === tab.id ? { backgroundColor: tab.color === 'teal' ? '#0d9488' : tab.color === 'amber' ? '#d97706' : '#4f46e5' } : {}}>
+              <Icon className="w-4 h-4" />
+              {tab.label} ({tab.count})
+            </button>
+          );
+        })}
+      </div>
 
-      {/* Stock Form */}
-      {showForm && (
-        <div className="card">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-xl font-bold text-gray-900">
-              {editingInventory ? 'Edit Stock' : 'Add Stock'}
-            </h2>
-            <button onClick={resetForm} className="text-gray-500 hover:text-gray-700">
-              <X className="w-6 h-6" />
+      {/* Finished Goods Tab */}
+      {activeTab === 'finished' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="relative flex-1 max-w-md">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input type="text" placeholder="Search SKU..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-teal-500" />
+            </div>
+            <button onClick={() => setShowForm(true)} className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 text-sm font-medium">
+              <Plus className="w-4 h-4" /> Add Stock
             </button>
           </div>
 
-          <div className="space-y-4">
-            <div>
-              <label className="label">
-                SKU <span className="text-red-500">*</span>
-              </label>
-              <select
-                value={formData.skuId}
-                onChange={(e) => setFormData({ ...formData, skuId: e.target.value })}
-                className="input-field"
-                disabled={!!editingInventory}
-              >
-                <option value="">Select SKU</option>
-                {(editingInventory 
-                  ? skus.filter(s => s.id === editingInventory.skuId)
-                  : skusWithoutInventory
-                ).map((sku) => (
-                  <option key={sku.id} value={sku.id}>
-                    {sku.name}
-                  </option>
-                ))}
-              </select>
-              {editingInventory && (
-                <p className="text-xs text-gray-500 mt-1">SKU cannot be changed after creation</p>
-              )}
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="label">
-                  Weekly Packs Available
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={formData.weeklyPacksAvailable}
-                  onChange={(e) => setFormData({ ...formData, weeklyPacksAvailable: e.target.value })}
-                  className="input-field"
-                  placeholder="0"
-                />
+          {showForm && (
+            <div className="bg-white rounded-lg border p-4 space-y-4">
+              <div className="flex justify-between items-center">
+                <h3 className="font-semibold">{editingInventory ? 'Edit Stock' : 'Add Stock'}</h3>
+                <button onClick={resetForm}><X className="w-5 h-5 text-gray-400" /></button>
               </div>
-              <div>
-                <label className="label">
-                  Monthly Packs Available
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={formData.monthlyPacksAvailable}
-                  onChange={(e) => setFormData({ ...formData, monthlyPacksAvailable: e.target.value })}
-                  className="input-field"
-                  placeholder="0"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">SKU</label>
+                  <select value={formData.skuId} onChange={e => setFormData({ ...formData, skuId: e.target.value })}
+                    className="w-full border rounded-lg px-3 py-2 text-sm" disabled={!!editingInventory}>
+                    <option value="">Select SKU</option>
+                    {(editingInventory ? skus.filter(s => s.id === editingInventory.skuId) : skusWithoutInventory).map(s =>
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    )}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Weekly Packs</label>
+                  <input type="number" min="0" value={formData.weeklyPacksAvailable} onChange={e => setFormData({ ...formData, weeklyPacksAvailable: e.target.value })}
+                    className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="0" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Monthly Packs</label>
+                  <input type="number" min="0" value={formData.monthlyPacksAvailable} onChange={e => setFormData({ ...formData, monthlyPacksAvailable: e.target.value })}
+                    className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="0" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                  <input type="text" value={formData.notes} onChange={e => setFormData({ ...formData, notes: e.target.value })}
+                    className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Optional notes" />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2">
+                <button onClick={resetForm} className="px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 rounded-lg">Cancel</button>
+                <button onClick={handleSaveInventory} className="px-4 py-1.5 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700">
+                  {editingInventory ? 'Update' : 'Add'}
+                </button>
               </div>
             </div>
+          )}
 
-            <div>
-              <label className="label">Notes (Optional)</label>
-              <textarea
-                value={formData.notes}
-                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                className="input-field"
-                rows="3"
-                placeholder="Any additional notes about this stock..."
-              />
+          {filteredInventory.length === 0 ? (
+            <div className="text-center py-12 bg-white rounded-lg border">
+              <Package className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+              <p className="text-gray-500">No finished goods inventory</p>
+              <button onClick={() => setShowForm(true)} className="mt-3 text-teal-600 text-sm font-medium">+ Add Stock</button>
             </div>
-
-            <div className="flex justify-end gap-3 pt-4 border-t">
-              <button onClick={resetForm} className="btn-secondary">
-                Cancel
-              </button>
-              <button onClick={handleSaveInventory} className="btn-primary">
-                {editingInventory ? 'Update Stock' : 'Add Stock'}
-              </button>
+          ) : (
+            <div className="bg-white rounded-lg border overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-gray-50">
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">SKU</th>
+                    <th className="text-right py-3 px-4 font-semibold text-gray-700">Weekly</th>
+                    <th className="text-right py-3 px-4 font-semibold text-gray-700">Monthly</th>
+                    <th className="text-right py-3 px-4 font-semibold text-gray-700">Total</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Status</th>
+                    <th className="text-right py-3 px-4 font-semibold text-gray-700">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredInventory.map(inv => {
+                    const total = (inv.weeklyPacksAvailable || 0) + (inv.monthlyPacksAvailable || 0);
+                    const status = getStockStatus(inv.weeklyPacksAvailable, inv.monthlyPacksAvailable);
+                    const StatusIcon = status.icon;
+                    return (
+                      <tr key={inv.id} className="border-b border-gray-100 hover:bg-gray-50">
+                        <td className="py-3 px-4 font-medium">{inv.sku?.name || 'Unknown'}</td>
+                        <td className="py-3 px-4 text-right">{(inv.weeklyPacksAvailable || 0).toFixed(0)}</td>
+                        <td className="py-3 px-4 text-right">{(inv.monthlyPacksAvailable || 0).toFixed(0)}</td>
+                        <td className="py-3 px-4 text-right font-bold">{total.toFixed(0)}</td>
+                        <td className="py-3 px-4">
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${status.color}`}>
+                            <StatusIcon className="w-3 h-3" /> {status.label}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="flex justify-end gap-1">
+                            <button onClick={() => handleEdit(inv)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"><Edit className="w-4 h-4" /></button>
+                            <button onClick={() => handleDelete(inv.id)} className="p-1.5 text-red-600 hover:bg-red-50 rounded"><Trash2 className="w-4 h-4" /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-          </div>
+          )}
         </div>
       )}
 
-      {/* Inventory List */}
-      {!showForm && (
-        <div className="card">
-          {inventory.length === 0 ? (
-            <div className="text-center py-12">
-              <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">No inventory records yet</h3>
-              <p className="text-gray-600 mb-4">Start tracking stock by adding your first inventory record</p>
-              <button onClick={() => setShowForm(true)} className="btn-primary">
-                <Plus className="w-5 h-5 inline mr-2" />
-                Add Stock
-              </button>
+      {/* Raw Materials Tab */}
+      {activeTab === 'raw' && (
+        <div className="space-y-4">
+          {loadingExtra ? (
+            <div className="text-center py-12 text-gray-500">Loading raw materials...</div>
+          ) : ingredients.length === 0 ? (
+            <div className="text-center py-12 bg-white rounded-lg border">
+              <Leaf className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+              <p className="text-gray-500">No raw materials tracked yet</p>
+              <p className="text-xs text-gray-400 mt-1">Raw materials are auto-added when you receive a Purchase Order</p>
             </div>
           ) : (
-            <>
-              <div className="mb-4">
-                <h2 className="text-lg font-semibold text-gray-900">
-                  Stock Overview ({filteredInventory.length})
-                </h2>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-gray-200">
-                      <th className="text-left py-3 px-4 font-semibold text-gray-700">SKU</th>
-                      <th className="text-right py-3 px-4 font-semibold text-gray-700">Weekly Packs</th>
-                      <th className="text-right py-3 px-4 font-semibold text-gray-700">Monthly Packs</th>
-                      <th className="text-right py-3 px-4 font-semibold text-gray-700">Total Packs</th>
-                      <th className="text-left py-3 px-4 font-semibold text-gray-700">Status</th>
-                      <th className="text-left py-3 px-4 font-semibold text-gray-700">Last Updated</th>
-                      <th className="text-right py-3 px-4 font-semibold text-gray-700">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredInventory.map((inv) => {
-                      const total = inv.weeklyPacksAvailable + inv.monthlyPacksAvailable;
-                      const status = getStockStatus(inv.weeklyPacksAvailable, inv.monthlyPacksAvailable);
-                      const StatusIcon = status.icon;
-                      
-                      return (
-                        <tr key={inv.id} className="border-b border-gray-100 hover:bg-gray-50">
-                          <td className="py-4 px-4">
-                            <div className="font-medium text-gray-900">{inv.sku?.name || 'Unknown SKU'}</div>
-                            {inv.sku?.description && (
-                              <div className="text-xs text-gray-500 mt-1">{inv.sku.description}</div>
-                            )}
-                          </td>
-                          <td className="py-4 px-4 text-right">
-                            <span className="font-medium">{inv.weeklyPacksAvailable.toFixed(2)}</span>
-                          </td>
-                          <td className="py-4 px-4 text-right">
-                            <span className="font-medium">{inv.monthlyPacksAvailable.toFixed(2)}</span>
-                          </td>
-                          <td className="py-4 px-4 text-right">
-                            <span className="font-bold text-gray-900">{total.toFixed(2)}</span>
-                          </td>
-                          <td className="py-4 px-4">
-                            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${status.color}`}>
-                              <StatusIcon className="w-3 h-3" />
-                              {status.label}
+            <div className="bg-white rounded-lg border overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-gray-50">
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Ingredient</th>
+                    <th className="text-right py-3 px-4 font-semibold text-gray-700">Stock</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Unit</th>
+                    <th className="text-right py-3 px-4 font-semibold text-gray-700">Safety Level</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Active Batches</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ingredients.map(ing => {
+                    const stock = parseFloat(ing.current_stock_total || 0);
+                    const safety = parseFloat(ing.safety_stock_level || 0);
+                    const isLow = stock <= safety;
+                    const activeBatches = (ing.ingredient_batches || []).filter(b => b.status === 'active');
+                    return (
+                      <tr key={ing.id} className={`border-b border-gray-100 ${isLow ? 'bg-red-50' : 'hover:bg-gray-50'}`}>
+                        <td className="py-3 px-4 font-medium">{ing.name}</td>
+                        <td className="py-3 px-4 text-right font-bold">{stock.toFixed(2)}</td>
+                        <td className="py-3 px-4 text-gray-500">{ing.unit || 'kg'}</td>
+                        <td className="py-3 px-4 text-right text-gray-500">{safety.toFixed(2)}</td>
+                        <td className="py-3 px-4">
+                          <span className="text-xs bg-gray-100 px-2 py-0.5 rounded">{activeBatches.length} batch{activeBatches.length !== 1 ? 'es' : ''}</span>
+                        </td>
+                        <td className="py-3 px-4">
+                          {isLow ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                              <AlertTriangle className="w-3 h-3" /> Low Stock
                             </span>
-                          </td>
-                          <td className="py-4 px-4 text-sm text-gray-600">
-                            {inv.lastUpdated 
-                              ? new Date(inv.lastUpdated).toLocaleDateString('en-IN')
-                              : 'Never'
-                            }
-                          </td>
-                          <td className="py-4 px-4">
-                            <div className="flex justify-end gap-2">
-                              <button
-                                onClick={() => handleEdit(inv)}
-                                className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                title="Edit"
-                              >
-                                <Edit className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={() => handleDelete(inv.id)}
-                                className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                title="Delete"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                              <CheckCircle className="w-3 h-3" /> OK
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
-              {/* SKUs without inventory */}
-              {skusWithoutInventory.length > 0 && (
-                <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                  <h3 className="text-sm font-semibold text-yellow-900 mb-2">
-                    SKUs without inventory records ({skusWithoutInventory.length})
-                  </h3>
-                  <p className="text-xs text-yellow-700 mb-2">
-                    These SKUs don't have stock tracking yet. Add inventory records to track their stock levels.
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {skusWithoutInventory.slice(0, 5).map((sku) => (
-                      <span key={sku.id} className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded">
-                        {sku.name}
-                      </span>
-                    ))}
-                    {skusWithoutInventory.length > 5 && (
-                      <span className="text-xs text-yellow-700">+{skusWithoutInventory.length - 5} more</span>
-                    )}
-                  </div>
-                </div>
-              )}
-            </>
+      {/* Packaging Tab */}
+      {activeTab === 'packaging' && (
+        <div className="space-y-4">
+          {loadingExtra ? (
+            <div className="text-center py-12 text-gray-500">Loading packaging materials...</div>
+          ) : packagingMaterials.length === 0 ? (
+            <div className="text-center py-12 bg-white rounded-lg border">
+              <Box className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+              <p className="text-gray-500">No packaging materials tracked yet</p>
+              <p className="text-xs text-gray-400 mt-1">Go to Packaging Materials page to add items</p>
+            </div>
+          ) : (
+            <div className="bg-white rounded-lg border overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-gray-50">
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Material</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Category</th>
+                    <th className="text-right py-3 px-4 font-semibold text-gray-700">Stock</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Unit</th>
+                    <th className="text-right py-3 px-4 font-semibold text-gray-700">Min Stock</th>
+                    <th className="text-right py-3 px-4 font-semibold text-gray-700">Cost/Unit</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {packagingMaterials.map(mat => {
+                    const stock = mat.current_stock || 0;
+                    const minStock = mat.min_stock || 0;
+                    const isLow = stock <= minStock;
+                    return (
+                      <tr key={mat.id} className={`border-b border-gray-100 ${isLow ? 'bg-red-50' : 'hover:bg-gray-50'}`}>
+                        <td className="py-3 px-4 font-medium">{mat.name}</td>
+                        <td className="py-3 px-4">
+                          <span className="text-xs bg-gray-100 px-2 py-0.5 rounded capitalize">{mat.category || 'other'}</span>
+                        </td>
+                        <td className="py-3 px-4 text-right font-bold">{stock}</td>
+                        <td className="py-3 px-4 text-gray-500">{mat.unit || 'pcs'}</td>
+                        <td className="py-3 px-4 text-right text-gray-500">{minStock}</td>
+                        <td className="py-3 px-4 text-right">{parseFloat(mat.cost_per_unit || 0).toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}</td>
+                        <td className="py-3 px-4">
+                          {isLow ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                              <AlertTriangle className="w-3 h-3" /> Low
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                              <CheckCircle className="w-3 h-3" /> OK
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}
     </div>
   );
 }
-

@@ -2574,4 +2574,214 @@ export const dbService = {
       return { error };
     }
   },
+
+  // ==========================================
+  // INVENTORY FLOW ORCHESTRATION
+  // ==========================================
+
+  // P2: PO Received → Stock-in raw materials
+  async stockInFromPurchaseOrder(po) {
+    const results = { success: 0, errors: [] };
+    const items = Array.isArray(po.items) ? po.items : [];
+    if (items.length === 0) return results;
+
+    for (const item of items) {
+      try {
+        const itemName = (item.ingredient_name || item.name || '').trim();
+        if (!itemName) continue;
+
+        // Find ingredient by name (case-insensitive)
+        let ingredient = null;
+        if (isSupabaseAvailable()) {
+          const { data } = await supabase
+            .from('ingredients')
+            .select('id, name')
+            .ilike('name', itemName)
+            .limit(1)
+            .maybeSingle();
+          ingredient = data;
+        }
+
+        // Create ingredient if not found
+        if (!ingredient && isSupabaseAvailable()) {
+          const { data: created } = await supabase
+            .from('ingredients')
+            .insert({ name: itemName, unit: item.unit || 'kg', current_stock_total: 0, safety_stock_level: 0 })
+            .select('id, name')
+            .single();
+          ingredient = created;
+        }
+
+        if (!ingredient) {
+          results.errors.push(`${itemName}: Could not find/create ingredient`);
+          continue;
+        }
+
+        // Add batch via existing function
+        const qty = parseFloat(item.quantity_kg || item.quantity || 0);
+        const price = parseFloat(item.unit_price || item.rate || 0);
+        await this.addIngredientBatch({
+          ingredientId: ingredient.id,
+          vendorId: po.vendor_id || null,
+          batchNumber: `${po.po_number || 'PO'}-${itemName}`,
+          quantity: qty,
+          price: price,
+          expiryDate: null,
+          receivedDate: new Date().toISOString().split('T')[0],
+        });
+        results.success++;
+      } catch (err) {
+        results.errors.push(`${item.ingredient_name || item.name}: ${err.message}`);
+      }
+    }
+    return results;
+  },
+
+  // P3: Production Completed → Deduct raw materials + packaging, add finished goods
+  async completeProductionRun(run) {
+    const results = { ingredientsDeducted: 0, packagingDeducted: 0, finishedGoodsAdded: false, errors: [] };
+
+    // 1. Deduct raw materials
+    for (const ing of (run.ingredients_used || [])) {
+      try {
+        const ingName = (ing.ingredient_name || ing.name || '').trim();
+        if (!ingName) continue;
+
+        const { data: ingredient } = await supabase
+          .from('ingredients')
+          .select('id')
+          .ilike('name', ingName)
+          .limit(1)
+          .maybeSingle();
+
+        if (ingredient) {
+          // Convert grams to kg if needed
+          let qty = parseFloat(ing.quantity_grams || ing.quantity || 0);
+          if (ing.quantity_grams) qty = qty / 1000;
+
+          if (qty > 0) {
+            const consumeResult = await this.consumeIngredientFIFO(ingredient.id, qty);
+            if (consumeResult.success) {
+              results.ingredientsDeducted++;
+            } else {
+              results.errors.push(`${ingName}: ${consumeResult.error || 'Insufficient stock'}`);
+            }
+          }
+        } else {
+          results.errors.push(`${ingName}: Ingredient not found in stock`);
+        }
+      } catch (err) {
+        results.errors.push(`Ingredient ${ing.ingredient_name || ing.name}: ${err.message}`);
+      }
+    }
+
+    // 2. Deduct packaging materials
+    for (const pkg of (run.packaging_used || [])) {
+      try {
+        const pkgName = (pkg.material_name || pkg.name || '').trim();
+        if (!pkgName) continue;
+
+        const { data: materials } = await supabase
+          .from('packaging_materials')
+          .select('id, current_stock')
+          .ilike('name', `%${pkgName}%`)
+          .limit(1);
+
+        if (materials && materials.length > 0) {
+          const mat = materials[0];
+          const qty = parseFloat(pkg.quantity || 0);
+          if (qty > 0) {
+            const newStock = Math.max(0, (mat.current_stock || 0) - qty);
+            await this.createPackagingTransaction({
+              material_id: mat.id,
+              type: 'usage',
+              quantity: qty,
+              production_run_id: run.id,
+              reference_note: `Production ${run.run_number || run.id}`,
+            });
+            await this.updatePackagingMaterial({ id: mat.id, current_stock: newStock });
+            results.packagingDeducted++;
+          }
+        }
+      } catch (err) {
+        results.errors.push(`Packaging ${pkg.material_name || pkg.name}: ${err.message}`);
+      }
+    }
+
+    // 3. Add finished goods to inventory
+    try {
+      const skuId = run.sku_id;
+      const qty = parseInt(run.actual_quantity) || 0;
+      const packType = run.pack_type || 'weekly';
+      if (skuId && qty > 0) {
+        await this.updateInventoryStock(skuId, packType, qty, 'add');
+        results.finishedGoodsAdded = true;
+      }
+    } catch (err) {
+      results.errors.push(`Finished goods: ${err.message}`);
+    }
+
+    return results;
+  },
+
+  // P4: Order Dispatched → Deduct finished goods
+  async deductInventoryForOrder(order) {
+    const results = { deducted: 0, warnings: [] };
+    const items = Array.isArray(order.items) ? order.items : [];
+    if (items.length === 0) return results;
+
+    for (const item of items) {
+      try {
+        const skuId = item.sku_id || item.skuId;
+        const packType = item.pack_type || item.packType || 'weekly';
+        const quantity = parseInt(item.quantity) || 1;
+        if (!skuId) continue;
+
+        // Check current stock
+        const currentRes = await this.getInventoryBySkuId(skuId);
+        const current = currentRes.data;
+        const available = current
+          ? (packType === 'weekly' ? (current.weeklyPacksAvailable || 0) : (current.monthlyPacksAvailable || 0))
+          : 0;
+
+        if (available < quantity) {
+          results.warnings.push(`${item.sku_name || item.skuName || 'SKU'} ${packType}: need ${quantity}, have ${available}`);
+        }
+
+        await this.updateInventoryStock(skuId, packType, quantity, 'subtract');
+        results.deducted++;
+      } catch (err) {
+        results.warnings.push(`${item.sku_name || item.skuName}: ${err.message}`);
+      }
+    }
+    return results;
+  },
+
+  // P1: Zoho Import helpers
+  async findOrderByZohoId(zohoOrderId) {
+    if (!isSupabaseAvailable() || !zohoOrderId) return null;
+    try {
+      const { data } = await supabase
+        .from('sales_orders')
+        .select('id, order_number')
+        .eq('zoho_order_id', zohoOrderId)
+        .maybeSingle();
+      return data;
+    } catch { return null; }
+  },
+
+  async findCustomerByPhone(phone) {
+    if (!isSupabaseAvailable() || !phone) return null;
+    try {
+      const cleaned = phone.replace(/\D/g, '').slice(-10);
+      if (cleaned.length < 10) return null;
+      const { data } = await supabase
+        .from('customers')
+        .select('*')
+        .like('phone', `%${cleaned}%`)
+        .limit(1)
+        .maybeSingle();
+      return data;
+    } catch { return null; }
+  },
 };

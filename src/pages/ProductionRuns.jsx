@@ -76,8 +76,21 @@ export default function ProductionRuns() {
 
   const handleStatusChange = async (run, newStatus) => {
     const updated = { ...run, status: newStatus };
+    if (newStatus === 'completed') updated.completed_at = new Date().toISOString();
     const { data, error } = await dbService.updateProductionRun(updated);
     if (error) { showToast('Failed to update status', 'error'); return; }
+
+    // When completed: deduct raw materials + packaging, add finished goods
+    if (newStatus === 'completed') {
+      const result = await dbService.completeProductionRun(run);
+      const msgs = [];
+      if (result.ingredientsDeducted > 0) msgs.push(`${result.ingredientsDeducted} raw materials deducted`);
+      if (result.packagingDeducted > 0) msgs.push(`${result.packagingDeducted} packaging items deducted`);
+      if (result.finishedGoodsAdded) msgs.push('Finished goods added to inventory');
+      if (msgs.length > 0) showToast(msgs.join(', '), 'success');
+      if (result.errors.length > 0) showToast(`Warnings: ${result.errors[0]}`, 'error');
+    }
+
     setRuns(prev => prev.map(r => r.id === run.id ? (data || { ...run, status: newStatus }) : r));
     showToast(`Status updated to ${getStatusInfo(newStatus).label}`);
   };

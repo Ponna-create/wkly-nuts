@@ -60,6 +60,16 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
     if (error) {
       showToast('Error updating status', 'error');
     } else {
+      // Deduct finished goods from inventory on dispatch
+      if (newStatus === 'dispatched') {
+        const invResult = await dbService.deductInventoryForOrder(currentOrder);
+        if (invResult.deducted > 0) {
+          showToast(`${invResult.deducted} item(s) deducted from inventory`, 'success');
+        }
+        if (invResult.warnings.length > 0) {
+          showToast(`Stock warning: ${invResult.warnings[0]}`, 'error');
+        }
+      }
       showToast(`Status updated to ${getStatusBadge(newStatus).label}`, 'success');
       setCurrentOrder(prev => ({ ...prev, status: newStatus }));
       onUpdate();

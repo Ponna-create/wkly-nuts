@@ -62,6 +62,18 @@ export default function PurchaseOrders() {
     if (newStatus === 'received') updates.actual_delivery_date = new Date().toISOString().split('T')[0];
     const { data, error } = await dbService.updatePurchaseOrder(updates);
     if (error) { showToast('Failed to update status', 'error'); return; }
+
+    // Stock-in raw materials when PO is received
+    if (newStatus === 'received') {
+      const stockResult = await dbService.stockInFromPurchaseOrder(po);
+      if (stockResult.success > 0) {
+        showToast(`${stockResult.success} ingredient(s) added to raw material stock`, 'success');
+      }
+      if (stockResult.errors.length > 0) {
+        showToast(`Stock warnings: ${stockResult.errors[0]}`, 'error');
+      }
+    }
+
     setOrders(prev => prev.map(o => o.id === po.id ? (data || updates) : o));
     showToast(`Status updated to ${STATUS_CONFIG[newStatus]?.label || newStatus}`);
   };
