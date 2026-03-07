@@ -207,6 +207,13 @@ export default function PricingStrategy() {
     (p) => String(p.skuId) === String(selectedSKU.id) && p.packType === 'monthly'
   ) : null;
 
+  // Price Book - group pricing by SKU
+  const priceBookData = skus.map(sku => {
+    const weekly = pricingStrategies.find(p => String(p.skuId) === String(sku.id) && p.packType === 'weekly');
+    const monthly = pricingStrategies.find(p => String(p.skuId) === String(sku.id) && p.packType === 'monthly');
+    return { sku, weekly, monthly };
+  });
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -214,6 +221,68 @@ export default function PricingStrategy() {
         <h1 className="text-2xl font-bold text-gray-900">Pricing Strategy</h1>
         <p className="text-gray-600 mt-1">Set costs and profit margins for your products</p>
       </div>
+
+      {/* Price Book - All SKUs at a Glance */}
+      {skus.length > 0 && (
+        <div className="card">
+          <div className="flex items-center gap-2 mb-4">
+            <DollarSign className="w-5 h-5 text-teal-600" />
+            <h2 className="text-xl font-bold text-gray-900">Price Book</h2>
+            <span className="text-xs text-gray-500 ml-2">All products at a glance</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-100 border-b">
+                  <th className="text-left p-3 font-semibold">Product</th>
+                  <th className="text-right p-3 font-semibold">Weekly Price</th>
+                  <th className="text-right p-3 font-semibold">Weekly Margin</th>
+                  <th className="text-right p-3 font-semibold">Monthly Price</th>
+                  <th className="text-right p-3 font-semibold">Monthly Margin</th>
+                </tr>
+              </thead>
+              <tbody>
+                {priceBookData.map(({ sku, weekly, monthly }) => (
+                  <tr key={sku.id} className="border-b hover:bg-gray-50">
+                    <td className="p-3 font-medium text-gray-900">{sku.name}</td>
+                    <td className="p-3 text-right">
+                      {weekly ? (
+                        <span className="font-semibold text-green-700">₹{weekly.sellingPrice.toFixed(0)}</span>
+                      ) : (
+                        <span className="text-gray-400 text-xs">Not set</span>
+                      )}
+                    </td>
+                    <td className="p-3 text-right">
+                      {weekly ? (
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${weekly.profitMargin >= 20 ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                          {weekly.profitMargin.toFixed(0)}%
+                        </span>
+                      ) : '-'}
+                    </td>
+                    <td className="p-3 text-right">
+                      {monthly ? (
+                        <span className="font-semibold text-blue-700">₹{monthly.sellingPrice.toFixed(0)}</span>
+                      ) : (
+                        <span className="text-gray-400 text-xs">Not set</span>
+                      )}
+                    </td>
+                    <td className="p-3 text-right">
+                      {monthly ? (
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${monthly.profitMargin >= 20 ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                          {monthly.profitMargin.toFixed(0)}%
+                        </span>
+                      ) : '-'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {priceBookData.some(d => !d.weekly || !d.monthly) && (
+            <p className="text-xs text-amber-600 mt-3">Some products don't have pricing set yet. Select a SKU below to configure.</p>
+          )}
+        </div>
+      )}
 
       {/* SKU and Pack Type Selection */}
       <div className="card" style={{ overflow: 'visible' }}>

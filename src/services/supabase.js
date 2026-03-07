@@ -2412,4 +2412,166 @@ export const dbService = {
       return { data: null, error };
     }
   },
+
+  // ==========================================
+  // MARKETING CONTACTS
+  // ==========================================
+  async getMarketingContacts() {
+    if (!isSupabaseAvailable()) return { data: [], error: null };
+    try {
+      const { data, error } = await supabase
+        .from('marketing_contacts')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return { data: (data || []).map(c => ({
+        id: c.id, name: c.name, platform: c.platform, handle: c.handle,
+        followers: c.followers, contactDate: c.contact_date, status: c.status,
+        fee: c.fee, commissionPercent: c.commission_percent,
+        ordersGenerated: c.orders_generated, revenueGenerated: c.revenue_generated,
+        notes: c.notes, createdAt: c.created_at,
+      })), error: null };
+    } catch (error) {
+      console.error('Error fetching marketing contacts:', error);
+      return { data: [], error };
+    }
+  },
+
+  async createMarketingContact(contact) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    try {
+      const { data, error } = await supabase
+        .from('marketing_contacts')
+        .insert([{
+          name: contact.name, platform: contact.platform, handle: contact.handle,
+          followers: contact.followers || 0, contact_date: contact.contactDate,
+          status: contact.status || 'contacted', fee: contact.fee || 0,
+          commission_percent: contact.commissionPercent || 0,
+          orders_generated: contact.ordersGenerated || 0,
+          revenue_generated: contact.revenueGenerated || 0, notes: contact.notes,
+        }])
+        .select().single();
+      if (error) throw error;
+      return { data: { ...contact, id: data.id, createdAt: data.created_at }, error: null };
+    } catch (error) {
+      console.error('Error creating marketing contact:', error);
+      return { data: null, error };
+    }
+  },
+
+  async updateMarketingContact(contact) {
+    if (!isSupabaseAvailable()) return { error: new Error('Supabase not configured') };
+    try {
+      const { error } = await supabase
+        .from('marketing_contacts')
+        .update({
+          name: contact.name, platform: contact.platform, handle: contact.handle,
+          followers: contact.followers, contact_date: contact.contactDate,
+          status: contact.status, fee: contact.fee,
+          commission_percent: contact.commissionPercent,
+          orders_generated: contact.ordersGenerated,
+          revenue_generated: contact.revenueGenerated, notes: contact.notes,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', contact.id);
+      if (error) throw error;
+      return { error: null };
+    } catch (error) {
+      console.error('Error updating marketing contact:', error);
+      return { error };
+    }
+  },
+
+  async deleteMarketingContact(id) {
+    if (!isSupabaseAvailable()) return { error: new Error('Supabase not configured') };
+    try {
+      const { error } = await supabase.from('marketing_contacts').delete().eq('id', id);
+      if (error) throw error;
+      return { error: null };
+    } catch (error) {
+      console.error('Error deleting marketing contact:', error);
+      return { error };
+    }
+  },
+
+  // ==========================================
+  // MARKETING CAMPAIGNS
+  // ==========================================
+  async getMarketingCampaigns() {
+    if (!isSupabaseAvailable()) return { data: [], error: null };
+    try {
+      const { data, error } = await supabase
+        .from('marketing_campaigns')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return { data: (data || []).map(c => ({
+        id: c.id, campaignName: c.campaign_name, platform: c.platform,
+        budget: c.budget, spend: c.spend, startDate: c.start_date, endDate: c.end_date,
+        status: c.status, impressions: c.impressions, clicks: c.clicks,
+        ordersAttributed: c.orders_attributed, revenueAttributed: c.revenue_attributed,
+        notes: c.notes, createdAt: c.created_at,
+      })), error: null };
+    } catch (error) {
+      console.error('Error fetching marketing campaigns:', error);
+      return { data: [], error };
+    }
+  },
+
+  async createMarketingCampaign(campaign) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    try {
+      const { data, error } = await supabase
+        .from('marketing_campaigns')
+        .insert([{
+          campaign_name: campaign.campaignName, platform: campaign.platform,
+          budget: campaign.budget || 0, spend: campaign.spend || 0,
+          start_date: campaign.startDate, end_date: campaign.endDate,
+          status: campaign.status || 'active', impressions: campaign.impressions || 0,
+          clicks: campaign.clicks || 0, orders_attributed: campaign.ordersAttributed || 0,
+          revenue_attributed: campaign.revenueAttributed || 0, notes: campaign.notes,
+        }])
+        .select().single();
+      if (error) throw error;
+      return { data: { ...campaign, id: data.id, createdAt: data.created_at }, error: null };
+    } catch (error) {
+      console.error('Error creating marketing campaign:', error);
+      return { data: null, error };
+    }
+  },
+
+  async updateMarketingCampaign(campaign) {
+    if (!isSupabaseAvailable()) return { error: new Error('Supabase not configured') };
+    try {
+      const { error } = await supabase
+        .from('marketing_campaigns')
+        .update({
+          campaign_name: campaign.campaignName, platform: campaign.platform,
+          budget: campaign.budget, spend: campaign.spend,
+          start_date: campaign.startDate, end_date: campaign.endDate,
+          status: campaign.status, impressions: campaign.impressions, clicks: campaign.clicks,
+          orders_attributed: campaign.ordersAttributed,
+          revenue_attributed: campaign.revenueAttributed, notes: campaign.notes,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', campaign.id);
+      if (error) throw error;
+      return { error: null };
+    } catch (error) {
+      console.error('Error updating marketing campaign:', error);
+      return { error };
+    }
+  },
+
+  async deleteMarketingCampaign(id) {
+    if (!isSupabaseAvailable()) return { error: new Error('Supabase not configured') };
+    try {
+      const { error } = await supabase.from('marketing_campaigns').delete().eq('id', id);
+      if (error) throw error;
+      return { error: null };
+    } catch (error) {
+      console.error('Error deleting marketing campaign:', error);
+      return { error };
+    }
+  },
 };

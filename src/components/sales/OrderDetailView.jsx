@@ -1,17 +1,24 @@
 import React, { useState } from 'react';
-import { X, Copy, Check, Printer, MessageCircle, Package, Truck, CheckCircle } from 'lucide-react';
+import { X, Copy, Check, Printer, MessageCircle, Package, Truck, CheckCircle, FileText, Loader2 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { dbService } from '../../services/supabase';
 import LabelPrinter from './LabelPrinter';
 import WhatsAppSender from './WhatsAppSender';
 
 export default function OrderDetailView({ order, onClose, onUpdate }) {
-  const { showToast } = useApp();
+  const { state, dispatch, showToast } = useApp();
   const [loading, setLoading] = useState(false);
   const [copiedField, setCopiedField] = useState(null);
   const [showLabelPrinter, setShowLabelPrinter] = useState(false);
   const [showWhatsApp, setShowWhatsApp] = useState(false);
   const [currentOrder, setCurrentOrder] = useState(order);
+  const [generatingInvoice, setGeneratingInvoice] = useState(false);
+  const [showInvoiceView, setShowInvoiceView] = useState(false);
+
+  // Find linked invoice
+  const linkedInvoice = currentOrder.invoice_id
+    ? (state.invoices || []).find(inv => inv.id === currentOrder.invoice_id)
+    : null;
 
   const getStatusBadge = (status) => {
     const badges = {
@@ -41,7 +48,6 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
       status: newStatus,
     };
 
-    // Auto-set dates based on status
     if (newStatus === 'dispatched' && !currentOrder.dispatch_date) {
       updateData.dispatch_date = new Date().toISOString().split('T')[0];
     }
@@ -63,15 +69,75 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
 
   const handlePrintAndPack = async () => {
     setShowLabelPrinter(true);
-    // Also update status to packed
     if (currentOrder.status === 'packing') {
       await handleStatusChange('packed');
     }
   };
 
+  // Generate Invoice from Order
+  const handleGenerateInvoice = async () => {
+    if (linkedInvoice) {
+      setShowInvoiceView(true);
+      return;
+    }
+
+    setGeneratingInvoice(true);
+    try {
+      const invoiceData = {
+        id: `inv-${Date.now()}`,
+        customerId: currentOrder.customer_id,
+        invoiceDate: new Date().toISOString().split('T')[0],
+        dueDate: null,
+        items: (currentOrder.items || []).map(item => ({
+          skuId: item.sku_id || item.skuId,
+          skuName: item.sku_name || item.skuName,
+          packType: item.pack_type || item.packType,
+          quantity: item.quantity,
+          unitPrice: item.unit_price || item.unitPrice,
+          total: item.total,
+        })),
+        gstRate: currentOrder.gst_rate || 5,
+        subtotal: currentOrder.subtotal || 0,
+        gstAmount: currentOrder.gst_amount || 0,
+        discountPercent: currentOrder.discount_percent || 0,
+        discountAmount: currentOrder.discount_amount || 0,
+        shippingCharge: currentOrder.shipping_charge || 0,
+        totalAmount: currentOrder.total_amount || 0,
+        balanceDue: (currentOrder.total_amount || 0) - (currentOrder.amount_paid || 0),
+        advancePaid: currentOrder.amount_paid || 0,
+        status: currentOrder.payment_status === 'received' ? 'paid' : 'sent',
+        paymentMethod: currentOrder.payment_method,
+        notes: `Auto-generated from order ${currentOrder.order_number}`,
+        terms: 'Payment due within 15 days',
+      };
+
+      // Create invoice
+      const { data: createdInvoice, error: invoiceError } = await dbService.createInvoice(invoiceData);
+      if (invoiceError) throw invoiceError;
+
+      // Link invoice to order
+      const updatedOrder = { ...currentOrder, invoice_id: createdInvoice?.id || invoiceData.id };
+      await dbService.updateSalesOrder(updatedOrder);
+
+      // Update local state
+      if (createdInvoice) {
+        dispatch({ type: 'ADD_INVOICE', payload: createdInvoice });
+      }
+      setCurrentOrder(updatedOrder);
+      dispatch({ type: 'UPDATE_SALES_ORDER', payload: updatedOrder });
+
+      showToast('Invoice generated and linked!', 'success');
+      setShowInvoiceView(true);
+      onUpdate();
+    } catch (error) {
+      console.error('Invoice generation error:', error);
+      showToast('Error generating invoice', 'error');
+    }
+    setGeneratingInvoice(false);
+  };
+
   const badge = getStatusBadge(currentOrder.status);
 
-  // Status timeline
   const statusSteps = [
     { key: 'follow_up', label: 'Follow-up', icon: MessageCircle },
     { key: 'packing', label: 'Packing', icon: Package },
@@ -217,6 +283,21 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
             </div>
           </div>
 
+          {/* Invoice Link */}
+          {linkedInvoice && (
+            <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <FileText className="w-5 h-5 text-blue-600" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-blue-900">
+                  Invoice: {linkedInvoice.invoiceNumber || linkedInvoice.invoice_number || 'Linked'}
+                </p>
+                <p className="text-xs text-blue-600">
+                  Status: {linkedInvoice.status || 'N/A'} | ₹{linkedInvoice.totalAmount?.toFixed(2) || linkedInvoice.total_amount?.toFixed(2) || '0.00'}
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Payment */}
           <div className="space-y-3">
             <h3 className="font-bold text-gray-900">Payment</h3>
@@ -321,6 +402,19 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
               <Printer className="w-4 h-4" />
               Print Label
             </button>
+            {/* Invoice Button */}
+            <button
+              onClick={handleGenerateInvoice}
+              disabled={generatingInvoice}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm disabled:opacity-50"
+            >
+              {generatingInvoice ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <FileText className="w-4 h-4" />
+              )}
+              {linkedInvoice ? 'View Invoice' : 'Generate Invoice'}
+            </button>
             <div className="flex-1" />
             <button
               onClick={onClose}
@@ -345,6 +439,60 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
           order={currentOrder}
           onClose={() => setShowWhatsApp(false)}
         />
+      )}
+
+      {/* Invoice Viewer Modal */}
+      {showInvoiceView && linkedInvoice && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg max-w-lg w-full max-h-[80vh] overflow-y-auto p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold text-gray-900">
+                Invoice {linkedInvoice.invoiceNumber || linkedInvoice.invoice_number || ''}
+              </h3>
+              <button onClick={() => setShowInvoiceView(false)} className="text-gray-500 hover:text-gray-700">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-sm">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <p className="text-xs text-gray-500">Date</p>
+                  <p className="font-medium">{linkedInvoice.invoiceDate || linkedInvoice.invoice_date}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Status</p>
+                  <p className={`font-medium capitalize ${linkedInvoice.status === 'paid' ? 'text-green-600' : 'text-amber-600'}`}>
+                    {linkedInvoice.status}
+                  </p>
+                </div>
+              </div>
+
+              <div className="border-t border-gray-200 pt-3">
+                <p className="text-xs text-gray-500 mb-2">Items</p>
+                {(linkedInvoice.items || []).map((item, idx) => (
+                  <div key={idx} className="flex justify-between py-1">
+                    <span>{item.skuName || item.sku_name} ({item.packType || item.pack_type})</span>
+                    <span className="font-medium">x{item.quantity} = ₹{item.total}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="border-t border-gray-200 pt-3 space-y-1">
+                <div className="flex justify-between"><span>Subtotal</span><span>₹{(linkedInvoice.subtotal || 0).toFixed(2)}</span></div>
+                <div className="flex justify-between"><span>GST</span><span>₹{(linkedInvoice.gstAmount || linkedInvoice.gst_amount || 0).toFixed(2)}</span></div>
+                <div className="flex justify-between font-bold text-base border-t pt-2">
+                  <span>Total</span>
+                  <span className="text-teal-600">₹{(linkedInvoice.totalAmount || linkedInvoice.total_amount || 0).toFixed(2)}</span>
+                </div>
+              </div>
+
+              <p className="text-xs text-gray-500 mt-3">
+                View full invoice details and PDF on the <strong>Invoices</strong> page.
+              </p>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

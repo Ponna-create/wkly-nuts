@@ -24,6 +24,7 @@ import PackagingMaterials from './pages/PackagingMaterials';
 import Reports from './pages/Reports';
 import HelpGuide from './pages/HelpGuide';
 import BackupSettings from './pages/BackupSettings';
+import Marketing from './pages/Marketing';
 
 function App() {
   return (
@@ -49,6 +50,7 @@ function App() {
               <Route path="/inventory" element={<ErrorBoundary><InventoryManagement /></ErrorBoundary>} />
               <Route path="/invoices" element={<ErrorBoundary><InvoiceManagement /></ErrorBoundary>} />
               <Route path="/reports" element={<ErrorBoundary><Reports /></ErrorBoundary>} />
+              <Route path="/marketing" element={<ErrorBoundary><Marketing /></ErrorBoundary>} />
               <Route path="/help" element={<ErrorBoundary><HelpGuide /></ErrorBoundary>} />
               <Route path="/settings" element={<ErrorBoundary><BackupSettings /></ErrorBoundary>} />
             </Routes>

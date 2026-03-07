@@ -1,16 +1,41 @@
 import React, { useState } from 'react';
-import { Database, Download, Upload, Check, AlertCircle, Clock, HardDrive, Loader2, RefreshCw } from 'lucide-react';
+import { Database, Download, Upload, Check, AlertCircle, Clock, HardDrive, Loader2, RefreshCw, Settings, Wifi, WifiOff } from 'lucide-react';
 import { dbService } from '../services/supabase';
 import { useApp } from '../context/AppContext';
+import { getGstRate, setGstRate, getDbMode, setDbMode } from '../utils/settings';
 
 export default function BackupSettings() {
-  const { showToast } = useApp();
+  const { showToast, useDatabase } = useApp();
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
   const [lastBackup, setLastBackup] = useState(
     localStorage.getItem('wklyNutsLastBackup') || null
   );
+  const [gstValue, setGstValue] = useState(getGstRate());
+  const [customGst, setCustomGst] = useState(
+    ![0, 5, 12, 18].includes(getGstRate()) ? getGstRate() : ''
+  );
+  const [dbModeValue, setDbModeValue] = useState(getDbMode());
+
+  // ==========================================
+  // GST RATE SETTINGS
+  // ==========================================
+  const handleGstChange = (rate) => {
+    const numRate = parseFloat(rate);
+    setGstValue(numRate);
+    setGstRate(numRate);
+    showToast(`GST rate set to ${numRate}%`, 'success');
+  };
+
+  // ==========================================
+  // DB MODE SETTINGS
+  // ==========================================
+  const handleDbModeChange = (mode) => {
+    setDbModeValue(mode);
+    setDbMode(mode);
+    showToast(`Database mode set to: ${mode === 'auto' ? 'Auto-detect' : mode === 'cloud' ? 'Cloud (Supabase)' : 'Local Only'}. Refresh page to apply.`, 'success');
+  };
 
   // ==========================================
   // EXPORT BACKUP
@@ -18,7 +43,6 @@ export default function BackupSettings() {
   const handleExport = async () => {
     setExporting(true);
     try {
-      // Fetch ALL data from Supabase
       const [
         ordersRes, expensesRes, posRes, docsRes, prodRes,
         vendorsRes, skusRes, customersRes, invoicesRes, inventoryRes,
@@ -127,7 +151,6 @@ export default function BackupSettings() {
           throw new Error('Invalid backup file format');
         }
 
-        // Show summary before restoring
         const counts = backup.counts || {};
         setImportResult({
           type: 'preview',
@@ -154,7 +177,6 @@ export default function BackupSettings() {
     let restored = 0;
     let errors = 0;
 
-    // Restore WhatsApp templates
     if (backup.data.whatsappTemplates) {
       try {
         localStorage.setItem('wklyNutsWhatsAppTemplates', JSON.stringify(backup.data.whatsappTemplates));
@@ -162,7 +184,6 @@ export default function BackupSettings() {
       } catch (e) { errors++; }
     }
 
-    // Save backup data to localStorage as fallback
     try {
       localStorage.setItem('wklyNutsBackupData', JSON.stringify(backup.data));
       restored++;
@@ -222,6 +243,101 @@ export default function BackupSettings() {
         <p className="text-gray-600 mt-1">Export, import, and manage your business data</p>
       </div>
 
+      {/* Connection Status */}
+      <div className={`flex items-center gap-3 p-3 rounded-lg ${useDatabase ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+        {useDatabase ? (
+          <>
+            <Wifi className="w-5 h-5 text-green-600" />
+            <span className="text-sm font-medium text-green-800">Connected to Supabase (Cloud)</span>
+          </>
+        ) : (
+          <>
+            <WifiOff className="w-5 h-5 text-red-600" />
+            <span className="text-sm font-medium text-red-800">Using Local Storage (Offline Mode)</span>
+          </>
+        )}
+      </div>
+
+      {/* App Settings */}
+      <div className="bg-white border border-gray-200 rounded-lg p-6">
+        <div className="flex items-center gap-3 mb-5">
+          <Settings className="w-6 h-6 text-teal-600" />
+          <h2 className="text-lg font-semibold text-gray-900">App Settings</h2>
+        </div>
+
+        {/* GST Rate */}
+        <div className="mb-6">
+          <label className="block text-sm font-semibold text-gray-900 mb-3">GST Rate</label>
+          <div className="flex flex-wrap gap-2">
+            {[0, 5, 12, 18].map(rate => (
+              <button
+                key={rate}
+                onClick={() => { setCustomGst(''); handleGstChange(rate); }}
+                className={`px-4 py-2 rounded-lg text-sm font-medium border-2 transition ${
+                  gstValue === rate && !customGst
+                    ? 'border-teal-500 bg-teal-50 text-teal-700'
+                    : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                {rate}%
+              </button>
+            ))}
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                placeholder="Custom %"
+                min="0"
+                max="28"
+                step="0.5"
+                value={customGst}
+                onChange={(e) => {
+                  setCustomGst(e.target.value);
+                  if (e.target.value) handleGstChange(e.target.value);
+                }}
+                className="w-24 px-3 py-2 border-2 border-gray-200 rounded-lg text-sm focus:border-teal-500 focus:ring-0"
+              />
+              <span className="text-sm text-gray-500">%</span>
+            </div>
+          </div>
+          <p className="text-xs text-gray-500 mt-2">
+            Current: <strong>{gstValue}%</strong> — Applied to all new orders & invoices
+          </p>
+        </div>
+
+        {/* Database Mode */}
+        <div>
+          <label className="block text-sm font-semibold text-gray-900 mb-3">Database Mode</label>
+          <div className="space-y-2">
+            {[
+              { value: 'auto', label: 'Auto-detect', desc: 'Use Supabase if available, fallback to local' },
+              { value: 'cloud', label: 'Cloud Only (Supabase)', desc: 'Always try cloud — needs VPN in India' },
+              { value: 'local', label: 'Local Only', desc: 'Use browser storage — works offline, this device only' },
+            ].map(opt => (
+              <label
+                key={opt.value}
+                className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition ${
+                  dbModeValue === opt.value
+                    ? 'border-teal-500 bg-teal-50'
+                    : 'border-gray-200 hover:bg-gray-50'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="dbMode"
+                  checked={dbModeValue === opt.value}
+                  onChange={() => handleDbModeChange(opt.value)}
+                  className="mt-0.5 w-4 h-4 text-teal-600"
+                />
+                <div>
+                  <p className="text-sm font-medium text-gray-900">{opt.label}</p>
+                  <p className="text-xs text-gray-500">{opt.desc}</p>
+                </div>
+              </label>
+            ))}
+          </div>
+        </div>
+      </div>
+
       {/* Backup Status */}
       <div className="bg-white border border-gray-200 rounded-lg p-6">
         <div className="flex items-center gap-3 mb-4">
@@ -239,7 +355,6 @@ export default function BackupSettings() {
         )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {/* Export */}
           <button
             onClick={handleExport}
             disabled={exporting}
@@ -253,11 +368,9 @@ export default function BackupSettings() {
             <div className="text-center">
               <p className="font-semibold text-gray-900">{exporting ? 'Exporting...' : 'Export Backup'}</p>
               <p className="text-xs text-gray-500 mt-1">Download all data as JSON file</p>
-              <p className="text-xs text-gray-400">Save on your business laptop</p>
             </div>
           </button>
 
-          {/* Import */}
           <button
             onClick={handleImport}
             disabled={importing}
@@ -271,7 +384,6 @@ export default function BackupSettings() {
             <div className="text-center">
               <p className="font-semibold text-gray-900">{importing ? 'Importing...' : 'Import Backup'}</p>
               <p className="text-xs text-gray-500 mt-1">Restore from a backup file</p>
-              <p className="text-xs text-gray-400">Use when Supabase is down</p>
             </div>
           </button>
         </div>
@@ -331,8 +443,7 @@ export default function BackupSettings() {
           <h2 className="text-lg font-semibold text-gray-900">Quick Local Snapshot</h2>
         </div>
         <p className="text-sm text-gray-600 mb-4">
-          Save a quick snapshot of key data (orders, expenses, vendors, customers) to this browser's local storage.
-          Useful when you want offline access to recent data.
+          Save key data (orders, expenses, vendors, customers) to this browser for offline access.
         </p>
 
         {localSnapshot && (
@@ -354,13 +465,13 @@ export default function BackupSettings() {
 
       {/* Tips */}
       <div className="bg-amber-50 border border-amber-200 rounded-lg p-5">
-        <h3 className="text-sm font-semibold text-amber-900 mb-2">Backup Tips</h3>
+        <h3 className="text-sm font-semibold text-amber-900 mb-2">Tips</h3>
         <ul className="text-sm text-amber-800 space-y-1 list-disc list-inside">
           <li>Export a full backup <strong>every week</strong> to your business laptop</li>
           <li>Keep the backup JSON file in a dedicated folder (e.g., D:\WKLY Nuts Backups\)</li>
-          <li>The backup includes ALL data: orders, expenses, vendors, customers, production, etc.</li>
-          <li>If Supabase is down, use "Import Backup" to restore your data locally</li>
-          <li>Document files (images/PDFs) are stored in Supabase Storage separately - download important ones manually</li>
+          <li>If Supabase is down or blocked, switch to <strong>Local Only</strong> mode above</li>
+          <li>The <strong>Auto-detect</strong> mode will automatically use local storage when cloud is unreachable</li>
+          <li>GST rate changes only apply to <strong>new</strong> orders — existing orders keep their saved rate</li>
         </ul>
       </div>
     </div>

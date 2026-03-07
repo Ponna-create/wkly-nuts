@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { X, Plus, Trash2 } from 'lucide-react';
+import { X, Plus, Trash2, AlertTriangle } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { dbService } from '../../services/supabase';
+import { getGstRate } from '../../utils/settings';
 
 export default function NewOrderForm({ onClose }) {
   const { state, dispatch, showToast } = useApp();
@@ -11,12 +12,16 @@ export default function NewOrderForm({ onClose }) {
   const [newCustomerMode, setNewCustomerMode] = useState(false);
   const [showCustomerForm, setShowCustomerForm] = useState(false);
 
+  // SKUs and pricing from state
+  const skus = state.skus || [];
+  const pricingStrategies = state.pricingStrategies || [];
+
   const [formData, setFormData] = useState({
     customerName: '',
     orderSource: 'whatsapp',
     items: [],
     subtotal: 0,
-    gstRate: 5,
+    gstRate: getGstRate(),
     gstAmount: 0,
     discountPercent: 0,
     discountAmount: 0,
@@ -51,7 +56,14 @@ export default function NewOrderForm({ onClose }) {
     pincode: '',
   });
 
-  // Load customers and SKUs
+  // Price lookup helper
+  const getPricingForSku = (skuId, packType) => {
+    return pricingStrategies.find(
+      (p) => String(p.skuId) === String(skuId) && p.packType === packType
+    );
+  };
+
+  // Load customers
   useEffect(() => {
     setCustomers(state.customers || []);
   }, [state.customers]);
@@ -75,9 +87,33 @@ export default function NewOrderForm({ onClose }) {
     }));
   }, [formData.items, formData.gstRate, formData.discountPercent, formData.discountAmount, formData.shippingCharge]);
 
+  const handleSkuChange = (skuId) => {
+    const sku = skus.find(s => String(s.id) === String(skuId));
+    if (sku) {
+      const pricing = getPricingForSku(sku.id, newItem.packType);
+      setNewItem(prev => ({
+        ...prev,
+        skuId: String(sku.id),
+        skuName: sku.name,
+        unitPrice: pricing?.sellingPrice || prev.unitPrice,
+      }));
+    } else {
+      setNewItem(prev => ({ ...prev, skuId: '', skuName: '' }));
+    }
+  };
+
+  const handlePackTypeChange = (packType) => {
+    const pricing = getPricingForSku(newItem.skuId, packType);
+    setNewItem(prev => ({
+      ...prev,
+      packType,
+      unitPrice: pricing?.sellingPrice || prev.unitPrice,
+    }));
+  };
+
   const handleAddItem = () => {
-    if (!newItem.skuName || !newItem.quantity) {
-      showToast('Please fill all item details', 'error');
+    if (!newItem.skuId || !newItem.quantity) {
+      showToast('Please select a product and quantity', 'error');
       return;
     }
 
@@ -179,6 +215,8 @@ export default function NewOrderForm({ onClose }) {
 
     setLoading(false);
   };
+
+  const noPricingWarning = newItem.skuId && !getPricingForSku(newItem.skuId, newItem.packType);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
@@ -367,6 +405,7 @@ export default function NewOrderForm({ onClose }) {
                 <option value="instagram">Instagram</option>
                 <option value="meta_ad">Meta Ad</option>
                 <option value="walkin">Walk-in</option>
+                <option value="zoho">Zoho Commerce</option>
               </select>
             </div>
             <div>
@@ -392,40 +431,59 @@ export default function NewOrderForm({ onClose }) {
             {/* Add Item Form */}
             <div className="p-4 bg-gray-50 rounded-lg space-y-3">
               <div className="grid grid-cols-2 gap-3">
-                <input
-                  type="text"
-                  placeholder="Product Name"
-                  value={newItem.skuName}
-                  onChange={(e) => setNewItem(prev => ({ ...prev, skuName: e.target.value }))}
+                {/* SKU Dropdown (was free text) */}
+                <select
+                  value={newItem.skuId}
+                  onChange={(e) => handleSkuChange(e.target.value)}
                   className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                />
+                >
+                  <option value="">-- Select Product --</option>
+                  {skus.map(sku => (
+                    <option key={sku.id} value={String(sku.id)}>{sku.name}</option>
+                  ))}
+                </select>
+                {/* Pack Type */}
                 <select
                   value={newItem.packType}
-                  onChange={(e) => setNewItem(prev => ({ ...prev, packType: e.target.value }))}
+                  onChange={(e) => handlePackTypeChange(e.target.value)}
                   className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
                 >
                   <option value="weekly">Weekly Pack</option>
                   <option value="monthly">Monthly Pack</option>
                 </select>
               </div>
+
+              {/* No pricing warning */}
+              {noPricingWarning && (
+                <div className="flex items-center gap-2 p-2 bg-amber-50 border border-amber-200 rounded-lg">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                  <span className="text-xs text-amber-700">No pricing set for this product/pack. Set it in <strong>Pricing</strong> page. You can still enter price manually below.</span>
+                </div>
+              )}
+
               <div className="grid grid-cols-3 gap-3">
                 <input
                   type="number"
-                  placeholder="Quantity"
+                  placeholder="Qty"
                   min="1"
                   value={newItem.quantity}
                   onChange={(e) => setNewItem(prev => ({ ...prev, quantity: parseInt(e.target.value) || 0 }))}
                   className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
                 />
-                <input
-                  type="number"
-                  placeholder="Price"
-                  min="0"
-                  step="0.01"
-                  value={newItem.unitPrice}
-                  onChange={(e) => setNewItem(prev => ({ ...prev, unitPrice: parseFloat(e.target.value) || 0 }))}
-                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                />
+                <div className="relative">
+                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm">₹</span>
+                  <input
+                    type="number"
+                    placeholder="Price"
+                    min="0"
+                    step="0.01"
+                    value={newItem.unitPrice}
+                    onChange={(e) => setNewItem(prev => ({ ...prev, unitPrice: parseFloat(e.target.value) || 0 }))}
+                    className={`w-full px-3 pl-6 py-2 border rounded-lg text-sm ${
+                      newItem.unitPrice > 0 ? 'border-green-400 bg-green-50' : 'border-gray-300'
+                    }`}
+                  />
+                </div>
                 <button
                   type="button"
                   onClick={handleAddItem}

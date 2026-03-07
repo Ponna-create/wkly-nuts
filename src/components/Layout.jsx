@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import {
   Home, Package, Warehouse, ShoppingCart, BarChart3, FileText,
   Menu, X, LogOut, Users, Truck, Receipt, FolderOpen, Factory, Box,
-  ChevronDown, ChevronRight, HelpCircle, Database
+  ChevronDown, ChevronRight, HelpCircle, Database, DollarSign, Megaphone
 } from 'lucide-react';
 import { logout } from './Auth';
 import logo from '../assets/wkly-nuts-logo.png';
@@ -22,6 +22,7 @@ const navGroups = [
       { name: 'Sales Orders', href: '/orders', icon: Truck },
       { name: 'Customers', href: '/customers', icon: Users },
       { name: 'Invoices', href: '/invoices', icon: FileText },
+      { name: 'Pricing', href: '/pricing', icon: DollarSign },
     ],
   },
   {
@@ -39,6 +40,12 @@ const navGroups = [
       { name: 'Packaging', href: '/packaging', icon: Box },
       { name: 'Ingredients', href: '/ingredients', icon: Warehouse },
       { name: 'SKU Items', href: '/skus', icon: Package },
+    ],
+  },
+  {
+    label: 'Marketing',
+    items: [
+      { name: 'Marketing', href: '/marketing', icon: Megaphone },
     ],
   },
   {

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useReducer, useCallback, useEffect, useState } from 'react';
 import { dbService, isSupabaseAvailable } from '../services/supabase';
+import { getDbMode } from '../utils/settings';
 
 const AppContext = createContext();
 
@@ -60,6 +61,8 @@ const initialState = {
   purchaseOrders: [],
   documents: [],
   productionRuns: [],
+  marketingContacts: [],
+  marketingCampaigns: [],
   toast: null,
 };
 
@@ -95,6 +98,8 @@ function appReducer(state, action) {
         purchaseOrders: action.payload.purchaseOrders || [],
         documents: action.payload.documents || [],
         productionRuns: action.payload.productionRuns || [],
+        marketingContacts: action.payload.marketingContacts || [],
+        marketingCampaigns: action.payload.marketingCampaigns || [],
       };
 
     // Sales Order actions
@@ -181,17 +186,15 @@ function appReducer(state, action) {
 
     // Customer actions
     case 'ADD_CUSTOMER':
-      // Check for duplicate by phone number before adding
       const existingCustomer = state.customers.find(
         (c) => c.phone && action.payload.phone &&
           c.phone.replace(/\D/g, '') === action.payload.phone.replace(/\D/g, '')
       );
       if (existingCustomer) {
-        return state; // Don't add duplicate
+        return state;
       }
       return { ...state, customers: [...state.customers, action.payload] };
     case 'REPLACE_CUSTOMER':
-      // Replace customer with temporary ID with the one from database
       return {
         ...state,
         customers: state.customers
@@ -243,7 +246,7 @@ function appReducer(state, action) {
         inventory: state.inventory.filter((inv) => inv.id !== action.payload),
       };
 
-    // Ingredient Actions (Phase 2)
+    // Ingredient Actions
     case 'LOAD_INGREDIENTS':
       return { ...state, ingredients: action.payload };
     case 'UPDATE_INGREDIENT':
@@ -292,6 +295,12 @@ function appReducer(state, action) {
     case 'DELETE_PRODUCTION_RUN':
       return { ...state, productionRuns: state.productionRuns.filter(r => r.id !== action.payload) };
 
+    // Marketing actions
+    case 'LOAD_MARKETING_CONTACTS':
+      return { ...state, marketingContacts: action.payload };
+    case 'LOAD_MARKETING_CAMPAIGNS':
+      return { ...state, marketingCampaigns: action.payload };
+
     // Toast actions
     case 'SHOW_TOAST':
       return { ...state, toast: action.payload };
@@ -307,27 +316,23 @@ export function AppProvider({ children }) {
   const [state, dispatchReducer] = useReducer(appReducer, initialState);
   const [isLoading, setIsLoading] = useState(true);
   const [useDatabase, setUseDatabase] = useState(false);
+  const [connectionError, setConnectionError] = useState(null);
 
   // Wrapper dispatch that syncs with database
   const dispatch = useCallback((action) => {
-    // First update local state
     dispatchReducer(action);
 
-    // Then sync with database if available (async, don't wait)
     if (useDatabase && isSupabaseAvailable() && !isLoading) {
-      // Don't sync LOAD actions
       if (action.type.startsWith('LOAD_') || action.type.startsWith('SHOW_') || action.type.startsWith('HIDE_')) {
         return;
       }
 
-      // Sync with database asynchronously
       (async () => {
         try {
           switch (action.type) {
             case 'ADD_VENDOR':
               const vendorRes = await dbService.createVendor(action.payload);
               if (vendorRes.data && vendorRes.data.id !== action.payload.id) {
-                // Update with database ID
                 dispatchReducer({ type: 'UPDATE_VENDOR', payload: { ...action.payload, id: vendorRes.data.id } });
               }
               break;
@@ -413,11 +418,8 @@ export function AppProvider({ children }) {
             case 'DELETE_INVENTORY':
               await dbService.deleteInventory(action.payload);
               break;
-
-            // Ingredient Batch Actions
             case 'ADD_BATCH':
               await dbService.addIngredientBatch(action.payload);
-              // Refresh ingredients to get updated totals structure
               const refetched = await dbService.getIngredients();
               if (refetched.data) {
                 dispatchReducer({ type: 'LOAD_INGREDIENTS', payload: refetched.data });
@@ -425,7 +427,6 @@ export function AppProvider({ children }) {
               break;
             case 'UPDATE_BATCH_STATUS':
               await dbService.updateBatchStatus(action.payload.id, action.payload.status, action.payload.quantity);
-              // Refresh ingredients
               const refetchedStatus = await dbService.getIngredients();
               if (refetchedStatus.data) {
                 dispatchReducer({ type: 'LOAD_INGREDIENTS', payload: refetchedStatus.data });
@@ -439,15 +440,27 @@ export function AppProvider({ children }) {
     }
   }, [useDatabase, isLoading]);
 
-  // Check if Supabase is available and load data
+  // Smart database switching - check mode and availability
   useEffect(() => {
     const loadData = async () => {
       setIsLoading(true);
+      setConnectionError(null);
 
+      const dbMode = getDbMode(); // 'auto', 'cloud', 'local'
+
+      // If forced local, skip cloud entirely
+      if (dbMode === 'local') {
+        const localData = loadFromLocalStorage();
+        dispatchReducer({ type: 'LOAD_ALL_DATA', payload: localData });
+        setUseDatabase(false);
+        setIsLoading(false);
+        return;
+      }
+
+      // Try cloud (auto or cloud mode)
       if (isSupabaseAvailable()) {
         try {
           setUseDatabase(true);
-          // Load all data from Supabase
           const [vendorsRes, skusRes, pricingRes, targetsRes, customersRes, invoicesRes, inventoryRes, ingredientsRes, salesOrdersRes, expensesRes, purchaseOrdersRes, documentsRes, productionRunsRes] = await Promise.all([
             dbService.getVendors(),
             dbService.getSKUs(),
@@ -463,6 +476,18 @@ export function AppProvider({ children }) {
             dbService.getDocuments(),
             dbService.getProductionRuns(),
           ]);
+
+          // Try loading marketing tables (they may not exist yet)
+          let marketingContactsRes = { data: [] };
+          let marketingCampaignsRes = { data: [] };
+          try {
+            [marketingContactsRes, marketingCampaignsRes] = await Promise.all([
+              dbService.getMarketingContacts(),
+              dbService.getMarketingCampaigns(),
+            ]);
+          } catch (e) {
+            console.warn('Marketing tables not yet created — run marketing.sql');
+          }
 
           dispatchReducer({
             type: 'LOAD_ALL_DATA',
@@ -480,17 +505,48 @@ export function AppProvider({ children }) {
               purchaseOrders: purchaseOrdersRes.data || [],
               documents: documentsRes.data || [],
               productionRuns: productionRunsRes.data || [],
+              marketingContacts: marketingContactsRes.data || [],
+              marketingCampaigns: marketingCampaignsRes.data || [],
             },
           });
+
+          // Also save to localStorage as backup cache
+          saveToLocalStorage({
+            vendors: vendorsRes.data || [],
+            skus: skusRes.data || [],
+            pricingStrategies: pricingRes.data || [],
+            salesTargets: targetsRes.data || [],
+            customers: customersRes.data || [],
+            invoices: invoicesRes.data || [],
+            inventory: inventoryRes.data || [],
+            ingredients: ingredientsRes.data || [],
+          });
+
         } catch (error) {
           console.error('Error loading from database:', error);
-          // Fallback to localStorage
+
+          // Determine if it's a connectivity issue
+          const isTimeout = error.message?.includes('timeout') || error.message?.includes('fetch') ||
+            error.message?.includes('Failed to fetch') || error.message?.includes('ERR_CONNECTION');
+
+          if (dbMode === 'cloud') {
+            // User forced cloud mode but it failed
+            setConnectionError(isTimeout
+              ? 'Cannot connect to Supabase. If you are in India, please enable VPN or switch to Local mode in Settings.'
+              : `Database error: ${error.message}`
+            );
+          }
+
+          // Fallback to localStorage (auto mode)
           const localData = loadFromLocalStorage();
           dispatchReducer({ type: 'LOAD_ALL_DATA', payload: localData });
           setUseDatabase(false);
+
+          if (isTimeout && dbMode === 'auto') {
+            setConnectionError('Cloud database unreachable. Using local data. Enable VPN for cloud sync.');
+          }
         }
       } else {
-        // Use localStorage
         const localData = loadFromLocalStorage();
         dispatchReducer({ type: 'LOAD_ALL_DATA', payload: localData });
         setUseDatabase(false);
@@ -502,24 +558,22 @@ export function AppProvider({ children }) {
     loadData();
   }, []);
 
-  // Save data to localStorage when state changes (fallback only)
+  // Save data to localStorage when state changes
   useEffect(() => {
-    if (isLoading) return; // Don't save during initial load
+    if (isLoading) return;
 
-    if (!useDatabase) {
-      // Save to localStorage as fallback
-      saveToLocalStorage({
-        vendors: state.vendors,
-        skus: state.skus,
-        pricingStrategies: state.pricingStrategies,
-        salesTargets: state.salesTargets,
-        customers: state.customers,
-        invoices: state.invoices,
-        inventory: state.inventory,
-        ingredients: state.ingredients,
-      });
-    }
-  }, [state.vendors, state.skus, state.pricingStrategies, state.salesTargets, state.customers, state.invoices, state.inventory, state.ingredients, isLoading, useDatabase]);
+    // Always save to localStorage as cache (even when using cloud)
+    saveToLocalStorage({
+      vendors: state.vendors,
+      skus: state.skus,
+      pricingStrategies: state.pricingStrategies,
+      salesTargets: state.salesTargets,
+      customers: state.customers,
+      invoices: state.invoices,
+      inventory: state.inventory,
+      ingredients: state.ingredients,
+    });
+  }, [state.vendors, state.skus, state.pricingStrategies, state.salesTargets, state.customers, state.invoices, state.inventory, state.ingredients, isLoading]);
 
   const showToast = useCallback((message, type = 'success') => {
     dispatch({ type: 'SHOW_TOAST', payload: { message, type } });
@@ -528,12 +582,20 @@ export function AppProvider({ children }) {
     }, 3000);
   }, [dispatch]);
 
+  // Show connection error as toast on load
+  useEffect(() => {
+    if (connectionError && !isLoading) {
+      showToast(connectionError, 'error');
+    }
+  }, [connectionError, isLoading]);
+
   const value = {
     state,
     dispatch,
     showToast,
     isLoading,
     useDatabase,
+    connectionError,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
