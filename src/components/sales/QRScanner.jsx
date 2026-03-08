@@ -12,6 +12,9 @@ export default function QRScanner({ onClose, onScanComplete }) {
   const [error, setError] = useState(null);
   const scannerRef = useRef(null);
   const html5QrCodeRef = useRef(null);
+  const scannedIdsRef = useRef(new Set()); // Ref-based dedup (instant, no async delay)
+  const processingRef = useRef(false); // Lock to prevent concurrent scans
+  const lastScanTimeRef = useRef(0); // Cooldown timer
 
   useEffect(() => {
     return () => {
@@ -56,6 +59,13 @@ export default function QRScanner({ onClose, onScanComplete }) {
   };
 
   const onScanSuccess = async (decodedText) => {
+    // Cooldown: ignore scans within 2 seconds of last scan
+    const now = Date.now();
+    if (now - lastScanTimeRef.current < 2000) return;
+
+    // Prevent concurrent processing
+    if (processingRef.current) return;
+
     try {
       const data = JSON.parse(decodedText);
 
@@ -64,11 +74,19 @@ export default function QRScanner({ onClose, onScanComplete }) {
         return;
       }
 
-      // Check if already scanned
-      if (scannedOrders.find(o => o.id === data.id)) {
+      // Instant ref-based dedup (no async state delay)
+      if (scannedIdsRef.current.has(data.id)) {
         setLastScan({ ...data, status: 'duplicate' });
+        lastScanTimeRef.current = now;
         return;
       }
+
+      // Lock processing
+      processingRef.current = true;
+      lastScanTimeRef.current = now;
+
+      // Mark as scanned immediately (before async DB call)
+      scannedIdsRef.current.add(data.id);
 
       // Update order status to dispatched
       const { error: updateError } = await dbService.updateSalesOrder({
@@ -78,15 +96,25 @@ export default function QRScanner({ onClose, onScanComplete }) {
       });
 
       if (updateError) {
+        // Remove from set if update failed
+        scannedIdsRef.current.delete(data.id);
         setLastScan({ ...data, status: 'error', message: updateError.message });
         showToast(`Error updating ${data.orderNumber}`, 'error');
       } else {
         setLastScan({ ...data, status: 'success' });
         setScannedOrders(prev => [...prev, { ...data, scannedAt: new Date() }]);
-        showToast(`${data.orderNumber} marked as Dispatched!`, 'success');
+        showToast(`${data.orderNumber} → Dispatched!`, 'success');
+
+        // Deduct inventory on dispatch
+        const invResult = await dbService.deductInventoryForOrder({ id: data.id, items: data.items || [] });
+        if (invResult && invResult.warnings && invResult.warnings.length > 0) {
+          showToast(`Stock warning: ${invResult.warnings[0]}`, 'error');
+        }
       }
     } catch (err) {
       setError('Invalid QR code format');
+    } finally {
+      processingRef.current = false;
     }
   };
 

@@ -1745,45 +1745,59 @@ export const dbService = {
     if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
 
     try {
+      // Accept BOTH camelCase and snake_case - use whichever is defined
+      const pick = (camel, snake) => order[camel] !== undefined ? order[camel] : order[snake];
+
+      // Build update payload, skipping undefined values so we don't overwrite with null
+      const payload = {};
+      const fields = [
+        ['customer_id', 'customerId', 'customer_id'],
+        ['customer_name', 'customerName', 'customer_name'],
+        ['order_source', 'orderSource', 'order_source'],
+        ['items', 'items', 'items'],
+        ['subtotal', 'subtotal', 'subtotal'],
+        ['gst_rate', 'gstRate', 'gst_rate'],
+        ['gst_amount', 'gstAmount', 'gst_amount'],
+        ['discount_percent', 'discountPercent', 'discount_percent'],
+        ['discount_amount', 'discountAmount', 'discount_amount'],
+        ['shipping_charge', 'shippingCharge', 'shipping_charge'],
+        ['total_amount', 'totalAmount', 'total_amount'],
+        ['payment_method', 'paymentMethod', 'payment_method'],
+        ['payment_status', 'paymentStatus', 'payment_status'],
+        ['amount_paid', 'amountPaid', 'amount_paid'],
+        ['balance_due', 'balanceDue', 'balance_due'],
+        ['payment_date', 'paymentDate', 'payment_date'],
+        ['transaction_id', 'transactionId', 'transaction_id'],
+        ['status', 'status', 'status'],
+        ['follow_up_date', 'followUpDate', 'follow_up_date'],
+        ['follow_up_notes', 'followUpNotes', 'follow_up_notes'],
+        ['shipping_address', 'shippingAddress', 'shipping_address'],
+        ['courier_name', 'courierName', 'courier_name'],
+        ['tracking_number', 'trackingNumber', 'tracking_number'],
+        ['dispatch_date', 'dispatchDate', 'dispatch_date'],
+        ['estimated_delivery_date', 'estimatedDeliveryDate', 'estimated_delivery_date'],
+        ['actual_delivery_date', 'actualDeliveryDate', 'actual_delivery_date'],
+        ['shipping_weight', 'shippingWeight', 'shipping_weight'],
+        ['qr_code_data', 'qrCodeData', 'qr_code_data'],
+        ['invoice_id', 'invoiceId', 'invoice_id'],
+        ['feedback_sent', 'feedbackSent', 'feedback_sent'],
+        ['feedback_rating', 'feedbackRating', 'feedback_rating'],
+        ['feedback_text', 'feedbackText', 'feedback_text'],
+        ['feedback_date', 'feedbackDate', 'feedback_date'],
+        ['notes', 'notes', 'notes'],
+        ['internal_notes', 'internalNotes', 'internal_notes'],
+      ];
+
+      fields.forEach(([dbCol, camel, snake]) => {
+        const val = pick(camel, snake);
+        if (val !== undefined) {
+          payload[dbCol] = val;
+        }
+      });
+
       const { data, error } = await supabase
         .from('sales_orders')
-        .update({
-          customer_id: order.customerId,
-          customer_name: order.customerName,
-          order_source: order.orderSource,
-          items: order.items || [],
-          subtotal: order.subtotal,
-          gst_rate: order.gstRate,
-          gst_amount: order.gstAmount,
-          discount_percent: order.discountPercent,
-          discount_amount: order.discountAmount,
-          shipping_charge: order.shippingCharge,
-          total_amount: order.totalAmount,
-          payment_method: order.paymentMethod,
-          payment_status: order.paymentStatus,
-          amount_paid: order.amountPaid,
-          balance_due: order.balanceDue,
-          payment_date: order.paymentDate,
-          transaction_id: order.transactionId,
-          status: order.status,
-          follow_up_date: order.followUpDate,
-          follow_up_notes: order.followUpNotes,
-          shipping_address: order.shippingAddress,
-          courier_name: order.courierName,
-          tracking_number: order.trackingNumber,
-          dispatch_date: order.dispatchDate,
-          estimated_delivery_date: order.estimatedDeliveryDate,
-          actual_delivery_date: order.actualDeliveryDate,
-          shipping_weight: order.shippingWeight,
-          qr_code_data: order.qrCodeData,
-          invoice_id: order.invoiceId,
-          feedback_sent: order.feedbackSent,
-          feedback_rating: order.feedbackRating,
-          feedback_text: order.feedbackText,
-          feedback_date: order.feedbackDate,
-          notes: order.notes,
-          internal_notes: order.internalNotes
-        })
+        .update(payload)
         .eq('id', order.id)
         .select()
         .single();

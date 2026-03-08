@@ -104,18 +104,38 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
       return;
     }
     setSavingTracking(true);
+
+    // Auto-update status when tracking is added
+    let newStatus = currentOrder.status;
+    if (trackingInput.trim()) {
+      if (['packed', 'dispatched'].includes(currentOrder.status)) {
+        newStatus = 'in_transit';
+      } else if (['follow_up', 'awaiting_payment', 'packing'].includes(currentOrder.status)) {
+        newStatus = 'dispatched';
+      }
+    }
+
     const updatedOrder = {
       ...currentOrder,
       tracking_number: trackingInput.trim(),
       courier_name: courierInput.trim() || 'ST Courier',
+      status: newStatus,
     };
+
+    if (['dispatched', 'in_transit'].includes(newStatus) && !currentOrder.dispatch_date) {
+      updatedOrder.dispatch_date = new Date().toISOString().split('T')[0];
+    }
+
     const { error } = await dbService.updateSalesOrder(updatedOrder);
     if (error) {
       showToast('Error saving tracking number', 'error');
     } else {
       setCurrentOrder(updatedOrder);
       dispatch({ type: 'UPDATE_SALES_ORDER', payload: updatedOrder });
-      showToast('Tracking number saved!', 'success');
+      const statusMsg = newStatus !== currentOrder.status
+        ? ` | Status → ${getStatusBadge(newStatus).label}`
+        : '';
+      showToast(`Tracking saved!${statusMsg}`, 'success');
       setEditingTracking(false);
       onUpdate();
     }

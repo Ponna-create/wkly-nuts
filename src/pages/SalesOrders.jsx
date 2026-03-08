@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Eye, Trash2, Zap, Camera, FileSpreadsheet, MessageCircle, Truck } from 'lucide-react';
+import { Plus, Search, Eye, Trash2, Zap, Camera, FileSpreadsheet, MessageCircle, Truck, Printer } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
 import NewOrderForm from '../components/sales/NewOrderForm';
@@ -10,6 +10,7 @@ import QRScanner from '../components/sales/QRScanner';
 import ZohoImport from '../components/sales/ZohoImport';
 import TrackingCSVImport from '../components/sales/TrackingCSVImport';
 import TrackingChecker from '../components/sales/TrackingChecker';
+import BulkLabelPrint from '../components/sales/BulkLabelPrint';
 
 export default function SalesOrders() {
   const { state, dispatch, showToast } = useApp();
@@ -23,6 +24,7 @@ export default function SalesOrders() {
   const [showTrackingImport, setShowTrackingImport] = useState(false);
   const [showBulkWhatsApp, setShowBulkWhatsApp] = useState(false);
   const [showTrackingChecker, setShowTrackingChecker] = useState(false);
+  const [showBulkLabelPrint, setShowBulkLabelPrint] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [filterStatus, setFilterStatus] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
@@ -167,6 +169,14 @@ export default function SalesOrders() {
           >
             <FileSpreadsheet className="w-4 h-4" />
             Import
+          </button>
+          <button
+            onClick={() => setShowBulkLabelPrint(true)}
+            className="flex items-center gap-2 px-3 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition text-sm font-medium"
+            title="Print labels for all orders by date"
+          >
+            <Printer className="w-4 h-4" />
+            Labels
           </button>
           <button
             onClick={() => setShowTrackingChecker(!showTrackingChecker)}
@@ -380,6 +390,14 @@ export default function SalesOrders() {
         <BulkWhatsAppSend
           orders={orders}
           onClose={() => setShowBulkWhatsApp(false)}
+        />
+      )}
+
+      {showBulkLabelPrint && (
+        <BulkLabelPrint
+          orders={orders}
+          onClose={() => setShowBulkLabelPrint(false)}
+          showToast={showToast}
         />
       )}
     </div>
