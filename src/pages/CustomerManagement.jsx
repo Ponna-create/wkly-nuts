@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Plus, Edit, Trash2, Search, X, User, Mail, Phone, MapPin, Building2, AlertTriangle, Merge, Download } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, X, User, Mail, Phone, MapPin, Building2, AlertTriangle, Merge, Download, Calendar } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 
 export default function CustomerManagement() {
@@ -19,6 +19,7 @@ export default function CustomerManagement() {
     pincode: '',
     gstin: '',
     customerType: 'individual',
+    registrationDate: new Date().toISOString().split('T')[0],
     notes: '',
   });
 
@@ -33,6 +34,7 @@ export default function CustomerManagement() {
       pincode: '',
       gstin: '',
       customerType: 'individual',
+      registrationDate: new Date().toISOString().split('T')[0],
       notes: '',
     });
     setEditingCustomer(null);
@@ -87,6 +89,7 @@ export default function CustomerManagement() {
       pincode: customer.pincode || '',
       gstin: customer.gstin || '',
       customerType: customer.customerType || 'individual',
+      registrationDate: customer.registrationDate || customer.registration_date || customer.createdAt?.split('T')[0] || '',
       notes: customer.notes || '',
     });
     setEditingCustomer(customer);
@@ -485,6 +488,18 @@ export default function CustomerManagement() {
                   </div>
                 </div>
                 <div>
+                  <label className="label">Registration Date</label>
+                  <div className="relative">
+                    <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                    <input
+                      type="date"
+                      value={formData.registrationDate}
+                      onChange={(e) => setFormData({ ...formData, registrationDate: e.target.value })}
+                      className="input-field pl-10"
+                    />
+                  </div>
+                </div>
+                <div>
                   <label className="label">Email</label>
                   <div className="relative">
                     <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
@@ -500,7 +515,7 @@ export default function CustomerManagement() {
               </div>
             </div>
 
-            {/* Address Information */}
+            {/* Address */}
             <div>
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Address Information</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

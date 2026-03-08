@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import {
   Home, Package, Warehouse, ShoppingCart, BarChart3, FileText,
   Menu, X, LogOut, Users, Truck, Receipt, FolderOpen, Factory, Box,
-  ChevronDown, ChevronRight, HelpCircle, Database, DollarSign, Megaphone
+  ChevronDown, ChevronRight, HelpCircle, Database, DollarSign, Megaphone, Building2
 } from 'lucide-react';
 import { logout } from './Auth';
 import logo from '../assets/wkly-nuts-logo.png';
@@ -52,6 +52,7 @@ const navGroups = [
     label: 'Reports & Files',
     items: [
       { name: 'Reports', href: '/reports', icon: BarChart3 },
+      { name: 'GST & Tax', href: '/gst', icon: Building2 },
       { name: 'Documents', href: '/documents', icon: FolderOpen },
     ],
   },

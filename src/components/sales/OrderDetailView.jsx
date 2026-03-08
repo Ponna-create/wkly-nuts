@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { X, Copy, Check, Printer, MessageCircle, Package, Truck, CheckCircle, FileText, Loader2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Copy, Check, Printer, MessageCircle, Package, Truck, CheckCircle, FileText, Loader2, Save, Edit2 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { dbService } from '../../services/supabase';
 import LabelPrinter from './LabelPrinter';
@@ -14,10 +14,24 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
   const [currentOrder, setCurrentOrder] = useState(order);
   const [generatingInvoice, setGeneratingInvoice] = useState(false);
   const [showInvoiceView, setShowInvoiceView] = useState(false);
+  const [editingTracking, setEditingTracking] = useState(false);
+  const [trackingInput, setTrackingInput] = useState(order.tracking_number || '');
+  const [courierInput, setCourierInput] = useState(order.courier_name || 'ST Courier');
+  const [savingTracking, setSavingTracking] = useState(false);
 
-  // Find linked invoice
+  // Sync with parent order prop when it changes (e.g., after BulkTrackingEntry updates)
+  useEffect(() => {
+    setCurrentOrder(order);
+    setTrackingInput(order.tracking_number || '');
+    setCourierInput(order.courier_name || 'ST Courier');
+  }, [order, order.tracking_number, order.courier_name, order.status, order.invoice_id]);
+
+  // Find linked invoice - check by ID with both formats
   const linkedInvoice = currentOrder.invoice_id
-    ? (state.invoices || []).find(inv => inv.id === currentOrder.invoice_id)
+    ? (state.invoices || []).find(inv =>
+        inv.id === currentOrder.invoice_id ||
+        String(inv.id) === String(currentOrder.invoice_id)
+      )
     : null;
 
   const getStatusBadge = (status) => {
@@ -84,11 +98,52 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
     }
   };
 
+  const handleSaveTracking = async () => {
+    if (!trackingInput.trim()) {
+      showToast('Please enter a tracking number', 'error');
+      return;
+    }
+    setSavingTracking(true);
+    const updatedOrder = {
+      ...currentOrder,
+      tracking_number: trackingInput.trim(),
+      courier_name: courierInput.trim() || 'ST Courier',
+    };
+    const { error } = await dbService.updateSalesOrder(updatedOrder);
+    if (error) {
+      showToast('Error saving tracking number', 'error');
+    } else {
+      setCurrentOrder(updatedOrder);
+      dispatch({ type: 'UPDATE_SALES_ORDER', payload: updatedOrder });
+      showToast('Tracking number saved!', 'success');
+      setEditingTracking(false);
+      onUpdate();
+    }
+    setSavingTracking(false);
+  };
+
   // Generate Invoice from Order
   const handleGenerateInvoice = async () => {
-    if (linkedInvoice) {
-      setShowInvoiceView(true);
-      return;
+    // If invoice already linked, try to show it
+    if (currentOrder.invoice_id) {
+      if (linkedInvoice) {
+        setShowInvoiceView(true);
+        return;
+      }
+      // Invoice ID exists but not found in state - try fetching from DB
+      try {
+        const { data: freshInvoices } = await dbService.getInvoices();
+        if (freshInvoices) {
+          dispatch({ type: 'LOAD_INVOICES', payload: freshInvoices });
+          const found = freshInvoices.find(inv => String(inv.id) === String(currentOrder.invoice_id));
+          if (found) {
+            setShowInvoiceView(true);
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn('Could not fetch invoices:', e);
+      }
     }
 
     setGeneratingInvoice(true);
@@ -345,40 +400,97 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
             )}
           </div>
 
-          {/* Shipping */}
-          {(currentOrder.tracking_number || currentOrder.courier_name || currentOrder.dispatch_date) && (
-            <div className="space-y-3">
-              <h3 className="font-bold text-gray-900">Shipping</h3>
-              <div className="grid grid-cols-2 gap-4">
-                {currentOrder.courier_name && (
-                  <div>
-                    <p className="text-xs font-semibold text-gray-500 uppercase">Courier</p>
-                    <p className="text-gray-900">{currentOrder.courier_name}</p>
-                  </div>
-                )}
-                {currentOrder.dispatch_date && (
-                  <div>
-                    <p className="text-xs font-semibold text-gray-500 uppercase">Dispatch Date</p>
-                    <p className="text-gray-900">{currentOrder.dispatch_date}</p>
-                  </div>
-                )}
-              </div>
-              {currentOrder.tracking_number && (
-                <div>
-                  <p className="text-xs font-semibold text-gray-500 uppercase">Tracking Number</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <code className="text-sm bg-gray-100 px-2 py-1 rounded font-mono">{currentOrder.tracking_number}</code>
-                    <button
-                      onClick={() => handleCopyToClipboard(currentOrder.tracking_number, 'tracking')}
-                      className="p-1 hover:bg-gray-100 rounded"
-                    >
-                      {copiedField === 'tracking' ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4 text-gray-600" />}
-                    </button>
-                  </div>
-                </div>
+          {/* Shipping & Tracking - Always shown */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-gray-900">Shipping & Tracking</h3>
+              {!editingTracking && (
+                <button
+                  onClick={() => setEditingTracking(true)}
+                  className="flex items-center gap-1 text-xs text-teal-600 hover:text-teal-700 font-medium"
+                >
+                  <Edit2 className="w-3 h-3" />
+                  {currentOrder.tracking_number ? 'Edit' : 'Add Tracking'}
+                </button>
               )}
             </div>
-          )}
+
+            {currentOrder.dispatch_date && (
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase">Dispatch Date</p>
+                <p className="text-gray-900">{currentOrder.dispatch_date}</p>
+              </div>
+            )}
+
+            {editingTracking ? (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-3">
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 block mb-1">Courier Name</label>
+                  <input
+                    type="text"
+                    value={courierInput}
+                    onChange={(e) => setCourierInput(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                    placeholder="ST Courier"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 block mb-1">Tracking Number</label>
+                  <input
+                    type="text"
+                    value={trackingInput}
+                    onChange={(e) => setTrackingInput(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono"
+                    placeholder="Enter tracking number"
+                    autoFocus
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleSaveTracking}
+                    disabled={savingTracking}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-teal-600 text-white rounded-lg text-sm hover:bg-teal-700 disabled:opacity-50"
+                  >
+                    {savingTracking ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                    Save
+                  </button>
+                  <button
+                    onClick={() => {
+                      setEditingTracking(false);
+                      setTrackingInput(currentOrder.tracking_number || '');
+                      setCourierInput(currentOrder.courier_name || 'ST Courier');
+                    }}
+                    className="px-3 py-1.5 text-gray-600 hover:bg-gray-200 rounded-lg text-sm"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 uppercase">Courier</p>
+                  <p className="text-gray-900">{currentOrder.courier_name || <span className="text-gray-400 italic">Not set</span>}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 uppercase">Tracking Number</p>
+                  {currentOrder.tracking_number ? (
+                    <div className="flex items-center gap-2">
+                      <code className="text-sm bg-gray-100 px-2 py-1 rounded font-mono">{currentOrder.tracking_number}</code>
+                      <button
+                        onClick={() => handleCopyToClipboard(currentOrder.tracking_number, 'tracking')}
+                        className="p-1 hover:bg-gray-100 rounded"
+                      >
+                        {copiedField === 'tracking' ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4 text-gray-600" />}
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="text-gray-400 italic text-sm">No tracking yet</p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Follow-up Notes */}
           {currentOrder.follow_up_notes && (

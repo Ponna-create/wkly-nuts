@@ -7,6 +7,7 @@ import ProductionSimulator from '../components/ProductionSimulator';
 import DashboardStats from '../components/DashboardStats';
 import TopItems from '../components/TopItems';
 import RecentActivity from '../components/RecentActivity';
+import StockAlerts from '../components/StockAlerts';
 import logo from '../assets/wkly-nuts-logo.png';
 
 export default function Dashboard() {
@@ -151,6 +152,9 @@ export default function Dashboard() {
               )}
             </div>
           )}
+
+          {/* Stock Alerts Widget */}
+          <StockAlerts compact={false} showTitle={true} />
 
           {/* Top Items Widget */}
           <TopItems />

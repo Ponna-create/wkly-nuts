@@ -322,6 +322,11 @@ export default function Marketing() {
                       </select>
                     </div>
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Contact Date</label>
+                    <input type="date" value={contactForm.contactDate} onChange={e => setContactForm(p => ({...p, contactDate: e.target.value}))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                  </div>
                   <div className="grid grid-cols-3 gap-3">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Fee (₹)</label>

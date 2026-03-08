@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { BarChart3, TrendingUp, Package, ShoppingCart, Calendar, Download, IndianRupee, Factory } from 'lucide-react';
+import { BarChart3, TrendingUp, Package, ShoppingCart, Calendar, Download, IndianRupee, Factory, Users, Target, Wallet } from 'lucide-react';
 import { dbService } from '../services/supabase';
 import { useApp } from '../context/AppContext';
 
@@ -186,6 +186,83 @@ export default function Reports() {
   // === PROFIT/LOSS ===
   const netProfit = salesMetrics.total - expenseMetrics.total - productionMetrics.totalCost;
 
+  // === MONTHLY TREND (last 6 months, uses all orders not filtered) ===
+  const monthlyTrend = useMemo(() => {
+    const months = [];
+    const now = new Date();
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const label = d.toLocaleDateString('en-IN', { month: 'short', year: '2-digit' });
+      const monthOrders = orders.filter(o => {
+        const od = o.order_date || o.created_at?.split('T')[0];
+        return od && od.startsWith(key);
+      });
+      const monthExpenses = expenses.filter(e => {
+        const ed = e.expense_date || e.created_at?.split('T')[0];
+        return ed && ed.startsWith(key);
+      });
+      const revenue = monthOrders.reduce((s, o) => s + (o.total_amount || 0), 0);
+      const expense = monthExpenses.reduce((s, e) => s + (e.total_amount || e.amount || 0), 0);
+      months.push({ key, label, revenue, expense, profit: revenue - expense, orderCount: monthOrders.length });
+    }
+    return months;
+  }, [orders, expenses]);
+
+  // === CUSTOMER RETENTION ===
+  const customerRetention = useMemo(() => {
+    // Customers who ordered in the filtered period
+    const periodCustomers = new Set(filteredOrders.map(o => (o.customer_name || '').toLowerCase().trim()).filter(Boolean));
+    // All customers who ordered BEFORE the filtered period
+    const priorCustomers = new Set(
+      orders.filter(o => {
+        const d = o.order_date || o.created_at?.split('T')[0];
+        return d && d < rangeFrom;
+      }).map(o => (o.customer_name || '').toLowerCase().trim()).filter(Boolean)
+    );
+    const repeatCustomers = [...periodCustomers].filter(c => priorCustomers.has(c));
+    const newCustomers = [...periodCustomers].filter(c => !priorCustomers.has(c));
+
+    // Repeat order frequency
+    const orderCounts = {};
+    filteredOrders.forEach(o => {
+      const name = (o.customer_name || '').toLowerCase().trim();
+      if (name) orderCounts[name] = (orderCounts[name] || 0) + 1;
+    });
+    const multiOrderCustomers = Object.values(orderCounts).filter(c => c > 1).length;
+
+    return {
+      total: periodCustomers.size,
+      repeat: repeatCustomers.length,
+      new: newCustomers.length,
+      multiOrder: multiOrderCustomers,
+      repeatRate: periodCustomers.size > 0 ? ((repeatCustomers.length / periodCustomers.size) * 100).toFixed(0) : 0,
+    };
+  }, [filteredOrders, orders, rangeFrom]);
+
+  // === BREAKEVEN ANALYSIS ===
+  const breakeven = useMemo(() => {
+    const totalFixedCosts = expenseMetrics.total + productionMetrics.totalCost;
+    const avgOrderValue = salesMetrics.avgValue;
+    const ordersNeeded = avgOrderValue > 0 ? Math.ceil(totalFixedCosts / avgOrderValue) : 0;
+    const currentOrders = salesMetrics.count;
+    const progress = ordersNeeded > 0 ? Math.min((currentOrders / ordersNeeded) * 100, 100) : 0;
+    const remaining = Math.max(0, ordersNeeded - currentOrders);
+    const revenueNeeded = totalFixedCosts;
+    const revenueProgress = revenueNeeded > 0 ? Math.min((salesMetrics.total / revenueNeeded) * 100, 100) : 0;
+
+    return { totalFixedCosts, avgOrderValue, ordersNeeded, currentOrders, progress, remaining, revenueNeeded, revenueProgress };
+  }, [expenseMetrics, productionMetrics, salesMetrics]);
+
+  // === CASH FLOW ===
+  const cashFlow = useMemo(() => {
+    const received = filteredOrders.filter(o => o.payment_status === 'received').reduce((s, o) => s + (o.amount_paid || o.total_amount || 0), 0);
+    const pending = filteredOrders.filter(o => o.payment_status !== 'received').reduce((s, o) => s + (o.total_amount || 0), 0);
+    const totalExpensePaid = filteredExpenses.reduce((s, e) => s + (e.total_amount || e.amount || 0), 0);
+    const netCashFlow = received - totalExpensePaid;
+    return { received, pending, totalExpensePaid, netCashFlow };
+  }, [filteredOrders, filteredExpenses]);
+
   const SOURCE_LABELS = { whatsapp: 'WhatsApp', website: 'Website', instagram: 'Instagram', meta_ad: 'Meta Ads', walkin: 'Walk-in', zoho: 'Zoho', direct: 'Direct' };
   const STATUS_LABELS = { follow_up: 'Follow-up', packing: 'Packing', packed: 'Packed', dispatched: 'Dispatched', in_transit: 'In Transit', delivered: 'Delivered', completed: 'Completed', cancelled: 'Cancelled', returned: 'Returned' };
   const CATEGORY_LABELS = { raw_materials: 'Raw Materials', packaging: 'Packaging', shipping: 'Shipping', advertising: 'Advertising', rent: 'Rent', utilities: 'Utilities', equipment: 'Equipment', salary: 'Salary', courier: 'Courier', misc: 'Miscellaneous' };
@@ -348,6 +425,33 @@ export default function Reports() {
           </div>
         </div>
 
+        {/* Cash Flow */}
+        <div className="bg-white p-6 rounded-lg border border-gray-200">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <Wallet className="w-5 h-5 text-teal-600" /> Cash Flow
+          </h3>
+          <div className="space-y-3">
+            <div className="flex justify-between py-2 border-b border-gray-100">
+              <span className="text-gray-600">Payments Received</span>
+              <span className="font-bold text-green-700">₹{cashFlow.received.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+            </div>
+            <div className="flex justify-between py-2 border-b border-gray-100">
+              <span className="text-gray-600">Payments Pending</span>
+              <span className="font-bold text-amber-700">₹{cashFlow.pending.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+            </div>
+            <div className="flex justify-between py-2 border-b border-gray-100">
+              <span className="text-gray-600">Total Expenses Paid</span>
+              <span className="font-bold text-red-700">₹{cashFlow.totalExpensePaid.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+            </div>
+            <div className={`flex justify-between py-2 px-3 rounded-lg ${cashFlow.netCashFlow >= 0 ? 'bg-green-50' : 'bg-red-50'}`}>
+              <span className="font-semibold">Net Cash Flow</span>
+              <span className={`font-bold text-lg ${cashFlow.netCashFlow >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                {cashFlow.netCashFlow >= 0 ? '+' : ''}₹{cashFlow.netCashFlow.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+              </span>
+            </div>
+          </div>
+        </div>
+
         {/* Key Metrics */}
         <div className="bg-white p-6 rounded-lg border border-gray-200">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Key Metrics</h3>
@@ -385,6 +489,133 @@ export default function Reports() {
               <span className={`font-bold ${netProfit >= 0 ? 'text-green-700' : 'text-red-700'}`}>
                 {salesMetrics.total > 0 ? ((netProfit / salesMetrics.total) * 100).toFixed(1) : 0}%
               </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Monthly Revenue Trend (last 6 months) */}
+      <div className="bg-white p-6 rounded-lg border border-gray-200">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+          <BarChart3 className="w-5 h-5 text-teal-600" /> Monthly Revenue Trend (Last 6 Months)
+        </h3>
+        <div className="flex items-end gap-2 h-48">
+          {monthlyTrend.map((m) => {
+            const maxVal = Math.max(...monthlyTrend.map(t => Math.max(t.revenue, t.expense)), 1);
+            const revHeight = (m.revenue / maxVal) * 100;
+            const expHeight = (m.expense / maxVal) * 100;
+            return (
+              <div key={m.key} className="flex-1 flex flex-col items-center gap-1">
+                <div className="w-full flex items-end gap-0.5" style={{ height: '160px' }}>
+                  <div className="flex-1 bg-green-400 rounded-t transition-all duration-500" style={{ height: `${Math.max(revHeight, 2)}%` }} title={`Revenue: ₹${m.revenue.toLocaleString('en-IN')}`} />
+                  <div className="flex-1 bg-red-300 rounded-t transition-all duration-500" style={{ height: `${Math.max(expHeight, 2)}%` }} title={`Expenses: ₹${m.expense.toLocaleString('en-IN')}`} />
+                </div>
+                <span className="text-xs text-gray-500 font-medium">{m.label}</span>
+                <span className="text-[10px] text-gray-400">{m.orderCount} ord</span>
+              </div>
+            );
+          })}
+        </div>
+        <div className="flex items-center gap-4 mt-3 justify-center">
+          <div className="flex items-center gap-1"><div className="w-3 h-3 bg-green-400 rounded" /><span className="text-xs text-gray-500">Revenue</span></div>
+          <div className="flex items-center gap-1"><div className="w-3 h-3 bg-red-300 rounded" /><span className="text-xs text-gray-500">Expenses</span></div>
+        </div>
+      </div>
+
+      {/* Customer Retention & Breakeven side by side */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Customer Retention */}
+        <div className="bg-white p-6 rounded-lg border border-gray-200">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <Users className="w-5 h-5 text-purple-600" /> Customer Retention
+          </h3>
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <div className="bg-blue-50 rounded-lg p-3 text-center">
+              <p className="text-2xl font-bold text-blue-700">{customerRetention.total}</p>
+              <p className="text-xs text-blue-500">Total Customers</p>
+            </div>
+            <div className="bg-green-50 rounded-lg p-3 text-center">
+              <p className="text-2xl font-bold text-green-700">{customerRetention.repeat}</p>
+              <p className="text-xs text-green-500">Repeat Customers</p>
+            </div>
+            <div className="bg-purple-50 rounded-lg p-3 text-center">
+              <p className="text-2xl font-bold text-purple-700">{customerRetention.new}</p>
+              <p className="text-xs text-purple-500">New Customers</p>
+            </div>
+            <div className="bg-amber-50 rounded-lg p-3 text-center">
+              <p className="text-2xl font-bold text-amber-700">{customerRetention.repeatRate}%</p>
+              <p className="text-xs text-amber-500">Repeat Rate</p>
+            </div>
+          </div>
+          {customerRetention.total > 0 && (
+            <div className="mt-2">
+              <div className="flex justify-between text-xs text-gray-500 mb-1">
+                <span>New vs Repeat</span>
+                <span>{customerRetention.new} new / {customerRetention.repeat} repeat</span>
+              </div>
+              <div className="h-4 bg-gray-100 rounded-full overflow-hidden flex">
+                <div className="bg-purple-400 h-full transition-all" style={{ width: `${customerRetention.total > 0 ? (customerRetention.new / customerRetention.total) * 100 : 0}%` }} />
+                <div className="bg-green-400 h-full transition-all" style={{ width: `${customerRetention.total > 0 ? (customerRetention.repeat / customerRetention.total) * 100 : 0}%` }} />
+              </div>
+              <div className="flex gap-3 mt-1 justify-center">
+                <div className="flex items-center gap-1"><div className="w-2 h-2 bg-purple-400 rounded" /><span className="text-[10px] text-gray-500">New</span></div>
+                <div className="flex items-center gap-1"><div className="w-2 h-2 bg-green-400 rounded" /><span className="text-[10px] text-gray-500">Repeat</span></div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Breakeven Analysis */}
+        <div className="bg-white p-6 rounded-lg border border-gray-200">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <Target className="w-5 h-5 text-teal-600" /> Breakeven Analysis
+          </h3>
+          <div className="space-y-4">
+            <div>
+              <div className="flex justify-between text-sm mb-1">
+                <span className="text-gray-600">Revenue vs Costs</span>
+                <span className={`font-semibold ${breakeven.revenueProgress >= 100 ? 'text-green-600' : 'text-amber-600'}`}>
+                  {breakeven.revenueProgress.toFixed(0)}%
+                </span>
+              </div>
+              <div className="h-5 bg-gray-100 rounded-full overflow-hidden">
+                <div className={`h-full rounded-full transition-all duration-500 ${breakeven.revenueProgress >= 100 ? 'bg-green-500' : 'bg-amber-400'}`}
+                  style={{ width: `${breakeven.revenueProgress}%` }} />
+              </div>
+              <div className="flex justify-between text-xs text-gray-400 mt-1">
+                <span>₹{salesMetrics.total.toLocaleString('en-IN', { maximumFractionDigits: 0 })} earned</span>
+                <span>₹{breakeven.revenueNeeded.toLocaleString('en-IN', { maximumFractionDigits: 0 })} needed</span>
+              </div>
+            </div>
+
+            <div className="bg-gray-50 rounded-lg p-3 space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-600">Total Costs (Expenses + Production)</span>
+                <span className="font-semibold">₹{breakeven.totalFixedCosts.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Avg Order Value</span>
+                <span className="font-semibold">₹{breakeven.avgOrderValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+              </div>
+              <div className="flex justify-between border-t border-gray-200 pt-2">
+                <span className="text-gray-600">Orders Needed to Break Even</span>
+                <span className="font-bold text-lg">{breakeven.ordersNeeded}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Current Orders</span>
+                <span className="font-semibold text-teal-600">{breakeven.currentOrders}</span>
+              </div>
+              {breakeven.remaining > 0 ? (
+                <div className="flex justify-between bg-amber-50 px-2 py-1 rounded">
+                  <span className="text-amber-700 font-medium">Still Need</span>
+                  <span className="font-bold text-amber-700">{breakeven.remaining} more orders</span>
+                </div>
+              ) : (
+                <div className="flex justify-between bg-green-50 px-2 py-1 rounded">
+                  <span className="text-green-700 font-medium">Status</span>
+                  <span className="font-bold text-green-700">Breakeven Achieved!</span>
+                </div>
+              )}
             </div>
           </div>
         </div>

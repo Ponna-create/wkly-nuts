@@ -2784,4 +2784,178 @@ export const dbService = {
       return data;
     } catch { return null; }
   },
+
+  // ==========================================
+  // STOCK ALERTS
+  // ==========================================
+  async getLowStockAlerts() {
+    const alerts = [];
+
+    try {
+      // 1. Raw material alerts - ingredients below safety_stock_level
+      if (isSupabaseAvailable()) {
+        const { data: ingredients } = await supabase
+          .from('ingredients')
+          .select('id, name, unit, current_stock_total, safety_stock_level')
+          .order('name');
+
+        if (ingredients) {
+          for (const ing of ingredients) {
+            const threshold = parseFloat(ing.safety_stock_level) || 2; // default 2kg
+            const stock = parseFloat(ing.current_stock_total) || 0;
+            if (stock <= threshold) {
+              alerts.push({
+                type: 'raw_material',
+                severity: stock === 0 ? 'critical' : stock <= threshold * 0.5 ? 'high' : 'medium',
+                name: ing.name,
+                currentStock: stock,
+                threshold: threshold,
+                unit: ing.unit || 'kg',
+                message: stock === 0
+                  ? `${ing.name}: OUT OF STOCK!`
+                  : `${ing.name}: ${stock} ${ing.unit || 'kg'} left (min: ${threshold} ${ing.unit || 'kg'})`,
+              });
+            }
+          }
+        }
+
+        // 2. Check for expiring batches (within 7 days)
+        const weekFromNow = new Date();
+        weekFromNow.setDate(weekFromNow.getDate() + 7);
+        const { data: expiringBatches } = await supabase
+          .from('ingredient_batches')
+          .select('id, batch_number, expiry_date, quantity_remaining, ingredient_id, ingredients(name, unit)')
+          .eq('status', 'active')
+          .gt('quantity_remaining', 0)
+          .lte('expiry_date', weekFromNow.toISOString().split('T')[0])
+          .order('expiry_date', { ascending: true });
+
+        if (expiringBatches) {
+          for (const batch of expiringBatches) {
+            const daysLeft = Math.ceil((new Date(batch.expiry_date) - new Date()) / (1000 * 60 * 60 * 24));
+            const isExpired = daysLeft < 0;
+            alerts.push({
+              type: 'expiring_batch',
+              severity: isExpired ? 'critical' : daysLeft <= 3 ? 'high' : 'medium',
+              name: batch.ingredients?.name || 'Unknown',
+              batchNumber: batch.batch_number,
+              expiryDate: batch.expiry_date,
+              daysLeft: daysLeft,
+              quantity: batch.quantity_remaining,
+              unit: batch.ingredients?.unit || 'kg',
+              message: isExpired
+                ? `${batch.ingredients?.name} batch ${batch.batch_number}: EXPIRED! (${batch.quantity_remaining} ${batch.ingredients?.unit || 'kg'} remaining)`
+                : `${batch.ingredients?.name} batch ${batch.batch_number}: expires in ${daysLeft} days (${batch.quantity_remaining} ${batch.ingredients?.unit || 'kg'})`,
+            });
+          }
+        }
+
+        // 3. Packaging material alerts - below min_stock
+        const { data: packaging } = await supabase
+          .from('packaging_materials')
+          .select('id, name, category, unit, current_stock, min_stock')
+          .order('name');
+
+        if (packaging) {
+          for (const pkg of packaging) {
+            const minStock = parseFloat(pkg.min_stock) || 0;
+            const currentStock = parseFloat(pkg.current_stock) || 0;
+            if (minStock > 0 && currentStock <= minStock) {
+              alerts.push({
+                type: 'packaging',
+                severity: currentStock === 0 ? 'critical' : currentStock <= minStock * 0.5 ? 'high' : 'medium',
+                name: pkg.name,
+                currentStock: currentStock,
+                threshold: minStock,
+                unit: pkg.unit || 'pcs',
+                message: currentStock === 0
+                  ? `${pkg.name}: OUT OF STOCK!`
+                  : `${pkg.name}: ${currentStock} ${pkg.unit || 'pcs'} left (min: ${minStock})`,
+              });
+            }
+          }
+        }
+
+        // 4. Finished goods alerts - low stock (below 5 units)
+        const { data: finishedGoods } = await supabase
+          .from('inventory')
+          .select('*, skus(id, name)')
+          .order('last_updated', { ascending: false });
+
+        if (finishedGoods) {
+          for (const inv of finishedGoods) {
+            const weekly = parseFloat(inv.weekly_packs_available) || 0;
+            const monthly = parseFloat(inv.monthly_packs_available) || 0;
+            const total = weekly + monthly;
+            if (total < 5) {
+              alerts.push({
+                type: 'finished_goods',
+                severity: total === 0 ? 'critical' : 'medium',
+                name: inv.skus?.name || 'Unknown SKU',
+                weeklyStock: weekly,
+                monthlyStock: monthly,
+                unit: 'boxes',
+                message: total === 0
+                  ? `${inv.skus?.name}: NO STOCK! Need to produce more.`
+                  : `${inv.skus?.name}: Only ${weekly} weekly + ${monthly} monthly packs left`,
+              });
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching stock alerts:', error);
+    }
+
+    // Sort: critical first, then high, then medium
+    const severityOrder = { critical: 0, high: 1, medium: 2 };
+    alerts.sort((a, b) => (severityOrder[a.severity] || 99) - (severityOrder[b.severity] || 99));
+
+    return alerts;
+  },
+
+  // Get ingredients with full batch details for production form dropdown
+  async getIngredientsForProduction() {
+    if (!isSupabaseAvailable()) return { data: [], error: null };
+    try {
+      const { data, error } = await supabase
+        .from('ingredients')
+        .select(`
+          id, name, unit, current_stock_total, safety_stock_level,
+          ingredient_batches (
+            id, batch_number, quantity_remaining, expiry_date, status, price_per_unit
+          )
+        `)
+        .order('name');
+      if (error) throw error;
+      // Filter to only active batches with stock
+      const enriched = (data || []).map(ing => ({
+        ...ing,
+        ingredient_batches: (ing.ingredient_batches || [])
+          .filter(b => b.status === 'active' && b.quantity_remaining > 0)
+          .sort((a, b) => new Date(a.expiry_date) - new Date(b.expiry_date)), // FIFO
+      }));
+      return { data: enriched, error: null };
+    } catch (error) {
+      console.error('Error fetching ingredients for production:', error);
+      return { data: [], error };
+    }
+  },
+
+  // Get packaging materials for production form dropdown
+  async getPackagingForProduction() {
+    if (!isSupabaseAvailable()) return { data: [], error: null };
+    try {
+      const { data, error } = await supabase
+        .from('packaging_materials')
+        .select('id, name, category, unit, current_stock, min_stock')
+        .gt('current_stock', 0)
+        .order('name');
+      if (error) throw error;
+      return { data: data || [], error: null };
+    } catch (error) {
+      console.error('Error fetching packaging for production:', error);
+      return { data: [], error };
+    }
+  },
 };

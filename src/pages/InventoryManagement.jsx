@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Plus, Edit, Trash2, Search, X, Package, AlertTriangle, CheckCircle, Layers, Leaf, Box } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
+import StockAlerts from '../components/StockAlerts';
 
 export default function InventoryManagement() {
   const { state, dispatch, showToast } = useApp();
@@ -97,6 +98,9 @@ export default function InventoryManagement() {
 
   return (
     <div className="space-y-6">
+      {/* Stock Alerts */}
+      <StockAlerts compact={false} showTitle={true} />
+
       {/* Summary Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">

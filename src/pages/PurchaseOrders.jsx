@@ -368,6 +368,26 @@ function POForm({ po, vendors, onClose, onSave }) {
                 {['Bank Transfer', 'UPI', 'Cash', 'Cheque', 'Credit Card'].map(m => <option key={m}>{m}</option>)}
               </select>
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Payment Status</label>
+              <select value={form.payment_status} onChange={e => setForm(f => ({ ...f, payment_status: e.target.value }))}
+                className="w-full border rounded-lg px-3 py-2 text-sm">
+                <option value="pending">Pending</option>
+                <option value="partial">Partial</option>
+                <option value="paid">Paid</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+              <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
+                className="w-full border rounded-lg px-3 py-2 text-sm">
+                <option value="draft">Draft</option>
+                <option value="ordered">Ordered</option>
+                <option value="confirmed">Confirmed</option>
+                <option value="shipped">Shipped</option>
+                <option value="received">Received</option>
+              </select>
+            </div>
           </div>
 
           {/* Items */}
@@ -376,7 +396,8 @@ function POForm({ po, vendors, onClose, onSave }) {
             <div className="space-y-2">
               {items.map((item, idx) => (
                 <div key={idx} className="grid grid-cols-12 gap-2 items-center">
-                  <input type="text" placeholder="Ingredient" value={item.ingredient_name} onChange={e => updateItem(idx, 'ingredient_name', e.target.value)}
+                  <input type="text" placeholder="Ingredient name" value={item.ingredient_name} onChange={e => updateItem(idx, 'ingredient_name', e.target.value)}
+                    list="po-ingredient-list"
                     className="col-span-4 border rounded-lg px-2 py-1.5 text-sm" />
                   <input type="number" step="0.1" placeholder="Qty (kg)" value={item.quantity_kg} onChange={e => updateItem(idx, 'quantity_kg', e.target.value)}
                     className="col-span-2 border rounded-lg px-2 py-1.5 text-sm" />
@@ -394,6 +415,13 @@ function POForm({ po, vendors, onClose, onSave }) {
             </div>
             <button type="button" onClick={() => setItems(prev => [...prev, { ingredient_name: '', quantity_kg: '', unit_price: '', total: 0 }])}
               className="mt-2 text-sm text-teal-600 hover:text-teal-700 font-medium">+ Add Item</button>
+            <datalist id="po-ingredient-list">
+              {['Almond', 'Cashew', 'Walnut', 'Pistachio', 'Pumpkin Seeds', 'Sunflower Seeds', 'Flax Seeds', 'Chia Seeds',
+                'Sesame Seeds', 'Melon Seeds', 'Raisins', 'Dates', 'Cranberries', 'Figs', 'Apricots',
+                'Fox Nuts (Makhana)', 'Peanuts', 'Brazil Nuts', 'Macadamia', 'Hazelnuts', 'Pine Nuts'].map(name =>
+                <option key={name} value={name} />
+              )}
+            </datalist>
           </div>
 
           {/* Totals */}

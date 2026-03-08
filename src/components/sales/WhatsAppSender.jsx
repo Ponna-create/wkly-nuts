@@ -346,6 +346,13 @@ export default function WhatsAppSender({ order, onClose }) {
             <p className="text-xs text-gray-500 mt-1">{message.length} characters</p>
           </div>
 
+          {/* How it works */}
+          <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+            <p className="text-xs text-green-800">
+              <strong>How it works:</strong> "Open WhatsApp" will open WhatsApp Web/App with this message pre-filled for <strong>{order.customer_name}</strong>. You just need to hit <strong>Send</strong> in WhatsApp. Or use "Copy" to paste the message anywhere.
+            </p>
+          </div>
+
           {/* Actions */}
           <div className="flex gap-3 pt-4 border-t border-gray-200">
             <button onClick={handleCopy}
@@ -359,11 +366,16 @@ export default function WhatsAppSender({ order, onClose }) {
             <button onClick={handleOpenWhatsApp} disabled={!order.phone}
               className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed">
               <ExternalLink className="w-4 h-4" />
-              Open WhatsApp
+              Open in WhatsApp
             </button>
           </div>
           {!order.phone && (
             <p className="text-xs text-red-500 text-center">No phone number available for this customer</p>
+          )}
+          {order.phone && (
+            <p className="text-xs text-gray-400 text-center">
+              Opens wa.me/{order.phone?.replace(/[^0-9]/g, '')?.replace(/^(?!91)/, '91')} with pre-filled message
+            </p>
           )}
         </div>
       </div>

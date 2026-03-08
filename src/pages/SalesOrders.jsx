@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Eye, Trash2, Zap, Camera, FileSpreadsheet, MessageCircle } from 'lucide-react';
+import { Plus, Search, Eye, Trash2, Zap, Camera, FileSpreadsheet, MessageCircle, Truck } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
 import NewOrderForm from '../components/sales/NewOrderForm';
@@ -9,6 +9,7 @@ import BulkWhatsAppSend from '../components/sales/BulkWhatsAppSend';
 import QRScanner from '../components/sales/QRScanner';
 import ZohoImport from '../components/sales/ZohoImport';
 import TrackingCSVImport from '../components/sales/TrackingCSVImport';
+import TrackingChecker from '../components/sales/TrackingChecker';
 
 export default function SalesOrders() {
   const { state, dispatch, showToast } = useApp();
@@ -21,6 +22,7 @@ export default function SalesOrders() {
   const [showZohoImport, setShowZohoImport] = useState(false);
   const [showTrackingImport, setShowTrackingImport] = useState(false);
   const [showBulkWhatsApp, setShowBulkWhatsApp] = useState(false);
+  const [showTrackingChecker, setShowTrackingChecker] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [filterStatus, setFilterStatus] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
@@ -166,8 +168,30 @@ export default function SalesOrders() {
             <FileSpreadsheet className="w-4 h-4" />
             Import
           </button>
+          <button
+            onClick={() => setShowTrackingChecker(!showTrackingChecker)}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg transition text-sm font-medium ${showTrackingChecker ? 'bg-purple-700 text-white' : 'bg-purple-100 text-purple-700 hover:bg-purple-200'}`}
+            title="Check delivery status & send feedback"
+          >
+            <Truck className="w-4 h-4" />
+            Delivery
+          </button>
         </div>
       </div>
+
+      {/* Tracking Checker Panel */}
+      {showTrackingChecker && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+              <Truck className="w-5 h-5 text-purple-600" />
+              Delivery Tracking & Feedback
+            </h2>
+            <button onClick={() => setShowTrackingChecker(false)} className="text-gray-400 hover:text-gray-600 text-sm">Close</button>
+          </div>
+          <TrackingChecker orders={orders} onOrderUpdate={loadOrders} showToast={showToast} />
+        </div>
+      )}
 
       {/* Status Tabs */}
       <div className="flex gap-2 overflow-x-auto pb-2">
