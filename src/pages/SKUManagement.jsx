@@ -2125,10 +2125,10 @@ export default function SKUManagement() {
                         {sku.singleUnit && (
                           <>
                             <p className="text-sm text-gray-700">
-                              Total: {((sku.singleUnit.totalGrams || 0) / 1000).toFixed(2)} kg
+                              Total: {((sku.singleUnit?.totalGrams || 0) / 1000).toFixed(2)} kg
                             </p>
                             <p className="text-sm font-bold text-blue-700">
-                              ₹{(sku.singleUnit.rawMaterialCost || 0).toFixed(2)} per unit
+                              ₹{(sku.singleUnit?.rawMaterialCost || 0).toFixed(2)} per unit
                             </p>
                           </>
                         )}

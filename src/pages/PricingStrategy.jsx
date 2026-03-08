@@ -101,8 +101,8 @@ export default function PricingStrategy() {
   const getRawMaterialCost = () => {
     if (!selectedSKU) return 0;
     return packType === 'weekly'
-      ? selectedSKU.weeklyPack.rawMaterialCost
-      : selectedSKU.monthlyPack.rawMaterialCost;
+      ? (selectedSKU.weeklyPack?.rawMaterialCost || 0)
+      : (selectedSKU.monthlyPack?.rawMaterialCost || 0);
   };
 
   const getSachetsCount = () => {

@@ -26,7 +26,7 @@ export default function ProductionSimulator() {
             const sku = skus.find(s => s.id === selectedSKU);
             if (!sku) throw new Error('SKU not found');
 
-            const recipe = packType === 'weekly' ? sku.weeklyPack.recipe : sku.monthlyPack.recipe;
+            const recipe = packType === 'weekly' ? sku.weeklyPack?.recipe : sku.monthlyPack?.recipe;
             const sachetsCount = packType === 'weekly' ? 7 : 28;
             const totalPacks = parseInt(quantity);
 
