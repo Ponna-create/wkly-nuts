@@ -2143,7 +2143,7 @@ export default function SKUManagement() {
                           <div key={day} className={`${DAY_COLORS[day]} text-white text-center py-2 rounded text-xs font-bold`}>
                             {day}
                             <div className="text-[10px] mt-1">
-                              {sku.recipes[day]?.length || 0} ing
+                              {sku.recipes?.[day]?.length || 0} ing
                             </div>
                           </div>
                         ))}
