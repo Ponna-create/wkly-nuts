@@ -656,16 +656,16 @@ export default function PricingStrategy() {
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between">
                       <span className="text-gray-600">Cost:</span>
-                      <span className="font-semibold">₹{weeklyPricing.totalCost.toFixed(2)}</span>
+                      <span className="font-semibold">₹{(weeklyPricing.totalCost || 0).toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-600">Selling Price:</span>
-                      <span className="font-semibold">₹{weeklyPricing.sellingPrice.toFixed(2)}</span>
+                      <span className="font-semibold">₹{(weeklyPricing.sellingPrice || 0).toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-600">Profit:</span>
                       <span className="font-semibold text-green-600">
-                        ₹{weeklyPricing.profitAmount.toFixed(2)} ({weeklyPricing.profitMargin.toFixed(1)}%)
+                        ₹{(weeklyPricing.profitAmount || 0).toFixed(2)} ({(weeklyPricing.profitMargin || 0).toFixed(1)}%)
                       </span>
                     </div>
                   </div>
@@ -679,16 +679,16 @@ export default function PricingStrategy() {
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between">
                       <span className="text-gray-600">Cost:</span>
-                      <span className="font-semibold">₹{monthlyPricing.totalCost.toFixed(2)}</span>
+                      <span className="font-semibold">₹{(monthlyPricing.totalCost || 0).toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-600">Selling Price:</span>
-                      <span className="font-semibold">₹{monthlyPricing.sellingPrice.toFixed(2)}</span>
+                      <span className="font-semibold">₹{(monthlyPricing.sellingPrice || 0).toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-600">Profit:</span>
                       <span className="font-semibold text-green-600">
-                        ₹{monthlyPricing.profitAmount.toFixed(2)} ({monthlyPricing.profitMargin.toFixed(1)}%)
+                        ₹{(monthlyPricing.profitAmount || 0).toFixed(2)} ({(monthlyPricing.profitMargin || 0).toFixed(1)}%)
                       </span>
                     </div>
                   </div>
@@ -703,13 +703,13 @@ export default function PricingStrategy() {
                 <p className="text-sm text-gray-700">
                   If customer buys monthly pack instead of 4 weekly packs:{' '}
                   <span className="font-bold text-green-600">
-                    ₹{(weeklyPricing.sellingPrice * 4 - monthlyPricing.sellingPrice).toFixed(2)} savings
+                    ₹{((weeklyPricing.sellingPrice || 0) * 4 - (monthlyPricing.sellingPrice || 0)).toFixed(2)} savings
                   </span>
                 </p>
                 <p className="text-sm text-gray-700 mt-1">
                   Your profit difference:{' '}
                   <span className="font-bold">
-                    ₹{(monthlyPricing.profitAmount - weeklyPricing.profitAmount * 4).toFixed(2)}
+                    ₹{((monthlyPricing.profitAmount || 0) - (weeklyPricing.profitAmount || 0) * 4).toFixed(2)}
                   </span>
                 </p>
               </div>
@@ -748,13 +748,13 @@ export default function PricingStrategy() {
                         {pricing.packType === 'weekly' ? 'Weekly' : 'Monthly'}
                       </span>
                     </td>
-                    <td className="p-3 text-right">₹{pricing.totalCost.toFixed(2)}</td>
-                    <td className="p-3 text-right font-semibold">₹{pricing.sellingPrice.toFixed(2)}</td>
+                    <td className="p-3 text-right">₹{(pricing.totalCost || 0).toFixed(2)}</td>
+                    <td className="p-3 text-right font-semibold">₹{(pricing.sellingPrice || 0).toFixed(2)}</td>
                     <td className="p-3 text-right text-green-600 font-semibold">
-                      ₹{pricing.profitAmount.toFixed(2)}
+                      ₹{(pricing.profitAmount || 0).toFixed(2)}
                     </td>
                     <td className="p-3 text-right font-semibold">
-                      {pricing.profitMargin.toFixed(1)}%
+                      {(pricing.profitMargin || 0).toFixed(1)}%
                     </td>
                   </tr>
                 ))}

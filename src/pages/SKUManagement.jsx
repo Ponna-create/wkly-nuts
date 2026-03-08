@@ -2155,20 +2155,20 @@ export default function SKUManagement() {
                           <p className="text-xs text-blue-600 font-semibold mb-1">WEEKLY PACK</p>
                           <p className="text-sm text-gray-700">7 different sachets</p>
                           <p className="text-sm text-gray-700">
-                            {(sku.weeklyPack?.totalGrams / 1000 || 0).toFixed(2)} kg total
+                            {((sku.weeklyPack?.totalGrams || 0) / 1000).toFixed(2)} kg total
                           </p>
                           <p className="text-sm font-bold text-blue-700">
-                            ₹{((sku.weeklyPack?.rawMaterialCost) || 0).toFixed(2)}
+                            ₹{(sku.weeklyPack?.rawMaterialCost || 0).toFixed(2)}
                           </p>
                         </div>
                         <div className="bg-accent-50 p-3 rounded-lg">
                           <p className="text-xs text-accent-600 font-semibold mb-1">MONTHLY PACK</p>
                           <p className="text-sm text-gray-700">28 sachets (4 weeks)</p>
                           <p className="text-sm text-gray-700">
-                            {(sku.monthlyPack?.totalGrams / 1000 || 0).toFixed(2)} kg total
+                            {((sku.monthlyPack?.totalGrams || 0) / 1000).toFixed(2)} kg total
                           </p>
                           <p className="text-sm font-bold text-accent-700">
-                            ₹{((sku.monthlyPack?.rawMaterialCost) || 0).toFixed(2)}
+                            ₹{(sku.monthlyPack?.rawMaterialCost || 0).toFixed(2)}
                           </p>
                         </div>
                       </div>

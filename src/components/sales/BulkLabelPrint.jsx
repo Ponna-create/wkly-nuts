@@ -89,7 +89,7 @@ export default function BulkLabelPrint({ orders, onClose, showToast }) {
     const address = order.shipping_address || '';
 
     const hasMonthly = items.some(i => (i.pack_type || i.packType || '').toLowerCase().includes('month'));
-    const dimensions = hasMonthly ? '26.7x20.3x21.6cm' : '21.6x14.0x10.2cm';
+    const dimensions = hasMonthly ? '26.7 x 20.3 x 21.6 cm' : '21.6 x 14.0 x 10.2 cm';
     const estimatedWeight = items.reduce((s, i) => {
       const qty = i.quantity || 0;
       const pt = (i.pack_type || i.packType || '').toLowerCase();
@@ -136,8 +136,9 @@ export default function BulkLabelPrint({ orders, onClose, showToast }) {
                 ['WEIGHT:', `${estimatedWeight.toFixed(1)} KG`],
                 ['DIMENSIONS:', dimensions],
                 ['SHIP DATE:', shippingDate],
-              ].map(([label, val], i) => (
-                <div key={i} style={{ display: 'flex', borderBottom: i < 3 ? '1px solid #000' : 'none', fontSize: `${9*s}px` }}>
+                ['COURIER:', courierName],
+              ].map(([label, val], i, arr) => (
+                <div key={i} style={{ display: 'flex', borderBottom: i < arr.length - 1 ? '1px solid #000' : 'none', fontSize: `${9*s}px` }}>
                   <div style={{ fontWeight: 'bold', padding: `${4*s}px ${8*s}px`, minWidth: `${isA4 ? 140 : 95}px`, borderRight: '1px solid #ccc', background: '#f5f5f5' }}>{label}</div>
                   <div style={{ padding: `${4*s}px ${8*s}px`, fontWeight: '500' }}>{val}</div>
                 </div>
