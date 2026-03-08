@@ -19,7 +19,7 @@ export const isSupabaseAvailable = () => {
 };
 
 // Database helper functions
-export const dbService = {
+const _realDbService = {
   // Vendors
   async getVendors() {
     if (!isSupabaseAvailable()) return { data: [], error: null };
@@ -2973,3 +2973,34 @@ export const dbService = {
     }
   },
 };
+
+// ═══════════════════════════════════════════════
+//  TEST MODE PROXY
+// ═══════════════════════════════════════════════
+import { mockDbService } from './mockDbService';
+
+const TEST_MODE_KEY = 'wkly_test_mode';
+
+export function isTestMode() {
+  return localStorage.getItem(TEST_MODE_KEY) === 'true';
+}
+
+export function setTestMode(on) {
+  localStorage.setItem(TEST_MODE_KEY, on ? 'true' : 'false');
+  window.location.reload();
+}
+
+export function resetTestData() {
+  mockDbService.resetTestData();
+  window.location.reload();
+}
+
+// Proxy: if test mode ON → mockDbService, else → real Supabase
+export const dbService = new Proxy(_realDbService, {
+  get(target, prop) {
+    if (isTestMode() && prop in mockDbService) {
+      return mockDbService[prop];
+    }
+    return target[prop];
+  },
+});

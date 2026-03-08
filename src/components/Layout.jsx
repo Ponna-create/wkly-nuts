@@ -6,6 +6,7 @@ import {
   ChevronDown, ChevronRight, HelpCircle, Database, DollarSign, Megaphone, Building2
 } from 'lucide-react';
 import { logout } from './Auth';
+import { isTestMode, setTestMode, resetTestData } from '../services/supabase';
 import logo from '../assets/wkly-nuts-logo.png';
 
 // Grouped navigation - clean categories
@@ -171,7 +172,25 @@ export default function Layout({ children }) {
                 {allNavItems.find((item) => item.href === location.pathname)?.name || 'Dashboard'}
               </h2>
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
+              {/* Test Mode Toggle */}
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setTestMode(!isTestMode())}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${isTestMode() ? 'bg-amber-500' : 'bg-gray-300'}`}
+                  title={isTestMode() ? 'Switch to Live mode' : 'Switch to Test mode'}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isTestMode() ? 'translate-x-6' : 'translate-x-1'}`} />
+                </button>
+                <span className={`text-xs font-bold ${isTestMode() ? 'text-amber-600' : 'text-gray-400'}`}>
+                  {isTestMode() ? 'TEST' : 'LIVE'}
+                </span>
+                {isTestMode() && (
+                  <button onClick={resetTestData} className="text-[10px] px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded hover:bg-amber-200" title="Reset test data to defaults">
+                    Reset
+                  </button>
+                )}
+              </div>
               <div className="hidden sm:block text-sm text-gray-500">
                 {new Date().toLocaleDateString('en-IN', {
                   weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
@@ -186,6 +205,13 @@ export default function Layout({ children }) {
             </div>
           </div>
         </header>
+
+        {/* Test mode banner */}
+        {isTestMode() && (
+          <div className="bg-amber-500 text-white text-center text-xs font-bold py-1 no-print">
+            ⚠ TEST MODE — Using local mock data. No real data will be affected.
+          </div>
+        )}
 
         {/* Page content */}
         <main className="p-4 sm:p-6 lg:p-8">
