@@ -2230,6 +2230,7 @@ const _realDbService = {
           labor_cost: run.laborCost || 0,
           total_cost: run.totalCost || 0,
           cost_per_unit: run.costPerUnit || 0,
+          shelf_life_days: run.shelfLifeDays || 30,
           notes: run.notes,
         }])
         .select()
@@ -2259,6 +2260,8 @@ const _realDbService = {
         labor_cost: run.labor_cost,
         total_cost: run.total_cost,
         cost_per_unit: run.cost_per_unit,
+        shelf_life_days: run.shelf_life_days || 30,
+        batch_date: run.batch_date,
         notes: run.notes,
       };
 

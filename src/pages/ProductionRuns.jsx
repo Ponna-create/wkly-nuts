@@ -132,7 +132,7 @@ export default function ProductionRuns() {
   const getBatchLabel = (run) => {
     const mfd = run.batch_date;
     const useByDate = new Date(mfd);
-    useByDate.setDate(useByDate.getDate() + 30);
+    useByDate.setDate(useByDate.getDate() + (run.shelf_life_days || 30));
     const batchNo = run.instance_start || run.run_number;
     return {
       batchNo,
@@ -495,7 +495,7 @@ function CompletionDialog({ dialog, onConfirm, onClose }) {
   // Calculate MFD and Use By
   const mfd = new Date(run.batch_date).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
   const useByDate = new Date(run.batch_date);
-  useByDate.setDate(useByDate.getDate() + 30);
+  useByDate.setDate(useByDate.getDate() + (run.shelf_life_days || 30));
   const useBy = useByDate.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   return (
@@ -638,6 +638,7 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
     packagingCost: run?.packaging_cost || '',
     laborCost: run?.labor_cost || '',
     notes: run?.notes || '',
+    shelfLifeDays: run?.shelf_life_days || 30,
     ingredientsUsed: run?.ingredients_used || [],
     packagingUsed: run?.packaging_used || [],
   });
@@ -739,6 +740,7 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
       labor_cost: parseFloat(form.laborCost) || 0,
       total_cost: totalCost,
       cost_per_unit: costPerUnit,
+      shelf_life_days: parseInt(form.shelfLifeDays) || 30,
       ingredients_used: form.ingredientsUsed.filter(i => i.ingredient_name),
       packaging_used: form.packagingUsed.filter(p => p.material_name),
       notes: form.notes,
@@ -749,6 +751,7 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
       seedCyclePhase: form.seedCyclePhase || null,
       plannedQuantity: parseInt(form.plannedQuantity) || 0,
       actualQuantity: parseInt(form.actualQuantity) || 0,
+      shelfLifeDays: parseInt(form.shelfLifeDays) || 30,
       ingredientCost: parseFloat(form.ingredientCost) || 0,
       packagingCost: parseFloat(form.packagingCost) || 0,
       laborCost: parseFloat(form.laborCost) || 0,
@@ -763,8 +766,9 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
   };
 
   // MFD & Use By preview
+  const shelfDays = parseInt(form.shelfLifeDays) || 30;
   const mfdDisplay = form.batchDate ? new Date(form.batchDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-';
-  const useByDate = form.batchDate ? new Date(new Date(form.batchDate).getTime() + 30 * 24 * 60 * 60 * 1000) : null;
+  const useByDate = form.batchDate ? new Date(new Date(form.batchDate).getTime() + shelfDays * 24 * 60 * 60 * 1000) : null;
   const useByDisplay = useByDate ? useByDate.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-';
 
   return (
@@ -788,8 +792,7 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Batch Date (MFD) *</label>
               <input type="date" value={form.batchDate} onChange={e => setForm(f => ({ ...f, batchDate: e.target.value }))}
-                disabled={isEditing}
-                className="w-full border rounded-lg px-3 py-2 text-sm disabled:bg-gray-100" required />
+                className="w-full border rounded-lg px-3 py-2 text-sm" required />
             </div>
           </div>
 
@@ -817,7 +820,7 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Pack Type</label>
               <select value={form.packType} onChange={e => setForm(f => ({ ...f, packType: e.target.value }))}
@@ -831,6 +834,11 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
               <input type="number" value={form.plannedQuantity} onChange={e => setForm(f => ({ ...f, plannedQuantity: e.target.value }))}
                 disabled={isEditing}
                 className="w-full border rounded-lg px-3 py-2 text-sm disabled:bg-gray-100" min="1" required />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Shelf Life (days)</label>
+              <input type="number" value={form.shelfLifeDays} onChange={e => setForm(f => ({ ...f, shelfLifeDays: e.target.value }))}
+                className="w-full border rounded-lg px-3 py-2 text-sm" min="1" placeholder="30" />
             </div>
           </div>
 
