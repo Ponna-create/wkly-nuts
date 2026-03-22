@@ -5,7 +5,8 @@ import StockAlerts from '../components/StockAlerts';
 import {
   Plus, Search, X, Edit2, Trash2, Factory, Play, CheckCircle2,
   Clock, AlertTriangle, ChevronDown, ChevronUp, Package, Hash,
-  IndianRupee, Calendar, Filter, Leaf, Box, Printer, ArrowRight
+  IndianRupee, Calendar, Filter, Leaf, Box, Printer, ArrowRight,
+  Recycle, TrendingDown
 } from 'lucide-react';
 
 const SKU_CODES = [
@@ -46,6 +47,7 @@ export default function ProductionRuns() {
   const [filterStatus, setFilterStatus] = useState('all');
   const [expandedId, setExpandedId] = useState(null);
   const [completionDialog, setCompletionDialog] = useState(null); // {run, processing, result}
+  const [wastageRun, setWastageRun] = useState(null); // run to record wastage for
 
   const loadRuns = useCallback(async () => {
     setLoading(true);
@@ -380,6 +382,9 @@ export default function ProductionRuns() {
                       </div>
                     )}
 
+                    {/* Wastage Summary (inline) */}
+                    <WastageSummaryInline runId={run.id} actualQuantity={run.actual_quantity} />
+
                     {run.notes && <p className="text-sm text-gray-600 bg-white p-2 rounded">{run.notes}</p>}
 
                     {/* Status Actions */}
@@ -412,6 +417,10 @@ export default function ProductionRuns() {
                       <button onClick={(e) => { e.stopPropagation(); handlePrintBatchLabel(run); }}
                         className="flex items-center gap-1 px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded-lg">
                         <Printer className="w-3.5 h-3.5" /> Print Label
+                      </button>
+                      <button onClick={(e) => { e.stopPropagation(); setWastageRun(run); }}
+                        className="flex items-center gap-1 px-3 py-1.5 text-sm text-orange-600 hover:bg-orange-50 rounded-lg">
+                        <Recycle className="w-3.5 h-3.5" /> Wastage
                       </button>
                       <button onClick={(e) => { e.stopPropagation(); setEditingRun(run); setShowForm(true); }}
                         className="flex items-center gap-1 px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded-lg">
@@ -462,6 +471,15 @@ export default function ProductionRuns() {
           dialog={completionDialog}
           onConfirm={handleConfirmComplete}
           onClose={() => setCompletionDialog(null)}
+        />
+      )}
+
+      {/* Wastage Tracking Modal */}
+      {wastageRun && (
+        <WastageModal
+          run={wastageRun}
+          onClose={() => setWastageRun(null)}
+          showToast={showToast}
         />
       )}
     </div>
@@ -1020,6 +1038,283 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// WASTAGE SUMMARY (inline in expanded card)
+// ============================================
+function WastageSummaryInline({ runId, actualQuantity }) {
+  const [wastage, setWastage] = useState(null);
+  useEffect(() => {
+    dbService.getWastageByRunId(runId).then(({ data }) => {
+      if (data && data.length > 0) setWastage(data);
+    });
+  }, [runId]);
+
+  if (!wastage || wastage.length === 0) return null;
+
+  const totalGrams = wastage.reduce((s, r) => s + (parseFloat(r.waste_quantity_grams) || 0), 0);
+  const totalCost = wastage.reduce((s, r) => s + (parseFloat(r.cost_impact) || 0), 0);
+
+  return (
+    <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+      <div className="flex items-center justify-between mb-1">
+        <p className="text-xs font-medium text-orange-700 flex items-center gap-1">
+          <Recycle className="w-3 h-3" /> Wastage Recorded
+        </p>
+        <span className="text-xs text-orange-600">{wastage.length} record{wastage.length > 1 ? 's' : ''}</span>
+      </div>
+      <div className="flex items-center gap-4 text-sm">
+        <span className="text-orange-800 font-medium">{totalGrams.toFixed(0)}g wasted</span>
+        {totalCost > 0 && (
+          <span className="text-red-600 font-medium">
+            -{totalCost.toLocaleString('en-IN', { style: 'currency', currency: 'INR' })} cost impact
+          </span>
+        )}
+        {actualQuantity > 0 && totalCost > 0 && (
+          <span className="text-xs text-gray-500">
+            (+{(totalCost / actualQuantity).toFixed(2)}/unit)
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// WASTAGE TRACKING MODAL
+// ============================================
+const WASTE_TYPES = [
+  { value: 'broken', label: 'Broken / Damaged', icon: '💔' },
+  { value: 'dust', label: 'Dust / Powder', icon: '🌫' },
+  { value: 'spillage', label: 'Spillage', icon: '💧' },
+  { value: 'expired', label: 'Expired / Stale', icon: '📅' },
+  { value: 'quality_reject', label: 'Quality Rejected', icon: '❌' },
+  { value: 'other', label: 'Other', icon: '📝' },
+];
+
+function WastageModal({ run, onClose, showToast }) {
+  const [records, setRecords] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    ingredientName: '',
+    wasteQuantityGrams: '',
+    wasteType: 'broken',
+    costImpact: '',
+    notes: '',
+  });
+
+  // Available ingredients from the run
+  const runIngredients = (run.ingredients_used || []).map(i => i.ingredient_name).filter(Boolean);
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      const { data } = await dbService.getWastageByRunId(run.id);
+      setRecords(data || []);
+      setLoading(false);
+    };
+    load();
+  }, [run.id]);
+
+  const totalWasteGrams = records.reduce((sum, r) => sum + (parseFloat(r.waste_quantity_grams) || 0), 0);
+  const totalCostImpact = records.reduce((sum, r) => sum + (parseFloat(r.cost_impact) || 0), 0);
+
+  // Calculate wastage % relative to total ingredients used
+  const totalIngredientsGrams = (run.ingredients_used || []).reduce((sum, i) => sum + (parseFloat(i.quantity_grams) || 0), 0);
+  const wastagePercent = totalIngredientsGrams > 0 ? ((totalWasteGrams / totalIngredientsGrams) * 100).toFixed(1) : 0;
+
+  const handleAdd = async () => {
+    if (!form.ingredientName || !form.wasteQuantityGrams || parseFloat(form.wasteQuantityGrams) <= 0) {
+      showToast('Please select ingredient and enter waste quantity', 'error');
+      return;
+    }
+    setSaving(true);
+    const { data, error } = await dbService.createWastageRecord({
+      productionRunId: run.id,
+      ingredientName: form.ingredientName,
+      wasteQuantityGrams: form.wasteQuantityGrams,
+      wasteType: form.wasteType,
+      costImpact: form.costImpact || 0,
+      notes: form.notes,
+    });
+    if (error) {
+      showToast('Failed to save wastage record', 'error');
+    } else {
+      setRecords(prev => [...prev, data]);
+      setForm({ ingredientName: '', wasteQuantityGrams: '', wasteType: 'broken', costImpact: '', notes: '' });
+      showToast('Wastage recorded');
+    }
+    setSaving(false);
+  };
+
+  const handleDelete = async (id) => {
+    const { error } = await dbService.deleteWastageRecord(id);
+    if (error) {
+      showToast('Failed to delete', 'error');
+    } else {
+      setRecords(prev => prev.filter(r => r.id !== id));
+      showToast('Wastage record removed');
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-start justify-center p-4 overflow-y-auto">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg my-8">
+        <div className="flex items-center justify-between p-4 border-b">
+          <h3 className="text-lg font-semibold flex items-center gap-2">
+            <Recycle className="w-5 h-5 text-orange-600" /> Wastage Tracking
+          </h3>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-5 h-5" /></button>
+        </div>
+
+        <div className="p-4 space-y-4 max-h-[75vh] overflow-y-auto">
+          {/* Run Info */}
+          <div className="bg-gray-50 rounded-lg p-3 flex items-center justify-between">
+            <div>
+              <p className="font-medium text-sm">{run.run_number} - {run.sku_name}</p>
+              <p className="text-xs text-gray-500">{new Date(run.batch_date).toLocaleDateString('en-IN')} | {run.planned_quantity} planned</p>
+            </div>
+            <div className="text-right">
+              <p className="text-sm font-bold text-orange-600">{totalWasteGrams.toFixed(0)}g wasted</p>
+              <p className="text-xs text-gray-500">{wastagePercent}% of ingredients</p>
+            </div>
+          </div>
+
+          {/* Wastage Summary Stats */}
+          {records.length > 0 && (
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-orange-50 border border-orange-200 rounded-lg p-2 text-center">
+                <p className="text-lg font-bold text-orange-700">{records.length}</p>
+                <p className="text-[10px] text-orange-500">Records</p>
+              </div>
+              <div className="bg-red-50 border border-red-200 rounded-lg p-2 text-center">
+                <p className="text-lg font-bold text-red-700">{totalWasteGrams.toFixed(0)}g</p>
+                <p className="text-[10px] text-red-500">Total Waste</p>
+              </div>
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-2 text-center">
+                <p className="text-lg font-bold text-amber-700">{totalCostImpact.toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}</p>
+                <p className="text-[10px] text-amber-500">Cost Impact</p>
+              </div>
+            </div>
+          )}
+
+          {/* Add New Wastage Record */}
+          <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 space-y-3">
+            <p className="text-sm font-medium text-orange-800">Record Wastage</p>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">Ingredient *</label>
+                {runIngredients.length > 0 ? (
+                  <select value={form.ingredientName} onChange={e => setForm(f => ({ ...f, ingredientName: e.target.value }))}
+                    className="w-full border rounded-lg px-2 py-1.5 text-sm">
+                    <option value="">Select...</option>
+                    {runIngredients.map(name => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input type="text" value={form.ingredientName} onChange={e => setForm(f => ({ ...f, ingredientName: e.target.value }))}
+                    className="w-full border rounded-lg px-2 py-1.5 text-sm" placeholder="Ingredient name" />
+                )}
+              </div>
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">Waste Qty (grams) *</label>
+                <input type="number" value={form.wasteQuantityGrams} onChange={e => setForm(f => ({ ...f, wasteQuantityGrams: e.target.value }))}
+                  className="w-full border rounded-lg px-2 py-1.5 text-sm" placeholder="0" min="0" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">Waste Type</label>
+                <select value={form.wasteType} onChange={e => setForm(f => ({ ...f, wasteType: e.target.value }))}
+                  className="w-full border rounded-lg px-2 py-1.5 text-sm">
+                  {WASTE_TYPES.map(t => (
+                    <option key={t.value} value={t.value}>{t.icon} {t.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">Cost Impact (INR)</label>
+                <input type="number" step="0.01" value={form.costImpact} onChange={e => setForm(f => ({ ...f, costImpact: e.target.value }))}
+                  className="w-full border rounded-lg px-2 py-1.5 text-sm" placeholder="0.00" min="0" />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-600 mb-1">Notes</label>
+              <input type="text" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+                className="w-full border rounded-lg px-2 py-1.5 text-sm" placeholder="e.g. Broken during grinding" />
+            </div>
+
+            <button onClick={handleAdd} disabled={saving}
+              className="w-full py-2 text-sm bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 font-medium">
+              {saving ? 'Saving...' : '+ Add Wastage Record'}
+            </button>
+          </div>
+
+          {/* Existing Wastage Records */}
+          {loading ? (
+            <p className="text-sm text-gray-400 text-center py-4">Loading wastage records...</p>
+          ) : records.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-4">No wastage recorded for this run yet.</p>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-gray-700">Wastage Records</p>
+              {records.map(rec => {
+                const typeInfo = WASTE_TYPES.find(t => t.value === rec.waste_type) || WASTE_TYPES[5];
+                return (
+                  <div key={rec.id} className="flex items-center gap-3 p-3 bg-white border rounded-lg">
+                    <span className="text-lg">{typeInfo.icon}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium">{rec.ingredient_name}</p>
+                      <div className="flex items-center gap-2 text-xs text-gray-500">
+                        <span>{rec.waste_quantity_grams}g</span>
+                        <span>{typeInfo.label}</span>
+                        {parseFloat(rec.cost_impact) > 0 && (
+                          <span className="text-red-600">-{parseFloat(rec.cost_impact).toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}</span>
+                        )}
+                      </div>
+                      {rec.notes && <p className="text-xs text-gray-400 mt-0.5">{rec.notes}</p>}
+                    </div>
+                    <button onClick={() => handleDelete(rec.id)}
+                      className="p-1 text-red-400 hover:text-red-600 flex-shrink-0">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Wastage Impact on COGS */}
+          {records.length > 0 && totalCostImpact > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+              <div className="flex items-center gap-2 mb-1">
+                <TrendingDown className="w-4 h-4 text-red-600" />
+                <p className="text-sm font-medium text-red-800">Impact on COGS</p>
+              </div>
+              <p className="text-xs text-red-700">
+                Wastage adds <strong>{totalCostImpact.toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}</strong> to production cost.
+                {run.actual_quantity > 0 && (
+                  <> Effective cost/unit increases by <strong>{(totalCostImpact / run.actual_quantity).toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}</strong>.</>
+                )}
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end p-4 border-t">
+          <button onClick={onClose} className="px-4 py-2 text-sm bg-gray-600 text-white rounded-lg hover:bg-gray-700 font-medium">
+            Close
+          </button>
+        </div>
       </div>
     </div>
   );

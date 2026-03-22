@@ -180,6 +180,34 @@ export const mockDbService = {
     return { error: null };
   },
 
+  // ══════════ WASTAGE TRACKING ══════════
+  async getWastageByRunId(runId) {
+    return { data: table('production_wastage').filter(r => r.production_run_id === runId), error: null };
+  },
+  async createWastageRecord(record) {
+    const rows = table('production_wastage');
+    const rec = {
+      id: crypto.randomUUID(),
+      production_run_id: record.productionRunId,
+      ingredient_name: record.ingredientName,
+      waste_quantity_grams: parseFloat(record.wasteQuantityGrams) || 0,
+      waste_type: record.wasteType || 'other',
+      cost_impact: parseFloat(record.costImpact) || 0,
+      notes: record.notes || '',
+      created_at: new Date().toISOString(),
+    };
+    rows.push(rec);
+    saveTable('production_wastage', rows);
+    return { data: rec, error: null };
+  },
+  async deleteWastageRecord(id) {
+    saveTable('production_wastage', table('production_wastage').filter(r => r.id !== id));
+    return { error: null };
+  },
+  async getWastageStats() {
+    return { data: table('production_wastage'), error: null };
+  },
+
   // ══════════ PACKAGING MATERIALS ══════════
   async getPackagingMaterials() {
     return { data: table('packaging_materials'), error: null };

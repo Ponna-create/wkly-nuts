@@ -21,5 +21,5 @@
 - [x] **FIFO Logic**: Implement automatic batch consumption (oldest first). <!-- id: 14 -->
 
 ## 🏭 Phase 3: Production Realities
-- [ ] **Wastage Tracking**: UI to record scrap/waste during production. <!-- id: 11 -->
-- [ ] **Cost Impact**: Factor wastage into Cost of Goods Sold (COGS). <!-- id: 12 -->
+- [x] **Wastage Tracking**: UI to record scrap/waste during production. <!-- id: 11 -->
+- [x] **Cost Impact**: Factor wastage into Cost of Goods Sold (COGS). <!-- id: 12 -->

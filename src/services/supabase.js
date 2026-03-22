@@ -2300,6 +2300,74 @@ const _realDbService = {
   },
 
   // ==========================================
+  // WASTAGE TRACKING
+  // ==========================================
+  async getWastageByRunId(runId) {
+    if (!isSupabaseAvailable()) return { data: [], error: null };
+    try {
+      const { data, error } = await supabase
+        .from('production_wastage')
+        .select('*')
+        .eq('production_run_id', runId)
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      return { data: data || [], error: null };
+    } catch (error) {
+      console.error('Error fetching wastage:', error);
+      return { data: [], error };
+    }
+  },
+
+  async createWastageRecord(record) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    try {
+      const { data, error } = await supabase
+        .from('production_wastage')
+        .insert([{
+          production_run_id: record.productionRunId,
+          ingredient_name: record.ingredientName,
+          waste_quantity_grams: parseFloat(record.wasteQuantityGrams) || 0,
+          waste_type: record.wasteType || 'other',
+          cost_impact: parseFloat(record.costImpact) || 0,
+          notes: record.notes || '',
+        }])
+        .select()
+        .single();
+      if (error) throw error;
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error creating wastage record:', error);
+      return { data: null, error };
+    }
+  },
+
+  async deleteWastageRecord(id) {
+    if (!isSupabaseAvailable()) return { error: new Error('Supabase not configured') };
+    try {
+      const { error } = await supabase.from('production_wastage').delete().eq('id', id);
+      if (error) throw error;
+      return { error: null };
+    } catch (error) {
+      console.error('Error deleting wastage record:', error);
+      return { error };
+    }
+  },
+
+  async getWastageStats() {
+    if (!isSupabaseAvailable()) return { data: [], error: null };
+    try {
+      const { data, error } = await supabase
+        .from('production_wastage')
+        .select('ingredient_name, waste_quantity_grams, cost_impact, waste_type, created_at');
+      if (error) throw error;
+      return { data: data || [], error: null };
+    } catch (error) {
+      console.error('Error fetching wastage stats:', error);
+      return { data: [], error };
+    }
+  },
+
+  // ==========================================
   // PACKAGING MATERIALS
   // ==========================================
   async getPackagingMaterials() {
