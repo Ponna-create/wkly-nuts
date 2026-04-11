@@ -8,10 +8,10 @@ const EXPENSE_CSV_SAMPLE = `date,description,category,vendor,amount,gst_amount,t
 2026-03-01,Packing Tape 10 rolls,packaging,Local Store,400,20,420,cash,,
 2026-03-02,ST Courier 5 parcels,courier,ST Courier,750,0,750,upi,AWB-123,March dispatches`;
 
-const PO_CSV_SAMPLE = `date,vendor,item_name,quantity,unit,unit_price,gst_percent,total,status,notes
-2026-03-01,Jagan Traders,Almonds,5,kg,500,5,2625,received,Premium California
-2026-03-01,Jagan Traders,Cashews,3,kg,800,5,2520,received,W320 grade
-2026-03-02,Local Packaging,Weekly Box,100,pcs,11,18,1298,ordered,21.6x14.0x10.2cm`;
+const PO_CSV_SAMPLE = `date,vendor,item_name,quantity,unit,unit_price,gst_percent,total,notes
+2026-03-01,Jagan Traders,Almonds,5,kg,500,5,2625,Premium California
+2026-03-01,Jagan Traders,Cashews,3,kg,800,5,2520,W320 grade
+2026-03-02,Local Packaging,Weekly Box,100,pcs,11,18,1298,21.6x14.0x10.2cm`;
 
 const AI_PROMPT_TEMPLATE = `I have a purchase bill/invoice image. Please extract the data and format it as CSV with these columns:
 
@@ -164,6 +164,7 @@ export default function BillCSVImport({ type = 'expense', onClose, onImportCompl
     let success = 0;
     let failed = 0;
     let totalItems = 0;
+    let stockedItems = 0;
 
     if (isExpense) {
       // Expenses: each row = 1 expense (unchanged)
@@ -195,17 +196,29 @@ export default function BillCSVImport({ type = 'expense', onClose, onImportCompl
       for (const group of poGroups) {
         try {
           const poData = {
-            order_date: group.date,
-            vendor_name: group.vendor,
-            status: group.status,
+            orderDate: group.date,
+            vendorName: group.vendor,
+            status: 'received',
             items: group.items,
-            total_amount: group.totalAmount,
+            totalAmount: group.totalAmount,
+            paymentStatus: 'paid',
             notes: group.notes.join('; '),
           };
-          const { error } = await dbService.createPurchaseOrder(poData);
+          const { data: createdPO, error } = await dbService.createPurchaseOrder(poData);
           if (error) throw error;
           success++;
           totalItems += group.items.length;
+
+          // Auto-stock raw materials into ingredient inventory
+          if (createdPO) {
+            const stockResult = await dbService.stockInFromPurchaseOrder(createdPO);
+            if (stockResult.success > 0) {
+              stockedItems += stockResult.success;
+            }
+            if (stockResult.errors.length > 0) {
+              console.warn('Stock-in warnings:', stockResult.errors);
+            }
+          }
         } catch (err) {
           console.error('Import PO error:', err);
           failed++;
@@ -213,14 +226,15 @@ export default function BillCSVImport({ type = 'expense', onClose, onImportCompl
       }
     }
 
-    setResults({ success, failed, totalItems });
+    setResults({ success, failed, totalItems, stockedItems });
     setImporting(false);
 
     if (success > 0) {
       if (isExpense) {
         showToast(`Imported ${success} expenses!`, 'success');
       } else {
-        showToast(`Created ${success} PO${success > 1 ? 's' : ''} with ${totalItems} items!`, 'success');
+        const stockMsg = stockedItems > 0 ? ` • ${stockedItems} ingredients added to inventory` : '';
+        showToast(`Created ${success} PO${success > 1 ? 's' : ''} with ${totalItems} items!${stockMsg}`, 'success');
       }
     }
     if (failed > 0) {
@@ -429,6 +443,7 @@ export default function BillCSVImport({ type = 'expense', onClose, onImportCompl
                     ? `${results.success} expenses imported`
                     : `${results.success} PO${results.success !== 1 ? 's' : ''} created with ${results.totalItems} items`
                   }
+                  {!isExpense && results.stockedItems > 0 && ` • ${results.stockedItems} ingredients added to inventory`}
                   {results.failed > 0 && `, ${results.failed} failed`}
                 </p>
               </div>
