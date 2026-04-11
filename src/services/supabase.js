@@ -1194,6 +1194,7 @@ const _realDbService = {
         } : null,
         weeklyPacksAvailable: parseFloat(item.weekly_packs_available || 0),
         monthlyPacksAvailable: parseFloat(item.monthly_packs_available || 0),
+        singleUnitsAvailable: parseFloat(item.single_units_available || 0),
         lastUpdated: item.last_updated,
         notes: item.notes,
         createdAt: item.created_at,
@@ -1238,6 +1239,7 @@ const _realDbService = {
           } : null,
           weeklyPacksAvailable: parseFloat(data.weekly_packs_available || 0),
           monthlyPacksAvailable: parseFloat(data.monthly_packs_available || 0),
+          singleUnitsAvailable: parseFloat(data.single_units_available || 0),
           lastUpdated: data.last_updated,
           notes: data.notes,
         },
@@ -1259,6 +1261,7 @@ const _realDbService = {
           sku_id: inventory.skuId,
           weekly_packs_available: inventory.weeklyPacksAvailable || 0,
           monthly_packs_available: inventory.monthlyPacksAvailable || 0,
+          single_units_available: inventory.singleUnitsAvailable || 0,
           notes: inventory.notes || null,
           last_updated: new Date().toISOString(),
         })
@@ -1285,6 +1288,7 @@ const _realDbService = {
           } : null,
           weeklyPacksAvailable: parseFloat(data.weekly_packs_available || 0),
           monthlyPacksAvailable: parseFloat(data.monthly_packs_available || 0),
+          singleUnitsAvailable: parseFloat(data.single_units_available || 0),
           lastUpdated: data.last_updated,
           notes: data.notes,
         },
@@ -1305,6 +1309,7 @@ const _realDbService = {
         .update({
           weekly_packs_available: inventory.weeklyPacksAvailable || 0,
           monthly_packs_available: inventory.monthlyPacksAvailable || 0,
+          single_units_available: inventory.singleUnitsAvailable || 0,
           notes: inventory.notes || null,
           last_updated: new Date().toISOString(),
         })
@@ -1332,6 +1337,7 @@ const _realDbService = {
           } : null,
           weeklyPacksAvailable: parseFloat(data.weekly_packs_available || 0),
           monthlyPacksAvailable: parseFloat(data.monthly_packs_available || 0),
+          singleUnitsAvailable: parseFloat(data.single_units_available || 0),
           lastUpdated: data.last_updated,
           notes: data.notes,
         },
@@ -1343,14 +1349,11 @@ const _realDbService = {
     }
   },
 
-  async updateInventoryStock(skuId, packType, quantity, operation = 'subtract') {
+  async updateInventoryStock(skuId, packType, quantity, operation = 'subtract', reason = null) {
     // operation: 'add' or 'subtract'
     if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
 
-    // Single-unit pack types (0.5kg, 1kg, single): DB has no single_units_available column yet - skip update
-    if (packType === 'single' || packType === '0.5kg' || packType === '1kg') {
-      return { data: null, error: null };
-    }
+    const isSingleUnit = packType === 'single' || packType === '0.5kg' || packType === '1kg';
 
     try {
       // First get current inventory
@@ -1360,17 +1363,26 @@ const _realDbService = {
       const current = currentRes.data;
       if (!current) {
         // Create new inventory record if doesn't exist
-        return await this.createInventory({
+        const newRecord = {
           skuId,
-          weeklyPacksAvailable: packType === 'weekly' ? (operation === 'add' ? quantity : -quantity) : 0,
-          monthlyPacksAvailable: packType === 'monthly' ? (operation === 'add' ? quantity : -quantity) : 0,
-        });
+          weeklyPacksAvailable: packType === 'weekly' ? (operation === 'add' ? quantity : 0) : 0,
+          monthlyPacksAvailable: packType === 'monthly' ? (operation === 'add' ? quantity : 0) : 0,
+          singleUnitsAvailable: isSingleUnit ? (operation === 'add' ? quantity : 0) : 0,
+        };
+        const result = await this.createInventory(newRecord);
+        // Log transaction
+        await this.logInventoryTransaction({ skuId, packType, quantity, operation, reason });
+        return result;
       }
 
-      const field = packType === 'weekly' ? 'weekly_packs_available' : 'monthly_packs_available';
-      const currentValue = packType === 'weekly'
-        ? current.weeklyPacksAvailable
-        : current.monthlyPacksAvailable;
+      let currentValue;
+      if (isSingleUnit) {
+        currentValue = current.singleUnitsAvailable || 0;
+      } else if (packType === 'weekly') {
+        currentValue = current.weeklyPacksAvailable;
+      } else {
+        currentValue = current.monthlyPacksAvailable;
+      }
 
       const newValue = operation === 'add'
         ? currentValue + quantity
@@ -1380,10 +1392,14 @@ const _realDbService = {
         id: current.id,
         weeklyPacksAvailable: packType === 'weekly' ? newValue : current.weeklyPacksAvailable,
         monthlyPacksAvailable: packType === 'monthly' ? newValue : current.monthlyPacksAvailable,
+        singleUnitsAvailable: isSingleUnit ? newValue : (current.singleUnitsAvailable || 0),
         notes: current.notes,
       };
 
-      return await this.updateInventory(updateData);
+      const result = await this.updateInventory(updateData);
+      // Log transaction
+      await this.logInventoryTransaction({ skuId, packType, quantity, operation, reason });
+      return result;
     } catch (error) {
       console.error('Error updating inventory stock:', error);
       return { data: null, error };
@@ -1404,6 +1420,43 @@ const _realDbService = {
     } catch (error) {
       console.error('Error deleting inventory:', error);
       return { error };
+    }
+  },
+
+  // Inventory Transaction Log (audit trail)
+  async logInventoryTransaction({ skuId, packType, quantity, operation, reason }) {
+    if (!isSupabaseAvailable()) return;
+    try {
+      await supabase.from('inventory_transactions').insert({
+        sku_id: skuId,
+        pack_type: packType,
+        quantity: quantity,
+        operation: operation, // 'add' or 'subtract'
+        reason: reason || null,
+        created_at: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.warn('Failed to log inventory transaction:', err.message);
+    }
+  },
+
+  async getInventoryTransactions(skuId = null, limit = 50) {
+    if (!isSupabaseAvailable()) return { data: [], error: null };
+    try {
+      let query = supabase
+        .from('inventory_transactions')
+        .select('*, skus(name)')
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+      if (skuId) query = query.eq('sku_id', skuId);
+
+      const { data, error } = await query;
+      if (error) throw error;
+      return { data: data || [], error: null };
+    } catch (error) {
+      console.error('Error fetching inventory transactions:', error);
+      return { data: [], error };
     }
   },
 
@@ -2804,7 +2857,8 @@ const _realDbService = {
       const qty = parseInt(run.actual_quantity) || 0;
       const packType = run.pack_type || 'weekly';
       if (skuId && qty > 0) {
-        await this.updateInventoryStock(skuId, packType, qty, 'add');
+        const reason = `Production ${run.run_number || run.id}`;
+        await this.updateInventoryStock(skuId, packType, qty, 'add', reason);
         results.finishedGoodsAdded = true;
       }
     } catch (err) {
@@ -2827,18 +2881,24 @@ const _realDbService = {
         const quantity = parseInt(item.quantity) || 1;
         if (!skuId) continue;
 
+        const isSingleUnit = packType === 'single' || packType === '0.5kg' || packType === '1kg';
+
         // Check current stock
         const currentRes = await this.getInventoryBySkuId(skuId);
         const current = currentRes.data;
-        const available = current
-          ? (packType === 'weekly' ? (current.weeklyPacksAvailable || 0) : (current.monthlyPacksAvailable || 0))
-          : 0;
+        let available = 0;
+        if (current) {
+          if (isSingleUnit) available = current.singleUnitsAvailable || 0;
+          else if (packType === 'weekly') available = current.weeklyPacksAvailable || 0;
+          else available = current.monthlyPacksAvailable || 0;
+        }
 
         if (available < quantity) {
           results.warnings.push(`${item.sku_name || item.skuName || 'SKU'} ${packType}: need ${quantity}, have ${available}`);
         }
 
-        await this.updateInventoryStock(skuId, packType, quantity, 'subtract');
+        const reason = `Order ${order.order_number || order.id}`;
+        await this.updateInventoryStock(skuId, packType, quantity, 'subtract', reason);
         results.deducted++;
       } catch (err) {
         results.warnings.push(`${item.sku_name || item.skuName}: ${err.message}`);

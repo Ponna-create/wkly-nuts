@@ -11,7 +11,9 @@ export default function InventoryManagement() {
   const [showForm, setShowForm] = useState(false);
   const [editingInventory, setEditingInventory] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [formData, setFormData] = useState({ skuId: '', weeklyPacksAvailable: '', monthlyPacksAvailable: '', notes: '' });
+  const [formData, setFormData] = useState({ skuId: '', weeklyPacksAvailable: '', monthlyPacksAvailable: '', singleUnitsAvailable: '', notes: '' });
+  const [showTransactions, setShowTransactions] = useState(false);
+  const [transactions, setTransactions] = useState([]);
 
   // Raw materials & packaging state
   const [ingredients, setIngredients] = useState([]);
@@ -38,7 +40,13 @@ export default function InventoryManagement() {
     return skus.filter(sku => !inventorySkuIds.has(sku.id));
   }, [skus, inventory]);
 
-  const resetForm = () => { setFormData({ skuId: '', weeklyPacksAvailable: '', monthlyPacksAvailable: '', notes: '' }); setEditingInventory(null); setShowForm(false); };
+  const resetForm = () => { setFormData({ skuId: '', weeklyPacksAvailable: '', monthlyPacksAvailable: '', singleUnitsAvailable: '', notes: '' }); setEditingInventory(null); setShowForm(false); };
+
+  const loadTransactions = async () => {
+    const { data } = await dbService.getInventoryTransactions(null, 100);
+    setTransactions(data || []);
+    setShowTransactions(true);
+  };
 
   const handleSaveInventory = () => {
     if (!formData.skuId) { showToast('Please select a SKU', 'error'); return; }
@@ -46,6 +54,7 @@ export default function InventoryManagement() {
       skuId: formData.skuId,
       weeklyPacksAvailable: parseFloat(formData.weeklyPacksAvailable) || 0,
       monthlyPacksAvailable: parseFloat(formData.monthlyPacksAvailable) || 0,
+      singleUnitsAvailable: parseFloat(formData.singleUnitsAvailable) || 0,
       notes: formData.notes || '',
     };
     if (editingInventory) {
@@ -59,7 +68,7 @@ export default function InventoryManagement() {
   };
 
   const handleEdit = (inv) => {
-    setFormData({ skuId: inv.skuId, weeklyPacksAvailable: inv.weeklyPacksAvailable.toString(), monthlyPacksAvailable: inv.monthlyPacksAvailable.toString(), notes: inv.notes || '' });
+    setFormData({ skuId: inv.skuId, weeklyPacksAvailable: inv.weeklyPacksAvailable.toString(), monthlyPacksAvailable: inv.monthlyPacksAvailable.toString(), singleUnitsAvailable: (inv.singleUnitsAvailable || 0).toString(), notes: inv.notes || '' });
     setEditingInventory(inv);
     setShowForm(true);
   };
@@ -86,7 +95,7 @@ export default function InventoryManagement() {
   }, [inventory, searchTerm]);
 
   // Summary stats
-  const totalFinishedGoods = inventory.reduce((s, i) => s + (i.weeklyPacksAvailable || 0) + (i.monthlyPacksAvailable || 0), 0);
+  const totalFinishedGoods = inventory.reduce((s, i) => s + (i.weeklyPacksAvailable || 0) + (i.monthlyPacksAvailable || 0) + (i.singleUnitsAvailable || 0), 0);
   const lowStockIngredients = ingredients.filter(i => i.current_stock_total <= (i.safety_stock_level || 0));
   const lowStockPackaging = packagingMaterials.filter(p => (p.current_stock || 0) <= (p.min_stock || 0));
 
@@ -153,9 +162,14 @@ export default function InventoryManagement() {
               <input type="text" placeholder="Search SKU..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-teal-500" />
             </div>
-            <button onClick={() => setShowForm(true)} className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 text-sm font-medium">
-              <Plus className="w-4 h-4" /> Add Stock
-            </button>
+            <div className="flex gap-2">
+              <button onClick={loadTransactions} className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm font-medium">
+                <Layers className="w-4 h-4" /> History
+              </button>
+              <button onClick={() => setShowForm(true)} className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 text-sm font-medium">
+                <Plus className="w-4 h-4" /> Add Stock
+              </button>
+            </div>
           </div>
 
           {showForm && (
@@ -183,6 +197,11 @@ export default function InventoryManagement() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Monthly Packs</label>
                   <input type="number" min="0" value={formData.monthlyPacksAvailable} onChange={e => setFormData({ ...formData, monthlyPacksAvailable: e.target.value })}
+                    className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="0" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Single Units</label>
+                  <input type="number" min="0" value={formData.singleUnitsAvailable} onChange={e => setFormData({ ...formData, singleUnitsAvailable: e.target.value })}
                     className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="0" />
                 </div>
                 <div>
@@ -214,6 +233,7 @@ export default function InventoryManagement() {
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">SKU</th>
                     <th className="text-right py-3 px-4 font-semibold text-gray-700">Weekly</th>
                     <th className="text-right py-3 px-4 font-semibold text-gray-700">Monthly</th>
+                    <th className="text-right py-3 px-4 font-semibold text-gray-700">Single</th>
                     <th className="text-right py-3 px-4 font-semibold text-gray-700">Total</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Status</th>
                     <th className="text-right py-3 px-4 font-semibold text-gray-700">Actions</th>
@@ -221,7 +241,7 @@ export default function InventoryManagement() {
                 </thead>
                 <tbody>
                   {filteredInventory.map(inv => {
-                    const total = (inv.weeklyPacksAvailable || 0) + (inv.monthlyPacksAvailable || 0);
+                    const total = (inv.weeklyPacksAvailable || 0) + (inv.monthlyPacksAvailable || 0) + (inv.singleUnitsAvailable || 0);
                     const status = getStockStatus(inv.weeklyPacksAvailable, inv.monthlyPacksAvailable);
                     const StatusIcon = status.icon;
                     return (
@@ -229,6 +249,7 @@ export default function InventoryManagement() {
                         <td className="py-3 px-4 font-medium">{inv.sku?.name || 'Unknown'}</td>
                         <td className="py-3 px-4 text-right">{(inv.weeklyPacksAvailable || 0).toFixed(0)}</td>
                         <td className="py-3 px-4 text-right">{(inv.monthlyPacksAvailable || 0).toFixed(0)}</td>
+                        <td className="py-3 px-4 text-right">{(inv.singleUnitsAvailable || 0).toFixed(0)}</td>
                         <td className="py-3 px-4 text-right font-bold">{total.toFixed(0)}</td>
                         <td className="py-3 px-4">
                           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${status.color}`}>
@@ -308,6 +329,48 @@ export default function InventoryManagement() {
               </table>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Transaction History Modal */}
+      {showTransactions && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[80vh] overflow-hidden">
+            <div className="flex justify-between items-center p-4 border-b">
+              <h3 className="text-lg font-bold text-gray-900">Inventory Transaction History</h3>
+              <button onClick={() => setShowTransactions(false)}><X className="w-5 h-5 text-gray-400" /></button>
+            </div>
+            <div className="overflow-y-auto max-h-[65vh]">
+              {transactions.length === 0 ? (
+                <p className="text-center py-8 text-gray-500">No transactions recorded yet</p>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr>
+                      <th className="text-left py-2 px-4 font-semibold text-gray-700">Date</th>
+                      <th className="text-left py-2 px-4 font-semibold text-gray-700">SKU</th>
+                      <th className="text-left py-2 px-4 font-semibold text-gray-700">Pack</th>
+                      <th className="text-right py-2 px-4 font-semibold text-gray-700">Qty</th>
+                      <th className="text-left py-2 px-4 font-semibold text-gray-700">Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {transactions.map((t, i) => (
+                      <tr key={t.id || i} className="border-t border-gray-100 hover:bg-gray-50">
+                        <td className="py-2 px-4 text-gray-600 text-xs">{new Date(t.created_at).toLocaleDateString('en-IN')}</td>
+                        <td className="py-2 px-4 font-medium">{t.skus?.name || '-'}</td>
+                        <td className="py-2 px-4 text-gray-600">{t.pack_type}</td>
+                        <td className={`py-2 px-4 text-right font-bold ${t.operation === 'add' ? 'text-green-600' : 'text-red-600'}`}>
+                          {t.operation === 'add' ? '+' : '-'}{t.quantity}
+                        </td>
+                        <td className="py-2 px-4 text-gray-500 text-xs">{t.reason || '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
