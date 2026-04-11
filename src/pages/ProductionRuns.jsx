@@ -9,7 +9,8 @@ import {
   Recycle, TrendingDown
 } from 'lucide-react';
 
-const SKU_CODES = [
+// Fallback SKU codes if no SKUs exist in database yet
+const FALLBACK_SKU_CODES = [
   { code: 'DP', name: 'Day Pack' },
   { code: 'SO', name: 'Soak Overnight' },
   { code: 'SC', name: 'Seed Cycle', hasPhases: true },
@@ -622,9 +623,22 @@ function CompletionDialog({ dialog, onConfirm, onClose }) {
 // ============================================
 function ProductionRunForm({ run, skus, onClose, onSave }) {
   const isEditing = !!run;
+
+  // Build SKU codes list from database SKUs, fallback to hardcoded if none exist
+  const skuCodes = (skus && skus.length > 0)
+    ? skus.filter(s => s.skuCode).map(s => ({
+        code: s.skuCode,
+        name: s.name,
+        id: s.id,
+        hasPhases: s.name?.toLowerCase().includes('seed cycle'),
+      }))
+    : FALLBACK_SKU_CODES;
+
+  const defaultSku = skuCodes[0] || { code: 'DP', name: 'Day Pack' };
+
   const [form, setForm] = useState({
-    skuCode: run?.sku_code || 'DP',
-    skuName: run?.sku_name || 'Day Pack',
+    skuCode: run?.sku_code || defaultSku.code,
+    skuName: run?.sku_name || defaultSku.name,
     seedCyclePhase: run?.seed_cycle_phase || '',
     batchDate: run?.batch_date || new Date().toISOString().split('T')[0],
     plannedQuantity: run?.planned_quantity || '',
@@ -667,12 +681,12 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
   const costPerUnit = form.actualQuantity > 0 ? totalCost / parseInt(form.actualQuantity) : form.plannedQuantity > 0 ? totalCost / parseInt(form.plannedQuantity) : 0;
 
   const handleSkuChange = (code) => {
-    const sku = SKU_CODES.find(s => s.code === code);
+    const sku = skuCodes.find(s => s.code === code);
     setForm(f => ({
       ...f,
       skuCode: code,
       skuName: sku?.name || code,
-      seedCyclePhase: code === 'SC' ? (f.seedCyclePhase || 'phase1') : '',
+      seedCyclePhase: sku?.hasPhases ? (f.seedCyclePhase || 'phase1') : '',
     }));
   };
 
@@ -786,7 +800,7 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
               <select value={form.skuCode} onChange={e => handleSkuChange(e.target.value)}
                 disabled={isEditing}
                 className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 disabled:bg-gray-100">
-                {SKU_CODES.map(s => <option key={s.code} value={s.code}>{s.code} - {s.name}</option>)}
+                {skuCodes.map(s => <option key={s.code} value={s.code}>{s.code} - {s.name}</option>)}
               </select>
             </div>
             <div>
@@ -797,7 +811,7 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
           </div>
 
           {/* Seed Cycle Phase Selector */}
-          {form.skuCode === 'SC' && (
+          {skuCodes.find(s => s.code === form.skuCode)?.hasPhases && (
             <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
               <label className="block text-sm font-semibold text-purple-800 mb-2">Seed Cycle Phase *</label>
               <div className="grid grid-cols-2 gap-2">

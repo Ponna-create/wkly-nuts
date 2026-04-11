@@ -8,17 +8,18 @@ const EXPENSE_CSV_SAMPLE = `date,description,category,vendor,amount,gst_amount,t
 2026-03-01,Packing Tape 10 rolls,packaging,Local Store,400,20,420,cash,,
 2026-03-02,ST Courier 5 parcels,courier,ST Courier,750,0,750,upi,AWB-123,March dispatches`;
 
-const PO_CSV_SAMPLE = `date,vendor,item_name,quantity,unit,unit_price,gst_percent,total,notes
-2026-03-01,Jagan Traders,Almonds,5,kg,500,5,2625,Premium California
-2026-03-01,Jagan Traders,Cashews,3,kg,800,5,2520,W320 grade
-2026-03-02,Local Packaging,Weekly Box,100,pcs,11,18,1298,21.6x14.0x10.2cm`;
+const PO_CSV_SAMPLE = `date,vendor,item_name,quantity,unit,unit_price,gst_percent,total,expiry_date,notes
+2026-03-01,Jagan Traders,Almonds,5,kg,500,5,2625,2026-09-01,Premium California
+2026-03-01,Jagan Traders,Cashews,3,kg,800,5,2520,2026-08-15,W320 grade
+2026-03-02,Local Packaging,Weekly Box,100,pcs,11,18,1298,,21.6x14.0x10.2cm`;
 
 const AI_PROMPT_TEMPLATE = `I have a purchase bill/invoice image. Please extract the data and format it as CSV with these columns:
 
 For expenses: date,description,category,vendor,amount,gst_amount,total,payment_method,bill_number,notes
 Categories: raw_materials, packaging, shipping, advertising, rent, utilities, equipment, salary, courier, misc
 
-For purchase orders: date,vendor,item_name,quantity,unit,unit_price,gst_percent,total,status,notes
+For purchase orders: date,vendor,item_name,quantity,unit,unit_price,gst_percent,total,expiry_date,notes
+For expiry_date: use YYYY-MM-DD format. Leave empty if not on the bill.
 
 Please output ONLY the CSV data with headers, no other text.`;
 
@@ -138,6 +139,7 @@ export default function BillCSVImport({ type = 'expense', onClose, onImportCompl
         unit_price: parseFloat(row.unit_price || row.price) || 0,
         gst_percent: parseFloat(row.gst_percent || row.gst) || 5,
         total: parseFloat(row.total) || 0,
+        expiry_date: row.expiry_date || null,
       };
       groups[key].items.push(item);
       groups[key].totalAmount += item.total;

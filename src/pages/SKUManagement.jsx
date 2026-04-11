@@ -112,8 +112,16 @@ export default function SKUManagement() {
   const [currentStep, setCurrentStep] = useState(1); // 1 = Basic Info, 2 = Day Recipes / Single Unit Details
   const [currentDay, setCurrentDay] = useState('MON');
   
+  const generateSkuCode = (name) => {
+    if (!name) return '';
+    const words = name.trim().split(/\s+/);
+    if (words.length === 1) return words[0].substring(0, 3).toUpperCase();
+    return words.map(w => w[0]).join('').toUpperCase();
+  };
+
   const [formData, setFormData] = useState({
     name: '',
+    skuCode: '',
     description: '',
     skuType: 'weekly', // 'weekly' or 'single'
     targetWeightPerSachet: '', // For weekly packs
@@ -176,6 +184,7 @@ export default function SKUManagement() {
   const resetForm = () => {
     setFormData({
       name: '',
+      skuCode: '',
       description: '',
       skuType: 'weekly',
       targetWeightPerSachet: '',
@@ -374,8 +383,8 @@ export default function SKUManagement() {
   };
 
   const handleSaveSKU = () => {
-    if (!formData.name || !formData.description) {
-      showToast('Please fill in all basic information', 'error');
+    if (!formData.name || !formData.description || !formData.skuCode) {
+      showToast('Please fill in all basic information (including SKU Code)', 'error');
       return;
     }
 
@@ -431,6 +440,7 @@ export default function SKUManagement() {
   const handleEdit = (sku) => {
     setFormData({
       name: sku.name,
+      skuCode: sku.skuCode || generateSkuCode(sku.name),
       description: sku.description,
       skuType: sku.skuType || 'weekly',
       targetWeightPerSachet: sku.targetWeightPerSachet || '',
@@ -931,10 +941,26 @@ export default function SKUManagement() {
                   <input
                     type="text"
                     value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    onChange={(e) => {
+                      const newName = e.target.value;
+                      const autoCode = generateSkuCode(newName);
+                      setFormData({ ...formData, name: newName, skuCode: formData.skuCode === generateSkuCode(formData.name) || !formData.skuCode ? autoCode : formData.skuCode });
+                    }}
                     className="input-field"
                     placeholder="e.g., Day Pack, Night Pack, Dates 0.5kg"
                   />
+                </div>
+                <div>
+                  <label className="label">SKU Code <span className="text-red-500">*</span></label>
+                  <input
+                    type="text"
+                    value={formData.skuCode}
+                    onChange={(e) => setFormData({ ...formData, skuCode: e.target.value.toUpperCase() })}
+                    className="input-field font-mono"
+                    placeholder="e.g., DP, SO, SC"
+                    maxLength={10}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Auto-generated from name. You can edit it.</p>
                 </div>
                 <div>
                   <label className="label">SKU Type <span className="text-red-500">*</span></label>
@@ -2067,6 +2093,11 @@ export default function SKUManagement() {
                 <div className="flex justify-between items-start mb-4">
                   <div>
                     <div className="flex items-center gap-2 mb-1">
+                      {sku.skuCode && (
+                        <span className="px-2 py-1 bg-gray-100 text-gray-800 text-xs font-mono font-bold rounded">
+                          {sku.skuCode}
+                        </span>
+                      )}
                       <h3 className="text-lg font-bold text-gray-900">{sku.name}</h3>
                       {sku.skuType === 'single' && (
                         <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-semibold rounded">

@@ -281,6 +281,7 @@ const _realDbService = {
       const skus = (data || []).map(sku => ({
         id: sku.id,
         name: sku.name,
+        skuCode: sku.sku_code || '',
         description: sku.description,
         targetWeightPerSachet: sku.target_weight_per_sachet,
         recipes: sku.recipes || {},
@@ -304,6 +305,7 @@ const _realDbService = {
         .from('skus')
         .insert([{
           name: sku.name,
+          sku_code: sku.skuCode || '',
           description: sku.description,
           target_weight_per_sachet: sku.targetWeightPerSachet,
           recipes: sku.recipes || {},
@@ -319,6 +321,7 @@ const _realDbService = {
         data: {
           id: data.id,
           name: data.name,
+          skuCode: data.sku_code || '',
           description: data.description,
           targetWeightPerSachet: data.target_weight_per_sachet,
           recipes: data.recipes || {},
@@ -341,6 +344,7 @@ const _realDbService = {
         .from('skus')
         .update({
           name: sku.name,
+          sku_code: sku.skuCode || '',
           description: sku.description,
           target_weight_per_sachet: sku.targetWeightPerSachet,
           recipes: sku.recipes || {},
@@ -357,6 +361,7 @@ const _realDbService = {
         data: {
           id: data.id,
           name: data.name,
+          skuCode: data.sku_code || '',
           description: data.description,
           targetWeightPerSachet: data.target_weight_per_sachet,
           recipes: data.recipes || {},
@@ -2711,7 +2716,7 @@ const _realDbService = {
           batchNumber: `${po.po_number || 'PO'}-${itemName}`,
           quantity: qty,
           price: price,
-          expiryDate: null,
+          expiryDate: item.expiry_date || null,
           receivedDate: new Date().toISOString().split('T')[0],
         });
         results.success++;
