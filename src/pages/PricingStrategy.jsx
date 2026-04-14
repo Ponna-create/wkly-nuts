@@ -2,6 +2,37 @@ import React, { useState } from 'react';
 import { DollarSign, TrendingUp, Package, Save } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 
+// Determine what pack types a SKU supports based on its type
+function getPackTypesForSKU(sku) {
+  if (!sku) return [];
+  const skuType = sku.skuType || 'weekly';
+  const name = (sku.name || '').toLowerCase();
+
+  if (skuType === 'single') {
+    // Weight-based products (Date Bytes, Black Royal Dates)
+    return [
+      { value: '0.5kg', label: '500g Pack' },
+      { value: '1kg', label: '1 Kg Pack' },
+    ];
+  }
+  if (name.includes('seed cycle')) {
+    // Seed Cycle: 2 pouches for a monthly cycle
+    return [
+      { value: 'monthly', label: 'Monthly Cycle (2 pouches)' },
+    ];
+  }
+  // Regular sachet-based (Day Pack, Night Soak)
+  return [
+    { value: 'weekly', label: 'Weekly Pack (7 sachets)' },
+    { value: 'monthly', label: 'Monthly Pack (28 sachets)' },
+  ];
+}
+
+function getPackLabel(packType) {
+  const labels = { weekly: 'Weekly', monthly: 'Monthly', '0.5kg': '500g', '1kg': '1kg' };
+  return labels[packType] || packType;
+}
+
 export default function PricingStrategy() {
   const { state, dispatch, showToast } = useApp();
   const { skus, pricingStrategies } = state || { skus: [], pricingStrategies: [] };
@@ -26,15 +57,14 @@ export default function PricingStrategy() {
 
   const [manualPricing, setManualPricing] = useState(false);
 
-  const handleSKUChange = (skuId) => {
-    const sku = skus.find((s) => String(s.id) === String(skuId));
-    setSelectedSKU(sku);
+  const availablePackTypes = getPackTypesForSKU(selectedSKU);
+  const isSingleUnit = selectedSKU?.skuType === 'single';
+  const isSeedCycle = (selectedSKU?.name || '').toLowerCase().includes('seed cycle');
 
-    // Check if pricing exists for this SKU and pack type
+  const loadExistingPricing = (skuId, pt) => {
     const existingPricing = pricingStrategies.find(
-      (p) => String(p.skuId) === String(skuId) && p.packType === packType
+      (p) => String(p.skuId) === String(skuId) && p.packType === pt
     );
-
     if (existingPricing) {
       setFormData({
         sachetPackagingCost: existingPricing.sachetPackagingCost,
@@ -48,7 +78,6 @@ export default function PricingStrategy() {
         sellingPrice: existingPricing.sellingPrice,
       });
     } else {
-      // Reset to defaults
       setFormData({
         sachetPackagingCost: '',
         packBoxCost: '',
@@ -63,69 +92,71 @@ export default function PricingStrategy() {
     }
   };
 
+  const handleSKUChange = (skuId) => {
+    const sku = skus.find((s) => String(s.id) === String(skuId));
+    setSelectedSKU(sku);
+
+    // Auto-select first available pack type for this SKU
+    const packTypes = getPackTypesForSKU(sku);
+    const defaultPack = packTypes[0]?.value || 'weekly';
+    setPackType(defaultPack);
+    loadExistingPricing(skuId, defaultPack);
+  };
+
   const handlePackTypeChange = (newPackType) => {
     setPackType(newPackType);
     if (selectedSKU) {
-      const existingPricing = pricingStrategies.find(
-        (p) => String(p.skuId) === String(selectedSKU.id) && p.packType === newPackType
-      );
-
-      if (existingPricing) {
-        setFormData({
-          sachetPackagingCost: existingPricing.sachetPackagingCost,
-          packBoxCost: existingPricing.packBoxCost,
-          operatingCost: existingPricing.operatingCost,
-          marketingCost: existingPricing.marketingCost,
-          shippingCost: existingPricing.shippingCost,
-          otherCosts: existingPricing.otherCosts,
-          volatilityBuffer: existingPricing.volatilityBuffer,
-          profitMargin: existingPricing.profitMargin,
-          sellingPrice: existingPricing.sellingPrice,
-        });
-      } else {
-        setFormData({
-          sachetPackagingCost: '',
-          packBoxCost: '',
-          operatingCost: '',
-          marketingCost: '',
-          shippingCost: '',
-          otherCosts: '',
-          volatilityBuffer: '',
-          profitMargin: 30,
-          sellingPrice: '',
-        });
-      }
+      loadExistingPricing(selectedSKU.id, newPackType);
     }
   };
 
   const getRawMaterialCost = () => {
     if (!selectedSKU) return 0;
+    if (isSingleUnit) {
+      // For single unit SKUs, raw material cost from singleUnitIngredients
+      const ingredients = selectedSKU.singleUnitIngredients || [];
+      return ingredients.reduce((sum, ing) => {
+        const costPerKg = parseFloat(ing.pricePerUnit || 0);
+        const gramsUsed = parseFloat(ing.gramsPerUnit || 0);
+        return sum + (costPerKg * gramsUsed / 1000);
+      }, 0);
+    }
+    if (isSeedCycle) {
+      // Seed Cycle: monthly cost (both phases)
+      return selectedSKU.monthlyPack?.rawMaterialCost || 0;
+    }
     return packType === 'weekly'
       ? (selectedSKU.weeklyPack?.rawMaterialCost || 0)
       : (selectedSKU.monthlyPack?.rawMaterialCost || 0);
   };
 
-  const getSachetsCount = () => {
+  const getUnitsCount = () => {
+    if (isSingleUnit) return 1; // 1 unit (500g or 1kg pack)
+    if (isSeedCycle) return 2; // 2 pouches per monthly cycle
     return packType === 'weekly' ? 7 : 28;
+  };
+
+  const getUnitLabel = () => {
+    if (isSingleUnit) return 'pack';
+    if (isSeedCycle) return 'pouches';
+    return 'sachets';
   };
 
   const calculateTotalCost = () => {
     const rawMaterial = getRawMaterialCost();
-    const sachets = getSachetsCount();
-    const sachetPkg = parseFloat(formData.sachetPackagingCost || 0) * sachets;
+    const units = getUnitsCount();
+    const sachetPkg = parseFloat(formData.sachetPackagingCost || 0) * units;
     const packBox = parseFloat(formData.packBoxCost || 0);
     const operating = parseFloat(formData.operatingCost || 0);
     const marketing = parseFloat(formData.marketingCost || 0);
     const shipping = parseFloat(formData.shippingCost || 0);
     const other = parseFloat(formData.otherCosts || 0);
-    const buffer = parseFloat(formData.volatilityBuffer || 0); // New buffer field
+    const buffer = parseFloat(formData.volatilityBuffer || 0);
 
-    // Total cost now includes the volatility buffer (safety margin)
     return rawMaterial + buffer + sachetPkg + packBox + operating + marketing + shipping + other;
   };
 
   const calculateSuggestedPrice = () => {
-    // Total cost already includes buffer
     const totalCost = calculateTotalCost();
     const margin = parseFloat(formData.profitMargin || 0) / 100;
     return totalCost * (1 + margin);
@@ -199,7 +230,7 @@ export default function PricingStrategy() {
   const suggestedPrice = calculateSuggestedPrice();
   const profitFromManualPrice = manualPricing ? calculateProfitFromSellingPrice() : null;
 
-  // Get pricing for comparison
+  // Get pricing for comparison (only for weekly/monthly SKUs)
   const weeklyPricing = selectedSKU ? pricingStrategies.find(
     (p) => String(p.skuId) === String(selectedSKU.id) && p.packType === 'weekly'
   ) : null;
@@ -207,11 +238,14 @@ export default function PricingStrategy() {
     (p) => String(p.skuId) === String(selectedSKU.id) && p.packType === 'monthly'
   ) : null;
 
-  // Price Book - group pricing by SKU
+  // Price Book - group pricing by SKU with appropriate pack types
   const priceBookData = skus.map(sku => {
-    const weekly = pricingStrategies.find(p => String(p.skuId) === String(sku.id) && p.packType === 'weekly');
-    const monthly = pricingStrategies.find(p => String(p.skuId) === String(sku.id) && p.packType === 'monthly');
-    return { sku, weekly, monthly };
+    const packTypes = getPackTypesForSKU(sku);
+    const prices = {};
+    packTypes.forEach(pt => {
+      prices[pt.value] = pricingStrategies.find(p => String(p.skuId) === String(sku.id) && p.packType === pt.value);
+    });
+    return { sku, packTypes, prices };
   });
 
   return (
@@ -235,50 +269,80 @@ export default function PricingStrategy() {
               <thead>
                 <tr className="bg-gray-100 border-b">
                   <th className="text-left p-3 font-semibold">Product</th>
-                  <th className="text-right p-3 font-semibold">Weekly Price</th>
-                  <th className="text-right p-3 font-semibold">Weekly Margin</th>
-                  <th className="text-right p-3 font-semibold">Monthly Price</th>
-                  <th className="text-right p-3 font-semibold">Monthly Margin</th>
+                  <th className="text-left p-3 font-semibold">Type</th>
+                  <th className="text-right p-3 font-semibold">Price 1</th>
+                  <th className="text-right p-3 font-semibold">Margin</th>
+                  <th className="text-right p-3 font-semibold">Price 2</th>
+                  <th className="text-right p-3 font-semibold">Margin</th>
                 </tr>
               </thead>
               <tbody>
-                {priceBookData.map(({ sku, weekly, monthly }) => (
+                {priceBookData.map(({ sku, packTypes, prices }) => (
                   <tr key={sku.id} className="border-b hover:bg-gray-50">
                     <td className="p-3 font-medium text-gray-900">{sku.name}</td>
-                    <td className="p-3 text-right">
-                      {weekly ? (
-                        <span className="font-semibold text-green-700">₹{weekly.sellingPrice.toFixed(0)}</span>
-                      ) : (
-                        <span className="text-gray-400 text-xs">Not set</span>
-                      )}
+                    <td className="p-3">
+                      <span className="text-xs text-gray-500">
+                        {(sku.skuType === 'single') ? 'Weight' : (sku.name || '').toLowerCase().includes('seed cycle') ? 'Cycle' : 'Sachet'}
+                      </span>
                     </td>
-                    <td className="p-3 text-right">
-                      {weekly ? (
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${weekly.profitMargin >= 20 ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                          {weekly.profitMargin.toFixed(0)}%
-                        </span>
-                      ) : '-'}
-                    </td>
-                    <td className="p-3 text-right">
-                      {monthly ? (
-                        <span className="font-semibold text-blue-700">₹{monthly.sellingPrice.toFixed(0)}</span>
-                      ) : (
-                        <span className="text-gray-400 text-xs">Not set</span>
-                      )}
-                    </td>
-                    <td className="p-3 text-right">
-                      {monthly ? (
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${monthly.profitMargin >= 20 ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                          {monthly.profitMargin.toFixed(0)}%
-                        </span>
-                      ) : '-'}
-                    </td>
+                    {packTypes.length >= 1 ? (
+                      <>
+                        <td className="p-3 text-right">
+                          {prices[packTypes[0].value] ? (
+                            <div>
+                              <span className="font-semibold text-green-700">₹{prices[packTypes[0].value].sellingPrice.toFixed(0)}</span>
+                              <span className="block text-xs text-gray-400">{packTypes[0].label}</span>
+                            </div>
+                          ) : (
+                            <div>
+                              <span className="text-gray-400 text-xs">Not set</span>
+                              <span className="block text-xs text-gray-300">{packTypes[0].label}</span>
+                            </div>
+                          )}
+                        </td>
+                        <td className="p-3 text-right">
+                          {prices[packTypes[0].value] ? (
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${prices[packTypes[0].value].profitMargin >= 20 ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                              {prices[packTypes[0].value].profitMargin.toFixed(0)}%
+                            </span>
+                          ) : '-'}
+                        </td>
+                      </>
+                    ) : (
+                      <><td className="p-3">-</td><td className="p-3">-</td></>
+                    )}
+                    {packTypes.length >= 2 ? (
+                      <>
+                        <td className="p-3 text-right">
+                          {prices[packTypes[1].value] ? (
+                            <div>
+                              <span className="font-semibold text-blue-700">₹{prices[packTypes[1].value].sellingPrice.toFixed(0)}</span>
+                              <span className="block text-xs text-gray-400">{packTypes[1].label}</span>
+                            </div>
+                          ) : (
+                            <div>
+                              <span className="text-gray-400 text-xs">Not set</span>
+                              <span className="block text-xs text-gray-300">{packTypes[1].label}</span>
+                            </div>
+                          )}
+                        </td>
+                        <td className="p-3 text-right">
+                          {prices[packTypes[1].value] ? (
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${prices[packTypes[1].value].profitMargin >= 20 ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                              {prices[packTypes[1].value].profitMargin.toFixed(0)}%
+                            </span>
+                          ) : '-'}
+                        </td>
+                      </>
+                    ) : (
+                      <><td className="p-3 text-center text-gray-300">-</td><td className="p-3 text-center text-gray-300">-</td></>
+                    )}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          {priceBookData.some(d => !d.weekly || !d.monthly) && (
+          {priceBookData.some(d => d.packTypes.some(pt => !d.prices[pt.value])) && (
             <p className="text-xs text-amber-600 mt-3">Some products don't have pricing set yet. Select a SKU below to configure.</p>
           )}
         </div>
@@ -313,24 +377,21 @@ export default function PricingStrategy() {
           <div>
             <label className="label">Pack Type</label>
             <div className="flex gap-2">
-              <button
-                onClick={() => handlePackTypeChange('weekly')}
-                className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${packType === 'weekly'
-                  ? 'bg-primary text-white'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                  }`}
-              >
-                Weekly Pack (7 sachets)
-              </button>
-              <button
-                onClick={() => handlePackTypeChange('monthly')}
-                className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${packType === 'monthly'
-                  ? 'bg-accent text-white'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                  }`}
-              >
-                Monthly Pack (28 sachets)
-              </button>
+              {availablePackTypes.map((pt, i) => (
+                <button
+                  key={pt.value}
+                  onClick={() => handlePackTypeChange(pt.value)}
+                  className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${packType === pt.value
+                    ? (i === 0 ? 'bg-primary text-white' : 'bg-accent text-white')
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    }`}
+                >
+                  {pt.label}
+                </button>
+              ))}
+              {availablePackTypes.length === 0 && (
+                <p className="text-sm text-gray-400 py-2">Select a SKU first</p>
+              )}
             </div>
           </div>
         </div>
@@ -350,11 +411,16 @@ export default function PricingStrategy() {
                   ₹{getRawMaterialCost().toFixed(2)}
                 </div>
                 <p className="text-sm text-primary-600 mt-1">
-                  Based on recipe for {getSachetsCount()} sachets
+                  {isSingleUnit
+                    ? `Based on ${packType} unit ingredients`
+                    : isSeedCycle
+                      ? 'Based on recipe for 2 pouches (monthly cycle)'
+                      : `Based on recipe for ${getUnitsCount()} ${getUnitLabel()}`
+                  }
                 </p>
               </div>
 
-              {/* Volatility Buffer (New) */}
+              {/* Volatility Buffer */}
               <div className="bg-orange-50 p-4 rounded-lg border border-orange-200">
                 <label className="label text-orange-800">Volatility Buffer (Safety Margin)</label>
                 <div className="relative">
@@ -380,7 +446,9 @@ export default function PricingStrategy() {
               {/* Other Costs */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div>
-                  <label className="label">Sachet Packaging Cost (per sachet)</label>
+                  <label className="label">
+                    {isSingleUnit ? 'Packaging Cost (per unit)' : isSeedCycle ? 'Pouch Packaging Cost (per pouch)' : 'Sachet Packaging Cost (per sachet)'}
+                  </label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">
                       ₹
@@ -397,12 +465,12 @@ export default function PricingStrategy() {
                     />
                   </div>
                   <p className="text-xs text-gray-500 mt-1">
-                    Total: ₹{(parseFloat(formData.sachetPackagingCost || 0) * getSachetsCount()).toFixed(2)}
+                    Total: ₹{(parseFloat(formData.sachetPackagingCost || 0) * getUnitsCount()).toFixed(2)} ({getUnitsCount()} {getUnitLabel()})
                   </p>
                 </div>
 
                 <div>
-                  <label className="label">Pack Box/Bag Cost</label>
+                  <label className="label">{isSingleUnit ? 'Bag/Container Cost' : 'Pack Box/Bag Cost'}</label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">
                       ₹
@@ -494,7 +562,9 @@ export default function PricingStrategy() {
               {/* Total Cost */}
               <div className="bg-gray-100 p-4 rounded-lg">
                 <div className="flex justify-between items-center">
-                  <span className="text-lg font-semibold text-gray-900">Total Cost per Pack</span>
+                  <span className="text-lg font-semibold text-gray-900">
+                    Total Cost per {isSingleUnit ? packType : isSeedCycle ? 'Monthly Cycle' : 'Pack'}
+                  </span>
                   <span className="text-2xl font-bold text-gray-900">
                     ₹{totalCost.toFixed(2)}
                   </span>
@@ -642,8 +712,8 @@ export default function PricingStrategy() {
             </button>
           </div>
 
-          {/* Comparison View */}
-          {weeklyPricing && monthlyPricing && (
+          {/* Comparison View - only for weekly/monthly SKUs */}
+          {!isSingleUnit && !isSeedCycle && weeklyPricing && monthlyPricing && (
             <div className="card">
               <h2 className="text-xl font-bold text-gray-900 mb-6">Pricing Comparison</h2>
 
@@ -740,12 +810,13 @@ export default function PricingStrategy() {
                     <td className="p-3 font-medium">{pricing.skuName}</td>
                     <td className="p-3">
                       <span
-                        className={`px-2 py-1 rounded text-xs font-semibold ${pricing.packType === 'weekly'
-                          ? 'bg-blue-100 text-blue-700'
-                          : 'bg-accent-100 text-accent-700'
-                          }`}
+                        className={`px-2 py-1 rounded text-xs font-semibold ${
+                          pricing.packType === 'weekly' ? 'bg-blue-100 text-blue-700'
+                          : pricing.packType === 'monthly' ? 'bg-accent-100 text-accent-700'
+                          : 'bg-purple-100 text-purple-700'
+                        }`}
                       >
-                        {pricing.packType === 'weekly' ? 'Weekly' : 'Monthly'}
+                        {getPackLabel(pricing.packType)}
                       </span>
                     </td>
                     <td className="p-3 text-right">₹{(pricing.totalCost || 0).toFixed(2)}</td>
