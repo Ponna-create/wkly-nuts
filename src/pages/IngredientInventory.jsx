@@ -183,21 +183,20 @@ export default function IngredientInventory() {
                       <p className="text-sm text-gray-400 italic">No batch records found.</p>
                     ) : (
                       <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
+                        <table className="w-full text-sm min-w-[600px]">
                           <thead>
                             <tr className="text-xs text-gray-500 border-b border-gray-200">
-                              <th className="text-left pb-2 font-medium">Batch #</th>
-                              <th className="text-right pb-2 font-medium">Qty Remaining</th>
-                              <th className="text-left pb-2 font-medium">Received</th>
-                              <th className="text-left pb-2 font-medium">Expiry Date</th>
-                              <th className="text-left pb-2 font-medium">Status</th>
-                              <th className="text-left pb-2 font-medium">Priority</th>
+                              <th className="text-left pb-3 font-medium w-48">Batch #</th>
+                              <th className="text-right pb-3 font-medium w-28">Qty Remaining</th>
+                              <th className="text-left pb-3 font-medium w-28 pl-4">Received</th>
+                              <th className="text-left pb-3 font-medium w-40 pl-4">Expiry Date</th>
+                              <th className="text-left pb-3 font-medium w-24">Status</th>
+                              <th className="text-left pb-3 font-medium">Priority</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-100">
                             {(ing.ingredient_batches || [])
                               .sort((a, b) => {
-                                // FIFO: sort by expiry first; if no expiry, sort by received date
                                 const aDate = a.expiry_date || a.received_date;
                                 const bDate = b.expiry_date || b.received_date;
                                 if (!aDate && !bDate) return 0;
@@ -208,53 +207,72 @@ export default function IngredientInventory() {
                               .map((batch, idx) => {
                                 const batchStatus = getBatchStatus(batch);
                                 const isEditingThis = editingExpiry?.batchId === batch.id;
+                                const hasExpiry = !!batch.expiry_date;
 
                                 return (
                                   <tr key={batch.id} className={batch.status !== 'active' ? 'opacity-50' : ''}>
-                                    <td className="py-2 font-mono text-xs text-gray-600">{batch.batch_number || '—'}</td>
-                                    <td className="py-2 text-right font-semibold text-gray-900">
-                                      {parseFloat(batch.quantity_remaining || 0).toFixed(2)} {ing.unit}
-                                    </td>
-                                    <td className="py-2 text-gray-500 text-xs">{formatDate(batch.received_date)}</td>
+                                    {/* Batch # */}
+                                    <td className="py-3 font-mono text-xs text-gray-600 pr-4">{batch.batch_number || '—'}</td>
 
-                                    {/* Expiry Date — editable */}
-                                    <td className="py-2">
+                                    {/* Qty Remaining */}
+                                    <td className="py-3 text-right font-semibold text-gray-900 pr-4">
+                                      {parseFloat(batch.quantity_remaining || 0).toFixed(2)}
+                                      <span className="text-xs font-normal text-gray-400 ml-1">{ing.unit}</span>
+                                    </td>
+
+                                    {/* Received Date */}
+                                    <td className="py-3 text-gray-600 text-xs pl-4 pr-4">
+                                      {formatDate(batch.received_date)}
+                                    </td>
+
+                                    {/* Expiry Date — always shows edit button when no date set */}
+                                    <td className="py-3 pl-4">
                                       {isEditingThis ? (
-                                        <div className="flex items-center gap-1">
+                                        <div className="flex items-center gap-1.5">
                                           <input type="date" value={editingExpiry.value}
                                             onChange={e => setEditingExpiry(prev => ({ ...prev, value: e.target.value }))}
-                                            className="border rounded px-2 py-0.5 text-xs focus:ring-2 focus:ring-teal-500 w-32" />
+                                            className="border rounded px-2 py-1 text-xs focus:ring-2 focus:ring-teal-500 w-32" />
                                           <button onClick={saveExpiry} disabled={savingExpiry}
-                                            className="p-1 text-green-600 hover:bg-green-50 rounded" title="Save">
+                                            className="p-1 text-green-600 hover:bg-green-50 rounded-lg" title="Save">
                                             <Check className="w-3.5 h-3.5" />
                                           </button>
                                           <button onClick={() => setEditingExpiry(null)}
-                                            className="p-1 text-gray-400 hover:bg-gray-100 rounded" title="Cancel">
+                                            className="p-1 text-gray-400 hover:bg-gray-100 rounded-lg" title="Cancel">
                                             <X className="w-3.5 h-3.5" />
                                           </button>
                                         </div>
                                       ) : (
-                                        <div className="flex items-center gap-1.5 group">
-                                          <span className={batch.expiry_date ? 'text-gray-700' : 'text-gray-400 italic'}>
-                                            {formatDate(batch.expiry_date)}
-                                          </span>
+                                        <div className="flex items-center gap-2">
+                                          {hasExpiry ? (
+                                            <span className="text-gray-700 text-xs">{formatDate(batch.expiry_date)}</span>
+                                          ) : (
+                                            <span className="text-orange-400 text-xs font-medium">Not set</span>
+                                          )}
                                           {batch.status === 'active' && (
                                             <button onClick={() => startEditExpiry(batch, ing.id)}
-                                              className="p-0.5 text-gray-300 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                                              title="Edit expiry date">
+                                              className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-xs transition ${
+                                                hasExpiry
+                                                  ? 'text-gray-400 hover:text-blue-500 hover:bg-blue-50'
+                                                  : 'text-orange-500 bg-orange-50 hover:bg-orange-100'
+                                              }`}
+                                              title="Set expiry date">
                                               <Edit2 className="w-3 h-3" />
+                                              {!hasExpiry && <span>Add date</span>}
                                             </button>
                                           )}
                                         </div>
                                       )}
                                     </td>
 
-                                    <td className="py-2">
+                                    {/* Status */}
+                                    <td className="py-3">
                                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${batchStatus.color}`}>
                                         {batchStatus.label}
                                       </span>
                                     </td>
-                                    <td className="py-2 text-xs text-gray-400">
+
+                                    {/* Priority */}
+                                    <td className="py-3 text-xs text-gray-400">
                                       {batch.status === 'active' ? (idx === 0 ? '🔴 Next to use' : `#${idx + 1} Queued`) : '—'}
                                     </td>
                                   </tr>
