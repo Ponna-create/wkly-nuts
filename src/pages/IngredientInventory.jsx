@@ -197,10 +197,13 @@ export default function IngredientInventory() {
                           <tbody className="divide-y divide-gray-100">
                             {(ing.ingredient_batches || [])
                               .sort((a, b) => {
-                                if (!a.expiry_date && !b.expiry_date) return 0;
-                                if (!a.expiry_date) return 1;
-                                if (!b.expiry_date) return -1;
-                                return new Date(a.expiry_date) - new Date(b.expiry_date);
+                                // FIFO: sort by expiry first; if no expiry, sort by received date
+                                const aDate = a.expiry_date || a.received_date;
+                                const bDate = b.expiry_date || b.received_date;
+                                if (!aDate && !bDate) return 0;
+                                if (!aDate) return 1;
+                                if (!bDate) return -1;
+                                return new Date(aDate) - new Date(bDate);
                               })
                               .map((batch, idx) => {
                                 const batchStatus = getBatchStatus(batch);

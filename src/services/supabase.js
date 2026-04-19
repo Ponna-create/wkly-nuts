@@ -1473,6 +1473,7 @@ const _realDbService = {
             batch_number,
             quantity_remaining,
             expiry_date,
+            received_date,
             status
           )
         `)
@@ -3104,7 +3105,7 @@ const _realDbService = {
         .select(`
           id, name, unit, current_stock_total, safety_stock_level,
           ingredient_batches (
-            id, batch_number, quantity_remaining, expiry_date, status, price_per_unit
+            id, batch_number, quantity_remaining, expiry_date, received_date, status, price_per_unit
           )
         `)
         .order('name');
