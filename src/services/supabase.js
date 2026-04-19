@@ -2770,7 +2770,7 @@ const _realDbService = {
           quantity: qty,
           price: price,
           expiryDate: item.expiry_date || null,
-          receivedDate: new Date().toISOString().split('T')[0],
+          receivedDate: po.order_date || po.orderDate || new Date().toISOString().split('T')[0],
         });
         results.success++;
       } catch (err) {
