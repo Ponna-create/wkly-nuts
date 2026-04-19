@@ -59,16 +59,25 @@ export default function PurchaseOrders() {
   };
 
   const handleSyncInventory = async (po) => {
-    if (!confirm(`Sync ${po.po_number} items to ingredient inventory?\n\nThis will add stock for each item in this PO. Only do this if the stock was NOT already added.`)) return;
+    if (po.stock_synced) {
+      showToast('This PO has already been synced to inventory', 'error');
+      return;
+    }
+    if (!confirm(`Sync ${po.po_number} (${(Array.isArray(po.items) ? po.items.length : 0)} items) to ingredient inventory?\n\nThis can only be done ONCE per PO.`)) return;
     const stockResult = await dbService.stockInFromPurchaseOrder(po);
+    if (stockResult.alreadySynced) {
+      showToast('This PO was already synced to inventory', 'error');
+      setOrders(prev => prev.map(o => o.id === po.id ? { ...o, stock_synced: true } : o));
+      return;
+    }
     if (stockResult.success > 0) {
       showToast(`✅ ${stockResult.success} ingredient(s) added to inventory!`, 'success');
+      setOrders(prev => prev.map(o => o.id === po.id ? { ...o, stock_synced: true } : o));
     } else {
-      showToast('No items were stocked. Check that items have names and quantities.', 'error');
+      showToast('No items were stocked. Check item names and quantities.', 'error');
     }
     if (stockResult.errors.length > 0) {
       console.warn('Sync warnings:', stockResult.errors);
-      showToast(`Warnings: ${stockResult.errors.join(', ')}`, 'error');
     }
   };
 
@@ -78,11 +87,12 @@ export default function PurchaseOrders() {
     const { data, error } = await dbService.updatePurchaseOrder(updates);
     if (error) { showToast('Failed to update status', 'error'); return; }
 
-    // Stock-in raw materials when PO is received
-    if (newStatus === 'received') {
+    // Stock-in raw materials when PO is received (one time only)
+    if (newStatus === 'received' && !po.stock_synced) {
       const stockResult = await dbService.stockInFromPurchaseOrder(po);
       if (stockResult.success > 0) {
-        showToast(`${stockResult.success} ingredient(s) added to raw material stock`, 'success');
+        showToast(`${stockResult.success} ingredient(s) added to inventory`, 'success');
+        setOrders(prev => prev.map(o => o.id === po.id ? { ...o, stock_synced: true } : o));
       }
       if (stockResult.errors.length > 0) {
         showToast(`Stock warnings: ${stockResult.errors[0]}`, 'error');
@@ -241,11 +251,18 @@ export default function PurchaseOrders() {
                       ))}
                       <div className="flex-1" />
                       {po.status === 'received' && (
-                        <button onClick={() => handleSyncInventory(po)}
-                          className="flex items-center gap-1 px-3 py-1.5 text-sm text-green-700 hover:bg-green-50 rounded-lg border border-green-200"
-                          title="Manually sync this PO's items into ingredient inventory">
-                          <RefreshCw className="w-3.5 h-3.5" /> Sync to Inventory
-                        </button>
+                        po.stock_synced ? (
+                          <span className="flex items-center gap-1 px-3 py-1.5 text-sm text-gray-400 border border-gray-200 rounded-lg cursor-not-allowed"
+                            title="Already synced to inventory">
+                            <RefreshCw className="w-3.5 h-3.5" /> Synced ✓
+                          </span>
+                        ) : (
+                          <button onClick={() => handleSyncInventory(po)}
+                            className="flex items-center gap-1 px-3 py-1.5 text-sm text-green-700 hover:bg-green-50 rounded-lg border border-green-200"
+                            title="Sync this PO's items into ingredient inventory (one time only)">
+                            <RefreshCw className="w-3.5 h-3.5" /> Sync to Inventory
+                          </button>
+                        )
                       )}
                       <button onClick={() => { setEditingPO(po); setShowForm(true); }}
                         className="flex items-center gap-1 px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded-lg">

@@ -211,15 +211,11 @@ export default function BillCSVImport({ type = 'expense', onClose, onImportCompl
           success++;
           totalItems += group.items.length;
 
-          // Auto-stock raw materials into ingredient inventory
+          // Auto-stock raw materials into ingredient inventory (one-time, marked synced)
           if (createdPO) {
             const stockResult = await dbService.stockInFromPurchaseOrder(createdPO);
-            if (stockResult.success > 0) {
-              stockedItems += stockResult.success;
-            }
-            if (stockResult.errors.length > 0) {
-              console.warn('Stock-in warnings:', stockResult.errors);
-            }
+            if (stockResult.success > 0) stockedItems += stockResult.success;
+            if (stockResult.errors.length > 0) console.warn('Stock-in warnings:', stockResult.errors);
           }
         } catch (err) {
           console.error('Import PO error:', err);

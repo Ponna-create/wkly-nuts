@@ -2737,18 +2737,29 @@ const _realDbService = {
   // INVENTORY FLOW ORCHESTRATION
   // ==========================================
 
-  // P2: PO Received → Stock-in raw materials
+  // P2: PO Received → Stock-in raw materials (one-time only, tracked by stock_synced flag)
   async stockInFromPurchaseOrder(po) {
-    const results = { success: 0, errors: [] };
+    const results = { success: 0, errors: [], alreadySynced: false };
+
+    // Guard: prevent double-sync
+    if (po.stock_synced) {
+      results.alreadySynced = true;
+      return results;
+    }
+
     const items = Array.isArray(po.items) ? po.items : [];
     if (items.length === 0) return results;
 
+    // Normalize ingredient name: trim spaces + lowercase for matching
+    const normalizeName = (raw) => raw.trim().replace(/\s+/g, ' ');
+
     for (const item of items) {
       try {
-        const itemName = (item.ingredient_name || item.name || '').trim();
-        if (!itemName) continue;
+        const rawName = (item.ingredient_name || item.name || '').trim();
+        if (!rawName) continue;
+        const itemName = normalizeName(rawName);
 
-        // Find ingredient by name (case-insensitive)
+        // Find existing ingredient by exact normalized name (case-insensitive)
         let ingredient = null;
         if (isSupabaseAvailable()) {
           const { data } = await supabase
@@ -2760,7 +2771,7 @@ const _realDbService = {
           ingredient = data;
         }
 
-        // Create ingredient if not found
+        // Create ingredient if not found (use the normalized name)
         if (!ingredient && isSupabaseAvailable()) {
           const { data: created } = await supabase
             .from('ingredients')
@@ -2775,7 +2786,6 @@ const _realDbService = {
           continue;
         }
 
-        // Add batch via existing function
         const qty = parseFloat(item.quantity_kg || item.quantity || 0);
         const price = parseFloat(item.unit_price || item.rate || 0);
         await this.addIngredientBatch({
@@ -2792,6 +2802,12 @@ const _realDbService = {
         results.errors.push(`${item.ingredient_name || item.name}: ${err.message}`);
       }
     }
+
+    // Mark this PO as synced so it can never be double-synced
+    if (results.success > 0 && isSupabaseAvailable()) {
+      await supabase.from('purchase_orders').update({ stock_synced: true }).eq('id', po.id);
+    }
+
     return results;
   },
 
