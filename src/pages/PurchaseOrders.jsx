@@ -3,7 +3,8 @@ import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
 import {
   Plus, Search, X, Edit2, Trash2, Package, ChevronDown, ChevronUp,
-  IndianRupee, Truck, CheckCircle, Clock, AlertCircle, FileSpreadsheet
+  IndianRupee, Truck, CheckCircle, Clock, AlertCircle, FileSpreadsheet,
+  RefreshCw
 } from 'lucide-react';
 import BillCSVImport from '../components/BillCSVImport';
 
@@ -55,6 +56,20 @@ export default function PurchaseOrders() {
     if (error) { showToast('Failed to delete PO', 'error'); return; }
     setOrders(prev => prev.filter(o => o.id !== id));
     showToast('Purchase order deleted');
+  };
+
+  const handleSyncInventory = async (po) => {
+    if (!confirm(`Sync ${po.po_number} items to ingredient inventory?\n\nThis will add stock for each item in this PO. Only do this if the stock was NOT already added.`)) return;
+    const stockResult = await dbService.stockInFromPurchaseOrder(po);
+    if (stockResult.success > 0) {
+      showToast(`✅ ${stockResult.success} ingredient(s) added to inventory!`, 'success');
+    } else {
+      showToast('No items were stocked. Check that items have names and quantities.', 'error');
+    }
+    if (stockResult.errors.length > 0) {
+      console.warn('Sync warnings:', stockResult.errors);
+      showToast(`Warnings: ${stockResult.errors.join(', ')}`, 'error');
+    }
   };
 
   const handleStatusChange = async (po, newStatus) => {
@@ -225,6 +240,13 @@ export default function PurchaseOrders() {
                           className={`px-2 py-1 text-xs rounded ${v.color} hover:opacity-80`}>{v.label}</button>
                       ))}
                       <div className="flex-1" />
+                      {po.status === 'received' && (
+                        <button onClick={() => handleSyncInventory(po)}
+                          className="flex items-center gap-1 px-3 py-1.5 text-sm text-green-700 hover:bg-green-50 rounded-lg border border-green-200"
+                          title="Manually sync this PO's items into ingredient inventory">
+                          <RefreshCw className="w-3.5 h-3.5" /> Sync to Inventory
+                        </button>
+                      )}
                       <button onClick={() => { setEditingPO(po); setShowForm(true); }}
                         className="flex items-center gap-1 px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded-lg">
                         <Edit2 className="w-3.5 h-3.5" /> Edit
