@@ -1,284 +1,335 @@
-import React, { useState } from 'react';
-import { Plus, ChevronDown, ChevronRight, Package, AlertCircle, Clock, Search, X } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Plus, ChevronDown, ChevronRight, Package, AlertCircle, Search, X, Edit2, Check, RefreshCw } from 'lucide-react';
+import { dbService } from '../services/supabase';
 import { useApp } from '../context/AppContext';
 
-// Helper to format date
-const formatDate = (date) => new Date(date).toLocaleDateString('en-IN');
+const formatDate = (date) => {
+  if (!date) return '—';
+  return new Date(date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+};
 
-// Helper for status colors
-const getStatusColor = (status, expiryDate) => {
-    if (status === 'expired') return 'bg-red-100 text-red-800';
-    if (status === 'consumed') return 'bg-gray-100 text-gray-600';
-
-    const daysToExpiry = Math.ceil((new Date(expiryDate) - new Date()) / (1000 * 60 * 60 * 24));
-    if (daysToExpiry < 0) return 'bg-red-100 text-red-800'; // Expired but marked active
-    if (daysToExpiry < 30) return 'bg-orange-100 text-orange-800'; // Expiring soon
-    return 'bg-green-100 text-green-800'; // Good
+const getBatchStatus = (batch) => {
+  if (batch.status === 'consumed') return { label: 'Consumed', color: 'bg-gray-100 text-gray-500' };
+  if (!batch.expiry_date) return { label: 'Active', color: 'bg-blue-100 text-blue-700' };
+  const daysLeft = Math.ceil((new Date(batch.expiry_date) - new Date()) / (1000 * 60 * 60 * 24));
+  if (daysLeft < 0) return { label: 'Expired', color: 'bg-red-100 text-red-700' };
+  if (daysLeft <= 30) return { label: `Expires in ${daysLeft}d`, color: 'bg-orange-100 text-orange-700' };
+  return { label: 'Good', color: 'bg-green-100 text-green-700' };
 };
 
 export default function IngredientInventory() {
-    const { state, dispatch, showToast } = useApp();
-    const { ingredients, vendors } = state;
+  const { showToast } = useApp();
+  const [ingredients, setIngredients] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [expandedId, setExpandedId] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [showAddBatchModal, setShowAddBatchModal] = useState(false);
+  const [editingExpiry, setEditingExpiry] = useState(null); // { batchId, ingredientId, value }
+  const [savingExpiry, setSavingExpiry] = useState(false);
 
-    const [expandedId, setExpandedId] = useState(null);
-    const [searchTerm, setSearchTerm] = useState('');
-    const [showAddBatchModal, setShowAddBatchModal] = useState(false);
+  const [batchForm, setBatchForm] = useState({
+    ingredientId: '', vendorName: '', batchNumber: '',
+    quantity: '', price: '', expiryDate: '',
+    receivedDate: new Date().toISOString().split('T')[0],
+  });
+  const [addingBatch, setAddingBatch] = useState(false);
 
-    // Add Batch Form State
-    const [batchForm, setBatchForm] = useState({
-        ingredientId: '',
-        vendorId: '',
-        batchNumber: '',
-        quantity: '',
-        price: '',
-        expiryDate: '',
-        receivedDate: new Date().toISOString().split('T')[0]
+  const loadIngredients = useCallback(async () => {
+    setLoading(true);
+    const { data } = await dbService.getIngredients();
+    setIngredients(data || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { loadIngredients(); }, [loadIngredients]);
+
+  const filtered = ingredients.filter(ing =>
+    ing.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  // ── Edit expiry date inline ──
+  const startEditExpiry = (batch, ingredientId) => {
+    setEditingExpiry({
+      batchId: batch.id,
+      ingredientId,
+      value: batch.expiry_date ? batch.expiry_date.split('T')[0] : '',
     });
+  };
 
-    const filteredIngredients = (ingredients || []).filter(ing =>
-        ing.name.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+  const saveExpiry = async () => {
+    if (!editingExpiry) return;
+    setSavingExpiry(true);
+    const { error } = await dbService.updateBatchExpiry(editingExpiry.batchId, editingExpiry.value || null);
+    if (error) {
+      showToast('Failed to update expiry date', 'error');
+    } else {
+      showToast('Expiry date updated', 'success');
+      // Update local state
+      setIngredients(prev => prev.map(ing => {
+        if (ing.id !== editingExpiry.ingredientId) return ing;
+        return {
+          ...ing,
+          ingredient_batches: (ing.ingredient_batches || []).map(b =>
+            b.id === editingExpiry.batchId ? { ...b, expiry_date: editingExpiry.value || null } : b
+          ),
+        };
+      }));
+      setEditingExpiry(null);
+    }
+    setSavingExpiry(false);
+  };
 
-    const handleAddBatch = async () => {
-        if (!batchForm.ingredientId || !batchForm.vendorId || !batchForm.quantity || !batchForm.price || !batchForm.expiryDate) {
-            showToast('Please fill all required fields', 'error');
-            return;
-        }
+  // ── Add new batch ──
+  const handleAddBatch = async () => {
+    if (!batchForm.ingredientId || !batchForm.quantity) {
+      showToast('Please select ingredient and enter quantity', 'error');
+      return;
+    }
+    setAddingBatch(true);
+    const { error } = await dbService.addIngredientBatch({
+      ingredientId: batchForm.ingredientId,
+      vendorId: null,
+      batchNumber: batchForm.batchNumber || undefined,
+      quantity: parseFloat(batchForm.quantity),
+      price: parseFloat(batchForm.price) || 0,
+      expiryDate: batchForm.expiryDate || null,
+      receivedDate: batchForm.receivedDate,
+    });
+    if (error) {
+      showToast('Failed to add batch: ' + error.message, 'error');
+    } else {
+      showToast('Batch added to inventory', 'success');
+      setShowAddBatchModal(false);
+      setBatchForm({ ingredientId: '', vendorName: '', batchNumber: '', quantity: '', price: '', expiryDate: '', receivedDate: new Date().toISOString().split('T')[0] });
+      loadIngredients();
+    }
+    setAddingBatch(false);
+  };
 
-        try {
-            dispatch({
-                type: 'ADD_BATCH',
-                payload: {
-                    ...batchForm,
-                    quantity: parseFloat(batchForm.quantity),
-                    price: parseFloat(batchForm.price)
-                }
-            });
-            showToast('Batch added successfully', 'success');
-            setShowAddBatchModal(false);
-            setBatchForm({
-                ingredientId: '',
-                vendorId: '',
-                batchNumber: '',
-                quantity: '',
-                price: '',
-                expiryDate: '',
-                receivedDate: new Date().toISOString().split('T')[0]
-            });
-        } catch (error) {
-            showToast('Error adding batch', 'error');
-        }
-    };
-
-    const toggleExpand = (id) => {
-        setExpandedId(expandedId === id ? null : id);
-    };
-
-    return (
-        <div className="space-y-6">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Ingredient Inventory</h1>
-                    <p className="text-gray-600 mt-1">Track Raw Materials & Batches (FIFO)</p>
-                </div>
-                <button
-                    onClick={() => setShowAddBatchModal(true)}
-                    className="btn-primary flex items-center gap-2"
-                >
-                    <Plus className="w-5 h-5" />
-                    Receive Stock (New Batch)
-                </button>
-            </div>
-
-            {/* Search */}
-            <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                <input
-                    type="text"
-                    placeholder="Search ingredients..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="input-field pl-10"
-                />
-            </div>
-
-            {/* Ingredient List */}
-            <div className="space-y-4">
-                {filteredIngredients.map(ing => (
-                    <div key={ing.id} className="card overflow-hidden">
-                        {/* Header / Summary Row */}
-                        <div
-                            className="flex items-center justify-between p-2 cursor-pointer hover:bg-gray-50 -m-6 p-6"
-                            onClick={() => toggleExpand(ing.id)}
-                        >
-                            <div className="flex items-center gap-4">
-                                {expandedId === ing.id ? <ChevronDown className="w-5 h-5 text-gray-500" /> : <ChevronRight className="w-5 h-5 text-gray-500" />}
-                                <div>
-                                    <h3 className="text-lg font-bold text-gray-900">{ing.name}</h3>
-                                    <div className="flex gap-4 text-sm text-gray-600 mt-1">
-                                        <span>Total Stock: <span className="font-semibold text-gray-900">{ing.current_stock_total} {ing.unit}</span></span>
-                                        {ing.batches?.length > 0 && (
-                                            <span>Active Batches: <span className="font-semibold text-gray-900">{ing.ingredient_batches?.filter(b => b.status === 'active').length}</span></span>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                {/* Status Indicator */}
-                                {ing.current_stock_total <= (ing.safety_stock_level || 10) && (
-                                    <div className="flex items-center gap-1 text-orange-600 bg-orange-50 px-2 py-1 rounded text-xs font-semibold">
-                                        <AlertCircle className="w-4 h-4" /> Low Stock
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-
-                        {/* Expanded Batches View */}
-                        {expandedId === ing.id && (
-                            <div className="border-t bg-gray-50 -mx-6 mt-6 px-6 py-4">
-                                <h4 className="font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                                    <Package className="w-4 h-4" /> Batch Details (FIFO)
-                                </h4>
-
-                                {(!ing.ingredient_batches || ing.ingredient_batches.length === 0) ? (
-                                    <p className="text-gray-500 text-sm italic">No batch history found.</p>
-                                ) : (
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full text-sm text-left">
-                                            <thead className="text-gray-500 font-medium border-b border-gray-200">
-                                                <tr>
-                                                    <th className="pb-2">Batch #</th>
-                                                    <th className="pb-2">Qty Remaining</th>
-                                                    <th className="pb-2">Expiry Date</th>
-                                                    <th className="pb-2">Status</th>
-                                                    <th className="pb-2">Usage Priority</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-gray-200">
-                                                {ing.ingredient_batches
-                                                    .sort((a, b) => new Date(a.expiry_date) - new Date(b.expiry_date)) // Sort by Expiry (FIFO)
-                                                    .map((batch, idx) => {
-                                                        const isExpired = new Date(batch.expiry_date) < new Date();
-                                                        return (
-                                                            <tr key={batch.id} className={batch.status !== 'active' ? 'opacity-50' : ''}>
-                                                                <td className="py-2 font-mono text-xs">{batch.batch_number || 'N/A'}</td>
-                                                                <td className="py-2 font-medium">{batch.quantity_remaining} {ing.unit}</td>
-                                                                <td className="py-2 flex items-center gap-1">
-                                                                    {formatDate(batch.expiry_date)}
-                                                                    {isExpired && <AlertCircle className="w-3 h-3 text-red-500" />}
-                                                                </td>
-                                                                <td className="py-2">
-                                                                    <span className={`px-2 py-0.5 rounded text-xs ${getStatusColor(batch.status, batch.expiry_date)} capitalize`}>
-                                                                        {isExpired && batch.status === 'active' ? 'Expired' : batch.status}
-                                                                    </span>
-                                                                </td>
-                                                                <td className="py-2 text-gray-500 text-xs">
-                                                                    {batch.status === 'active' && !isExpired ? (idx === 0 ? 'High (Next to use)' : 'Queued') : '-'}
-                                                                </td>
-                                                            </tr>
-                                                        );
-                                                    })}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                    </div>
-                ))}
-            </div>
-
-            {/* Add Batch Modal */}
-            {showAddBatchModal && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-                    <div className="bg-white rounded-lg max-w-lg w-full p-6 shadow-xl">
-                        <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-lg font-bold">Receive New Stock (Add Batch)</h3>
-                            <button onClick={() => setShowAddBatchModal(false)}><X className="w-5 h-5" /></button>
-                        </div>
-
-                        <div className="space-y-4">
-                            <div>
-                                <label className="label">Ingredient</label>
-                                <select
-                                    className="input-field"
-                                    value={batchForm.ingredientId}
-                                    onChange={e => setBatchForm({ ...batchForm, ingredientId: e.target.value })}
-                                >
-                                    <option value="">Select Ingredient</option>
-                                    {ingredients.map(ing => (
-                                        <option key={ing.id} value={ing.id}>{ing.name}</option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            <div>
-                                <label className="label">Vendor</label>
-                                <select
-                                    className="input-field"
-                                    value={batchForm.vendorId}
-                                    onChange={e => setBatchForm({ ...batchForm, vendorId: e.target.value })}
-                                >
-                                    <option value="">Select Vendor</option>
-                                    {vendors.map(v => (
-                                        <option key={v.id} value={v.id}>{v.name}</option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="label">Quantity</label>
-                                    <input
-                                        type="number"
-                                        className="input-field"
-                                        placeholder="0.00"
-                                        value={batchForm.quantity}
-                                        onChange={e => setBatchForm({ ...batchForm, quantity: e.target.value })}
-                                    />
-                                </div>
-                                <div>
-                                    <label className="label">Cost Price (Total/Unit)</label>
-                                    <input
-                                        type="number"
-                                        className="input-field"
-                                        placeholder="₹"
-                                        value={batchForm.price}
-                                        onChange={e => setBatchForm({ ...batchForm, price: e.target.value })}
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="label">Batch # (Optional)</label>
-                                    <input
-                                        type="text"
-                                        className="input-field"
-                                        placeholder="e.g. B-001"
-                                        value={batchForm.batchNumber}
-                                        onChange={e => setBatchForm({ ...batchForm, batchNumber: e.target.value })}
-                                    />
-                                </div>
-                                <div>
-                                    <label className="label">Expiry Date</label>
-                                    <input
-                                        type="date"
-                                        className="input-field"
-                                        value={batchForm.expiryDate}
-                                        onChange={e => setBatchForm({ ...batchForm, expiryDate: e.target.value })}
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="pt-4 flex justify-end gap-2">
-                                <button onClick={() => setShowAddBatchModal(false)} className="btn-secondary">Cancel</button>
-                                <button onClick={handleAddBatch} className="btn-primary">Save Batch</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Ingredient Inventory</h1>
+          <p className="text-gray-500 mt-1 text-sm">Track Raw Materials & Batches (FIFO)</p>
         </div>
-    );
+        <div className="flex gap-2">
+          <button onClick={loadIngredients} className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 text-sm">
+            <RefreshCw className="w-4 h-4" /> Refresh
+          </button>
+          <button onClick={() => setShowAddBatchModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 text-sm font-medium">
+            <Plus className="w-4 h-4" /> Receive Stock (New Batch)
+          </button>
+        </div>
+      </div>
+
+      {/* Search */}
+      <div className="relative max-w-md">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+        <input type="text" placeholder="Search ingredients..."
+          value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+          className="w-full pl-10 pr-4 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-teal-500" />
+      </div>
+
+      {/* Ingredient List */}
+      {loading ? (
+        <div className="text-center py-16 text-gray-400">Loading ingredients...</div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-16 bg-white rounded-xl border">
+          <Package className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+          <p className="text-gray-500 font-medium">No ingredients found</p>
+          <p className="text-gray-400 text-sm mt-1">Ingredients appear automatically when a Purchase Order is synced to inventory</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map(ing => {
+            const activeBatches = (ing.ingredient_batches || []).filter(b => b.status === 'active');
+            const isLow = parseFloat(ing.current_stock_total || 0) <= parseFloat(ing.safety_stock_level || 0);
+            const isExpanded = expandedId === ing.id;
+
+            return (
+              <div key={ing.id} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+                {/* Header row */}
+                <div className="flex items-center gap-3 p-4 cursor-pointer hover:bg-gray-50"
+                  onClick={() => setExpandedId(isExpanded ? null : ing.id)}>
+                  <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center flex-shrink-0">
+                    <Package className="w-4 h-4 text-amber-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-gray-900">{ing.name}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {activeBatches.length} active batch{activeBatches.length !== 1 ? 'es' : ''}
+                    </p>
+                  </div>
+                  <div className="text-right mr-3">
+                    <p className="text-lg font-bold text-gray-900">{parseFloat(ing.current_stock_total || 0).toFixed(2)}</p>
+                    <p className="text-xs text-gray-400">{ing.unit || 'kg'}</p>
+                  </div>
+                  {isLow && (
+                    <span className="flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-medium">
+                      <AlertCircle className="w-3 h-3" /> Low
+                    </span>
+                  )}
+                  {isExpanded ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
+                </div>
+
+                {/* Expanded batch table */}
+                {isExpanded && (
+                  <div className="border-t bg-gray-50 px-4 py-4">
+                    <p className="text-xs font-semibold text-gray-500 mb-3 uppercase tracking-wide">Batches (FIFO — oldest expiry used first)</p>
+
+                    {(ing.ingredient_batches || []).length === 0 ? (
+                      <p className="text-sm text-gray-400 italic">No batch records found.</p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-xs text-gray-500 border-b border-gray-200">
+                              <th className="text-left pb-2 font-medium">Batch #</th>
+                              <th className="text-right pb-2 font-medium">Qty Remaining</th>
+                              <th className="text-left pb-2 font-medium">Received</th>
+                              <th className="text-left pb-2 font-medium">Expiry Date</th>
+                              <th className="text-left pb-2 font-medium">Status</th>
+                              <th className="text-left pb-2 font-medium">Priority</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {(ing.ingredient_batches || [])
+                              .sort((a, b) => {
+                                if (!a.expiry_date && !b.expiry_date) return 0;
+                                if (!a.expiry_date) return 1;
+                                if (!b.expiry_date) return -1;
+                                return new Date(a.expiry_date) - new Date(b.expiry_date);
+                              })
+                              .map((batch, idx) => {
+                                const batchStatus = getBatchStatus(batch);
+                                const isEditingThis = editingExpiry?.batchId === batch.id;
+
+                                return (
+                                  <tr key={batch.id} className={batch.status !== 'active' ? 'opacity-50' : ''}>
+                                    <td className="py-2 font-mono text-xs text-gray-600">{batch.batch_number || '—'}</td>
+                                    <td className="py-2 text-right font-semibold text-gray-900">
+                                      {parseFloat(batch.quantity_remaining || 0).toFixed(2)} {ing.unit}
+                                    </td>
+                                    <td className="py-2 text-gray-500 text-xs">{formatDate(batch.received_date)}</td>
+
+                                    {/* Expiry Date — editable */}
+                                    <td className="py-2">
+                                      {isEditingThis ? (
+                                        <div className="flex items-center gap-1">
+                                          <input type="date" value={editingExpiry.value}
+                                            onChange={e => setEditingExpiry(prev => ({ ...prev, value: e.target.value }))}
+                                            className="border rounded px-2 py-0.5 text-xs focus:ring-2 focus:ring-teal-500 w-32" />
+                                          <button onClick={saveExpiry} disabled={savingExpiry}
+                                            className="p-1 text-green-600 hover:bg-green-50 rounded" title="Save">
+                                            <Check className="w-3.5 h-3.5" />
+                                          </button>
+                                          <button onClick={() => setEditingExpiry(null)}
+                                            className="p-1 text-gray-400 hover:bg-gray-100 rounded" title="Cancel">
+                                            <X className="w-3.5 h-3.5" />
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <div className="flex items-center gap-1.5 group">
+                                          <span className={batch.expiry_date ? 'text-gray-700' : 'text-gray-400 italic'}>
+                                            {formatDate(batch.expiry_date)}
+                                          </span>
+                                          {batch.status === 'active' && (
+                                            <button onClick={() => startEditExpiry(batch, ing.id)}
+                                              className="p-0.5 text-gray-300 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                                              title="Edit expiry date">
+                                              <Edit2 className="w-3 h-3" />
+                                            </button>
+                                          )}
+                                        </div>
+                                      )}
+                                    </td>
+
+                                    <td className="py-2">
+                                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${batchStatus.color}`}>
+                                        {batchStatus.label}
+                                      </span>
+                                    </td>
+                                    <td className="py-2 text-xs text-gray-400">
+                                      {batch.status === 'active' ? (idx === 0 ? '🔴 Next to use' : `#${idx + 1} Queued`) : '—'}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Add Batch Modal */}
+      {showAddBatchModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-xl">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold">Receive New Stock</h3>
+              <button onClick={() => setShowAddBatchModal(false)}><X className="w-5 h-5 text-gray-400" /></button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Ingredient *</label>
+                <select value={batchForm.ingredientId} onChange={e => setBatchForm({ ...batchForm, ingredientId: e.target.value })}
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500">
+                  <option value="">Select Ingredient</option>
+                  {ingredients.map(ing => <option key={ing.id} value={ing.id}>{ing.name}</option>)}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Quantity (kg) *</label>
+                  <input type="number" min="0" step="0.01" placeholder="0.00"
+                    value={batchForm.quantity} onChange={e => setBatchForm({ ...batchForm, quantity: e.target.value })}
+                    className="w-full border rounded-lg px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Rate / kg (₹)</label>
+                  <input type="number" min="0" step="0.01" placeholder="0"
+                    value={batchForm.price} onChange={e => setBatchForm({ ...batchForm, price: e.target.value })}
+                    className="w-full border rounded-lg px-3 py-2 text-sm" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Received Date</label>
+                  <input type="date" value={batchForm.receivedDate} onChange={e => setBatchForm({ ...batchForm, receivedDate: e.target.value })}
+                    className="w-full border rounded-lg px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Expiry Date</label>
+                  <input type="date" value={batchForm.expiryDate} onChange={e => setBatchForm({ ...batchForm, expiryDate: e.target.value })}
+                    className="w-full border rounded-lg px-3 py-2 text-sm" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Batch # (Optional)</label>
+                <input type="text" placeholder="e.g. B-001"
+                  value={batchForm.batchNumber} onChange={e => setBatchForm({ ...batchForm, batchNumber: e.target.value })}
+                  className="w-full border rounded-lg px-3 py-2 text-sm" />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button onClick={() => setShowAddBatchModal(false)}
+                  className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg">Cancel</button>
+                <button onClick={handleAddBatch} disabled={addingBatch}
+                  className="px-4 py-2 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50">
+                  {addingBatch ? 'Saving...' : 'Save Batch'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }

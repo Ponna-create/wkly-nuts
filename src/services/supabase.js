@@ -1538,6 +1538,21 @@ const _realDbService = {
     }
   },
 
+  async updateBatchExpiry(batchId, expiryDate) {
+    if (!isSupabaseAvailable()) return { error: new Error('Supabase not configured') };
+    try {
+      const { error } = await supabase
+        .from('ingredient_batches')
+        .update({ expiry_date: expiryDate || null })
+        .eq('id', batchId);
+      if (error) throw error;
+      return { error: null };
+    } catch (error) {
+      console.error('Error updating batch expiry:', error);
+      return { error };
+    }
+  },
+
   async updateBatchStatus(batchId, status, quantityRemaining = null) {
     if (!isSupabaseAvailable()) return { error: new Error('Supabase not configured') };
     try {
