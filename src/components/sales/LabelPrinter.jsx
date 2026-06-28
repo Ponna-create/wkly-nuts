@@ -1,6 +1,7 @@
 import React, { useRef, useState, useMemo } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { X, Printer, Edit3, ChevronDown } from 'lucide-react';
+import { sanitizeHtml } from '../../utils/sanitize';
 
 // Box presets
 const BOX_PRESETS = [
@@ -65,7 +66,7 @@ export default function LabelPrinter({ order, onClose, labelSize: initialSize = 
             body { font-family: Arial, Helvetica, sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           </style>
         </head>
-        <body>${printContent.innerHTML}</body>
+        <body>${sanitizeHtml(printContent.innerHTML)}</body>
       </html>
     `);
     printWindow.document.close();

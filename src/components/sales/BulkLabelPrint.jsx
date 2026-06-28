@@ -1,6 +1,7 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { X, Printer, Calendar, CheckSquare, Square } from 'lucide-react';
+import { sanitizeHtml } from '../../utils/sanitize';
 
 export default function BulkLabelPrint({ orders, onClose, showToast }) {
   const printRef = useRef(null);
@@ -68,7 +69,7 @@ export default function BulkLabelPrint({ orders, onClose, showToast }) {
           </style>
         </head>
         <body>
-          ${printContent.innerHTML}
+          ${sanitizeHtml(printContent.innerHTML)}
         </body>
       </html>
     `);

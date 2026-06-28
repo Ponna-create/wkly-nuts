@@ -1,6 +1,7 @@
 import React, { useRef } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { X, Printer } from 'lucide-react';
+import { sanitizeHtml } from '../../utils/sanitize';
 
 export default function QRLabelPrint({ order, onClose, labelSize = 'a4' }) {
   const printRef = useRef();
@@ -116,7 +117,7 @@ export default function QRLabelPrint({ order, onClose, labelSize = 'a4' }) {
           </style>
         </head>
         <body>
-          ${printContent.innerHTML}
+          ${sanitizeHtml(printContent.innerHTML)}
         </body>
       </html>
     `);

@@ -8,6 +8,7 @@ import {
   IndianRupee, Calendar, Filter, Leaf, Box, Printer, ArrowRight,
   Recycle, TrendingDown
 } from 'lucide-react';
+import { escapeHtml } from '../utils/sanitize';
 
 // Fallback SKU codes if no SKUs exist in database yet
 const FALLBACK_SKU_CODES = [
@@ -158,11 +159,11 @@ export default function ProductionRuns() {
         h3 { margin: 0 0 8px; text-align: center; font-size: 16px; border-bottom: 1px solid #000; padding-bottom: 6px; }
       </style></head><body>
       <div class="label">
-        <h3>WKLY Nuts - ${label.skuName}</h3>
-        <div class="row"><span class="key">Net Qty:</span><span class="val">${label.quantity} pcs</span></div>
-        <div class="row"><span class="key">Batch No:</span><span class="val">${label.batchNo}</span></div>
-        <div class="row"><span class="key">MFD:</span><span class="val">${label.mfd}</span></div>
-        <div class="row"><span class="key">Use By:</span><span class="val">${label.useBy}</span></div>
+        <h3>WKLY Nuts - ${escapeHtml(label.skuName)}</h3>
+        <div class="row"><span class="key">Net Qty:</span><span class="val">${escapeHtml(String(label.quantity))} pcs</span></div>
+        <div class="row"><span class="key">Batch No:</span><span class="val">${escapeHtml(label.batchNo)}</span></div>
+        <div class="row"><span class="key">MFD:</span><span class="val">${escapeHtml(label.mfd)}</span></div>
+        <div class="row"><span class="key">Use By:</span><span class="val">${escapeHtml(label.useBy)}</span></div>
       </div>
       <script>window.onload=function(){window.print();}<\/script>
       </body></html>
