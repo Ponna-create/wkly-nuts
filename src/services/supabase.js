@@ -789,6 +789,56 @@ const _realDbService = {
     }
   },
 
+  async findOrCreateCustomer(customer) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured'), isExisting: false };
+
+    try {
+      const phone = String(customer.phone || '').replace(/[^0-9]/g, '').slice(-10);
+
+      // Try to find by phone first
+      if (phone.length === 10) {
+        const { data: existing } = await supabase
+          .from('customers')
+          .select('*')
+          .like('phone', `%${phone}%`)
+          .limit(1)
+          .maybeSingle();
+
+        if (existing) {
+          // Update address/email if the new data has more info
+          const updates = {};
+          if (customer.address && (!existing.address || existing.address.length < customer.address.length)) updates.address = customer.address;
+          if (customer.email && !existing.email) updates.email = customer.email;
+          if (customer.city && !existing.city) updates.city = customer.city;
+          if (customer.state && !existing.state) updates.state = customer.state;
+          if (customer.pincode && !existing.pincode) updates.pincode = String(customer.pincode);
+
+          if (Object.keys(updates).length > 0) {
+            await supabase.from('customers').update(updates).eq('id', existing.id);
+          }
+
+          return {
+            data: {
+              id: existing.id, name: existing.name, email: existing.email || customer.email,
+              phone: existing.phone, address: updates.address || existing.address,
+              city: updates.city || existing.city, state: updates.state || existing.state,
+              pincode: updates.pincode || existing.pincode, gstin: existing.gstin,
+              customerType: existing.customer_type, notes: existing.notes,
+            },
+            error: null,
+            isExisting: true,
+          };
+        }
+      }
+
+      // Not found — create new
+      const { data, error } = await this.createCustomer(customer);
+      return { data, error, isExisting: false };
+    } catch (error) {
+      return { data: null, error, isExisting: false };
+    }
+  },
+
   async updateCustomer(customer) {
     if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
 

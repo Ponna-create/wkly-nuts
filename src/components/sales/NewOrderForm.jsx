@@ -11,6 +11,7 @@ export default function NewOrderForm({ onClose }) {
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [newCustomerMode, setNewCustomerMode] = useState(false);
   const [showCustomerForm, setShowCustomerForm] = useState(false);
+  const [phoneMatch, setPhoneMatch] = useState(null);
 
   // SKUs and pricing from state
   const skus = state.skus || [];
@@ -152,25 +153,25 @@ export default function NewOrderForm({ onClose }) {
       return;
     }
 
-    const { data, error } = await dbService.createCustomer({
-      id: `temp-${Date.now()}`,
-      ...newCustomer
-    });
+    const { data, error, isExisting } = await dbService.findOrCreateCustomer(newCustomer);
 
     if (error) {
       showToast('Error creating customer', 'error');
       return;
     }
 
-    dispatch({
-      type: 'ADD_CUSTOMER',
-      payload: data
-    });
+    if (isExisting) {
+      showToast(`Found existing customer: ${data.name}`, 'info');
+    } else {
+      dispatch({ type: 'ADD_CUSTOMER', payload: data });
+    }
 
+    setSelectedCustomer(data);
     setFormData(prev => ({
       ...prev,
-      customerName: newCustomer.name,
-      shippingAddress: `${newCustomer.address}, ${newCustomer.city}, ${newCustomer.state} ${newCustomer.pincode}`
+      customerName: data.name,
+      customerId: data.id,
+      shippingAddress: data.address || [newCustomer.address, newCustomer.city, newCustomer.state, newCustomer.pincode].filter(Boolean).join(', ')
     }));
 
     setNewCustomer({ name: '', email: '', phone: '', address: '', city: '', state: '', pincode: '' });
@@ -277,9 +278,33 @@ export default function NewOrderForm({ onClose }) {
                   type="tel"
                   placeholder="Phone *"
                   value={newCustomer.phone}
-                  onChange={(e) => setNewCustomer(prev => ({ ...prev, phone: e.target.value }))}
+                  onChange={async (e) => {
+                    const val = e.target.value;
+                    setNewCustomer(prev => ({ ...prev, phone: val }));
+                    setPhoneMatch(null);
+                    const digits = val.replace(/[^0-9]/g, '');
+                    if (digits.length >= 10) {
+                      const found = await dbService.findCustomerByPhone(digits);
+                      if (found) setPhoneMatch(found);
+                    }
+                  }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
                 />
+                {phoneMatch && (
+                  <div className="flex items-center justify-between p-2 bg-amber-50 border border-amber-200 rounded-lg">
+                    <span className="text-sm text-amber-800">
+                      Customer exists: <strong>{phoneMatch.name}</strong> ({phoneMatch.phone})
+                    </span>
+                    <button type="button" onClick={() => {
+                      setSelectedCustomer(phoneMatch);
+                      setFormData(prev => ({ ...prev, customerName: phoneMatch.name, customerId: phoneMatch.id, shippingAddress: phoneMatch.address || '' }));
+                      setNewCustomerMode(false);
+                      setPhoneMatch(null);
+                    }} className="px-2 py-1 bg-amber-600 text-white rounded text-xs font-medium hover:bg-amber-700">
+                      Use this
+                    </button>
+                  </div>
+                )}
                 <input
                   type="email"
                   placeholder="Email"

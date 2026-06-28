@@ -18,6 +18,7 @@ export default function ZohoImport({ onClose, onImportComplete }) {
     shippingAddress: '', city: '', state: '', pincode: '',
     status: '', amount: '', date: '', channel: '', payment: '',
     itemName: '', itemQuantity: '', itemRate: '',
+    shippingCharge: '', notes: '',
   });
 
   const handleFileSelect = (e) => {
@@ -31,38 +32,100 @@ export default function ZohoImport({ onClose, onImportComplete }) {
     reader.onload = (event) => {
       try {
         const workbook = XLSX.read(event.target.result, { type: 'binary' });
-        const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
-        if (jsonData.length === 0) { showToast('No data found', 'error'); return; }
 
-        // Auto-detect columns
+        // Pick the best sheet: prefer "Orders" or similar, skip dashboard/summary sheets
+        let sheetName = workbook.SheetNames[0];
+        for (const name of workbook.SheetNames) {
+          const l = name.toLowerCase();
+          if (l.includes('order') || l.includes('sales') || l.includes('data')) {
+            sheetName = name;
+            break;
+          }
+        }
+        // If first sheet looks like a dashboard (few columns with data, merged cells), try next sheet
+        if (workbook.SheetNames.length > 1) {
+          const firstSheet = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+          if (firstSheet.length < 3 || Object.keys(firstSheet[0] || {}).length < 3) {
+            sheetName = workbook.SheetNames[1] || sheetName;
+          }
+        }
+
+        const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+        if (jsonData.length === 0) { showToast('No data found in sheet: ' + sheetName, 'error'); return; }
+
+        // Detect format: Zoho CSV vs manual Excel
         const headers = Object.keys(jsonData[0]);
+        const isZohoCSV = headers.some(h => h === 'SalesOrder Number' || h === 'SalesOrder ID');
+
+        // Filter out summary/total rows (manual Excel only)
+        let filteredData = jsonData;
+        if (!isZohoCSV) {
+          const idCol = headers.find(h => h === '#' || h.toLowerCase() === 'id' || h.toLowerCase() === 's.no');
+          if (idCol) {
+            filteredData = jsonData.filter(row => {
+              const val = String(row[idCol] || '').toLowerCase();
+              return val && val !== 'total' && val !== 'none' && !isNaN(Number(val));
+            });
+          }
+        }
+
+        // Auto-detect columns based on format
+        const detectedHeaders = Object.keys(filteredData[0] || jsonData[0]);
         const mapping = { ...columnMapping };
-        headers.forEach(h => {
-          const l = h.toLowerCase();
-          if (l.includes('sales order') || l.includes('order#') || l.includes('order number') || l === 'order id') mapping.orderNumber = h;
-          if (l.includes('customer') && l.includes('name')) mapping.customerName = h;
-          if (l.includes('phone') || l.includes('mobile')) mapping.phone = h;
-          if (l === 'email' || l.includes('customer email')) mapping.email = h;
-          if (l.includes('shipping') && l.includes('address')) mapping.shippingAddress = h;
-          if (l.includes('shipping') && l.includes('city') || l === 'city') mapping.city = h;
-          if (l.includes('shipping') && l.includes('state') || l === 'state') mapping.state = h;
-          if ((l.includes('shipping') && l.includes('zip')) || l.includes('pincode') || l === 'zip') mapping.pincode = h;
-          if (l.includes('order') && l.includes('status')) mapping.status = h;
-          if (l === 'amount' || l.includes('total') || l.includes('grand total')) mapping.amount = h;
-          if (l === 'date' || l.includes('order date') || l.includes('created')) mapping.date = h;
-          if (l.includes('channel') || l.includes('source')) mapping.channel = h;
-          if (l.includes('payment')) mapping.payment = h;
-          if (l.includes('item name') || l.includes('product') || l === 'item') mapping.itemName = h;
-          if ((l.includes('quantity') || l === 'qty') && !l.includes('ship')) mapping.itemQuantity = h;
-          if (l.includes('item price') || l.includes('rate') || l.includes('unit price')) mapping.itemRate = h;
-        });
+
+        if (isZohoCSV) {
+          // Zoho Commerce CSV — exact header matching
+          detectedHeaders.forEach(h => {
+            if (h === 'SalesOrder Number') mapping.orderNumber = h;
+            if (h === 'Customer Name') mapping.customerName = h;
+            if (h === 'Customer EmailID') mapping.email = h;
+            if (h === 'Shipping Phone') mapping.phone = h;
+            if (h === 'Shipping Address') mapping.shippingAddress = h;
+            if (h === 'Shipping City') mapping.city = h;
+            if (h === 'Shipping State') mapping.state = h;
+            if (h === 'Shipping Code') mapping.pincode = h;
+            if (h === 'Status') mapping.status = h;
+            if (h === 'Total') mapping.amount = h;
+            if (h === 'Order Date') mapping.date = h;
+            if (h === 'Sales Channel') mapping.channel = h;
+            if (h === 'Payment Mode') mapping.payment = h;
+            if (h === 'Item Name') mapping.itemName = h;
+            if (h === 'QuantityOrdered') mapping.itemQuantity = h;
+            if (h === 'Item Price') mapping.itemRate = h;
+            if (h === 'Shipping Charge') mapping.shippingCharge = h;
+            if (h === 'Notes') mapping.notes = h;
+          });
+        } else {
+          // Manual Excel — fuzzy header matching
+          detectedHeaders.forEach(h => {
+            const l = h.toLowerCase().replace(/[₹()]/g, '').trim();
+            if (l === '#' || l === 'id' || l === 's.no' || l.includes('sales order') || l.includes('order#') || l.includes('order number') || l === 'order id') mapping.orderNumber = h;
+            if (l.includes('customer name') || l === 'customer' || l === 'name') mapping.customerName = h;
+            if (l.includes('phone') || l.includes('mobile') || l.includes('contact')) mapping.phone = h;
+            if (l === 'email' || l.includes('customer email') || l.includes('mail')) mapping.email = h;
+            if (l === 'address' || l.includes('shipping address')) mapping.shippingAddress = h;
+            if (l.includes('city')) mapping.city = h;
+            if (l.includes('state')) mapping.state = h;
+            if (l.includes('zip') || l.includes('pincode') || l.includes('pin code')) mapping.pincode = h;
+            if (l.includes('order') && l.includes('status')) mapping.status = h;
+            if (l.includes('total amount') || l.includes('grand total')) mapping.amount = h;
+            if (l.includes('dispatch') || l.includes('order date') || l === 'date' || l.includes('created')) mapping.date = h;
+            if (l.includes('source') || l.includes('channel')) mapping.channel = h;
+            if (l.includes('payment')) mapping.payment = h;
+            if (l.includes('product') || l.includes('item name') || l.includes('items') || l === 'item') mapping.itemName = h;
+            if (l === 'qty' || l === 'quantity' || (l.includes('quantity') && !l.includes('ship'))) mapping.itemQuantity = h;
+            if (l.includes('product price') || l.includes('item price') || l.includes('rate') || l.includes('unit price')) mapping.itemRate = h;
+            if (l.includes('shipping') && !l.includes('address')) mapping.shippingCharge = h;
+            if (l.includes('notes') || l.includes('remarks')) mapping.notes = h;
+          });
+        }
 
         setColumnMapping(mapping);
-        setParsedData(jsonData);
+        setParsedData(filteredData);
 
-        // Group rows by order number (Zoho = 1 row per line item)
+        // Group rows by order number (Zoho = 1 row per line item, custom Excel = 1 row per order)
         const orderMap = new Map();
-        for (const row of jsonData) {
+        for (const row of filteredData) {
           const orderNum = row[mapping.orderNumber] || `ROW-${orderMap.size + 1}`;
           if (!orderMap.has(orderNum)) {
             orderMap.set(orderNum, { header: row, items: [] });
@@ -85,7 +148,7 @@ export default function ZohoImport({ onClose, onImportComplete }) {
   const mapZohoStatus = (zohoStatus) => {
     if (!zohoStatus) return 'packing';
     const l = zohoStatus.toLowerCase();
-    if (l.includes('confirm') || l.includes('approved')) return 'packing';
+    if (l === 'invoiced' || l.includes('confirm') || l.includes('approved')) return 'packing';
     if (l.includes('pack')) return 'packed';
     if (l.includes('ship') || l.includes('dispatch')) return 'dispatched';
     if (l.includes('deliver')) return 'delivered';
@@ -144,11 +207,20 @@ export default function ZohoImport({ onClose, onImportComplete }) {
 
         // Calculate totals from items if available, otherwise use amount column
         const itemsTotal = items.reduce((s, i) => s + (i.total || 0), 0);
-        const amount = itemsTotal > 0 ? itemsTotal : (parseFloat(row[columnMapping.amount]) || 0);
+        const amount = itemsTotal > 0 ? itemsTotal : (parseFloat(String(row[columnMapping.amount] || '0').replace(/[₹,]/g, '')) || 0);
+        const shippingCharge = parseFloat(String(row[columnMapping.shippingCharge] || '0').replace(/[₹,]/g, '')) || 0;
 
-        // Customer linking by phone
-        const phone = row[columnMapping.phone] || '';
-        const customer = phone ? await dbService.findCustomerByPhone(phone) : null;
+        // Customer linking — find by phone or create
+        const phone = String(row[columnMapping.phone] || '').replace(/[^0-9+]/g, '');
+        const { data: customer } = await dbService.findOrCreateCustomer({
+          name: row[columnMapping.customerName] || 'Unknown',
+          phone: phone,
+          email: row[columnMapping.email] || '',
+          address: row[columnMapping.shippingAddress] || '',
+          city: row[columnMapping.city] || '',
+          state: row[columnMapping.state] || '',
+          pincode: String(row[columnMapping.pincode] || ''),
+        });
 
         // Build address
         const addressParts = [
@@ -159,28 +231,70 @@ export default function ZohoImport({ onClose, onImportComplete }) {
         ].filter(Boolean);
 
         const paymentStr = (row[columnMapping.payment] || '').toLowerCase();
-        const isPaid = paymentStr.includes('paid') || paymentStr.includes('received');
+        const isPaid = paymentStr.includes('paid') || paymentStr.includes('received') ||
+          paymentStr.includes('gpay') || paymentStr.includes('upi') || paymentStr.includes('epay') ||
+          paymentStr.includes('bank') || paymentStr.includes('neft');
+
+        // Parse date — handle DD/MM/YYYY, YYYY-MM-DD, Excel serial numbers
+        let orderDate = '';
+        const rawDate = row[columnMapping.date];
+        if (rawDate) {
+          if (typeof rawDate === 'number') {
+            const d = new Date((rawDate - 25569) * 86400 * 1000);
+            orderDate = d.toISOString().split('T')[0];
+          } else {
+            const dateStr = String(rawDate);
+            const ddmmyyyy = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+            if (ddmmyyyy) {
+              orderDate = `${ddmmyyyy[3]}-${ddmmyyyy[2].padStart(2, '0')}-${ddmmyyyy[1].padStart(2, '0')}`;
+            } else {
+              orderDate = dateStr.split('T')[0];
+            }
+          }
+        }
+
+        // Detect payment method from string
+        let paymentMethod = 'cod';
+        if (paymentStr.includes('gpay') || paymentStr.includes('upi') || paymentStr.includes('google pay')) paymentMethod = 'upi';
+        else if (paymentStr.includes('epay') || paymentStr.includes('online')) paymentMethod = 'online';
+        else if (paymentStr.includes('bank') || paymentStr.includes('neft') || paymentStr.includes('transfer')) paymentMethod = 'bank_transfer';
+        else if (paymentStr.includes('cod') || paymentStr.includes('cash')) paymentMethod = 'cod';
+        else if (paymentStr) paymentMethod = 'upi';
+
+        // Source detection
+        const sourceStr = (row[columnMapping.channel] || '').toLowerCase();
+        let orderSource = 'direct';
+        if (sourceStr.includes('website') || sourceStr.includes('web')) orderSource = 'website';
+        else if (sourceStr.includes('amazon')) orderSource = 'amazon';
+        else if (sourceStr.includes('whatsapp') || sourceStr.includes('wa')) orderSource = 'whatsapp';
+        else if (sourceStr.includes('instagram') || sourceStr.includes('insta')) orderSource = 'instagram';
+        else if (sourceStr.includes('zoho')) orderSource = 'zoho';
+        else if (sourceStr.includes('direct')) orderSource = 'direct';
+        else if (sourceStr) orderSource = sourceStr;
+
+        const excelNotes = row[columnMapping.notes] || '';
 
         const orderData = {
           customerName: customer?.name || row[columnMapping.customerName] || 'Unknown',
           customerId: customer?.id || null,
-          orderSource: 'zoho',
+          orderSource: orderSource,
           items: items,
-          subtotal: amount,
+          subtotal: amount - shippingCharge,
           gstRate: 0,
           gstAmount: 0,
           discountPercent: 0,
           discountAmount: 0,
-          shippingCharge: 0,
+          shippingCharge: shippingCharge,
           totalAmount: amount,
-          paymentMethod: isPaid ? 'upi' : 'cod',
+          paymentMethod: paymentMethod,
           paymentStatus: isPaid ? 'received' : 'pending',
           amountPaid: isPaid ? amount : 0,
           transactionId: '',
-          status: mapZohoStatus(row[columnMapping.status]),
+          status: mapZohoStatus(row[columnMapping.status]) || 'packing',
           shippingAddress: addressParts.join(', '),
-          notes: `Imported from Zoho: ${orderNum}`,
-          zoho_order_id: String(orderNum),
+          orderDate: orderDate || new Date().toISOString().split('T')[0],
+          notes: excelNotes ? `${excelNotes} (Imported: Row ${orderNum})` : `Imported: Row ${orderNum}`,
+          zohoOrderId: String(orderNum),
         };
 
         const { error } = await dbService.createSalesOrder(orderData);

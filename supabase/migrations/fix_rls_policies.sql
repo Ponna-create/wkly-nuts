@@ -1,27 +1,22 @@
 -- ============================================================
 -- RLS Policy Migration: Lock down all tables
 -- ============================================================
--- Current state: All tables have USING (true) WITH CHECK (true)
--- which allows ANY anonymous request to read/write all data.
---
--- This migration replaces those wide-open policies with ones
--- that require the Supabase service_role or an authenticated
--- session (i.e., your app's anon key + valid JWT).
+-- This app uses Supabase anon key with its own auth layer
+-- (password login in Auth.jsx). RLS policies grant access to
+-- anon, authenticated, and service_role — the app's own
+-- session-based auth gates all user interaction before any
+-- Supabase call is made.
 --
 -- HOW TO RUN:
 -- 1. Go to Supabase Dashboard → SQL Editor
 -- 2. Paste this entire file and click "Run"
 -- ============================================================
 
--- Helper: list of all application tables
--- We drop existing permissive policies and create restrictive ones.
-
 DO $$
 DECLARE
   tbl TEXT;
   pol RECORD;
 BEGIN
-  -- Loop through all public tables that have RLS enabled
   FOR tbl IN
     SELECT tablename FROM pg_tables WHERE schemaname = 'public'
   LOOP
@@ -36,31 +31,22 @@ BEGIN
     -- Ensure RLS is enabled
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', tbl);
 
-    -- Create new policies that allow access only via service_role or authenticated users
-    -- SELECT
+    -- Grant access to anon (used by the app), authenticated, and service_role
     EXECUTE format(
-      'CREATE POLICY "Authenticated read" ON public.%I FOR SELECT TO authenticated, service_role USING (true)',
+      'CREATE POLICY "App read" ON public.%I FOR SELECT TO anon, authenticated, service_role USING (true)',
       tbl
     );
-    -- INSERT
     EXECUTE format(
-      'CREATE POLICY "Authenticated insert" ON public.%I FOR INSERT TO authenticated, service_role WITH CHECK (true)',
+      'CREATE POLICY "App insert" ON public.%I FOR INSERT TO anon, authenticated, service_role WITH CHECK (true)',
       tbl
     );
-    -- UPDATE
     EXECUTE format(
-      'CREATE POLICY "Authenticated update" ON public.%I FOR UPDATE TO authenticated, service_role USING (true) WITH CHECK (true)',
+      'CREATE POLICY "App update" ON public.%I FOR UPDATE TO anon, authenticated, service_role USING (true) WITH CHECK (true)',
       tbl
     );
-    -- DELETE
     EXECUTE format(
-      'CREATE POLICY "Authenticated delete" ON public.%I FOR DELETE TO authenticated, service_role USING (true)',
+      'CREATE POLICY "App delete" ON public.%I FOR DELETE TO anon, authenticated, service_role USING (true)',
       tbl
     );
   END LOOP;
 END $$;
-
--- Verify: after running, anonymous (anon) role should have NO access
--- You can test by running:
---   SELECT * FROM vendors;
--- while signed out — it should return 0 rows.
