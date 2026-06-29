@@ -79,6 +79,7 @@ export default function BillCSVImport({ type = 'expense', onClose, onImportCompl
   const [results, setResults] = useState(null);
   const [showPrompt, setShowPrompt] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState(new Set());
+  const [manualVendor, setManualVendor] = useState('');
 
   const isExpense = type === 'expense';
 
@@ -199,7 +200,7 @@ export default function BillCSVImport({ type = 'expense', onClose, onImportCompl
         try {
           const poData = {
             orderDate: group.date,
-            vendorName: group.vendor,
+            vendorName: manualVendor.trim() || group.vendor,
             status: 'received',
             items: group.items,
             totalAmount: group.totalAmount,
@@ -324,6 +325,21 @@ export default function BillCSVImport({ type = 'expense', onClose, onImportCompl
               </button>
             </div>
           </div>
+
+          {/* Manual Vendor Name Override */}
+          {!isExpense && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+              <label className="block text-sm font-medium text-amber-800 mb-1">Vendor Name (optional override)</label>
+              <input
+                type="text"
+                value={manualVendor}
+                onChange={e => setManualVendor(e.target.value)}
+                placeholder="e.g. Jagan Traders — overrides vendor from CSV"
+                className="w-full border border-amber-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+              />
+              <p className="text-xs text-amber-600 mt-1">If the bill doesn't have a vendor name, type it here. This will apply to all imported POs.</p>
+            </div>
+          )}
 
           {/* Sample */}
           <details className="text-xs">
