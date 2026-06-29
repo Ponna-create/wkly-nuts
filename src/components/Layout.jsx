@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   Home, Package, Warehouse, ShoppingCart, FileText,
-  Menu, X, LogOut, Users, Truck, Factory, FlaskConical,
+  Menu, X, LogOut, Users, Truck, Factory,
   ChevronDown, ChevronRight, Database, Settings, BarChart3, Boxes
 } from 'lucide-react';
 import { logout } from './Auth';
@@ -21,7 +21,6 @@ const navGroups = [
     items: [
       { name: 'Orders', href: '/orders', icon: Truck },
       { name: 'Customers', href: '/customers', icon: Users },
-      { name: 'Recipe Maker', href: '/recipe-maker', icon: FlaskConical },
       { name: 'Production', href: '/production', icon: Factory },
       { name: 'Inventory', href: '/ingredients', icon: Warehouse },
       { name: 'Purchases', href: '/purchase-orders', icon: ShoppingCart },

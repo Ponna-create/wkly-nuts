@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Edit, Trash2, Calculator, X, Package, ChevronLeft, ChevronRight, Check, Printer } from 'lucide-react';
+import { Plus, Edit, Trash2, Calculator, X, Package, ChevronLeft, ChevronRight, Check, Printer, FlaskConical, IndianRupee } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import logo from '../assets/wkly-nuts-logo.png';
 
@@ -26,34 +26,9 @@ const DAY_COLORS_LIGHT = {
 
 export default function SKUManagement() {
   const { state, dispatch, showToast, isLoading } = useApp();
-  
-  // Safety check - if state is not available, show error
-  if (!state) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <Package className="w-16 h-16 text-red-300 mx-auto mb-4" />
-          <p className="text-red-500 text-lg font-semibold">Error Loading SKU Management</p>
-          <p className="text-gray-500 mt-2">Application state is not available. Please refresh the page.</p>
-        </div>
-      </div>
-    );
-  }
-  
-  const { skus = [], vendors = [] } = state;
 
-  // Show loading state while data is being fetched
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <Package className="w-16 h-16 text-gray-300 mx-auto mb-4 animate-pulse" />
-          <p className="text-gray-500">Loading SKU Management...</p>
-        </div>
-      </div>
-    );
-  }
-  
+  const { skus = [], vendors = [] } = state || {};
+
   // Helper function for flexible ingredient matching
   const matchIngredient = (recipeName, vendorName) => {
     const recipe = recipeName.toLowerCase().trim();
@@ -162,6 +137,29 @@ export default function SKUManagement() {
   });
 
   const [productionRequirements, setProductionRequirements] = useState(null);
+
+  if (!state) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <Package className="w-16 h-16 text-red-300 mx-auto mb-4" />
+          <p className="text-red-500 text-lg font-semibold">Error Loading SKU Management</p>
+          <p className="text-gray-500 mt-2">Application state is not available. Please refresh the page.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <Package className="w-16 h-16 text-gray-300 mx-auto mb-4 animate-pulse" />
+          <p className="text-gray-500">Loading SKU Management...</p>
+        </div>
+      </div>
+    );
+  }
 
   const getAllIngredients = () => {
     const ingredients = [];
@@ -915,6 +913,17 @@ export default function SKUManagement() {
           </button>
           <button
             onClick={() => {
+              resetForm();
+              setShowForm(true);
+              setShowCalculator(false);
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-amber-50 text-amber-700 border border-amber-300 rounded-lg hover:bg-amber-100 font-medium text-sm"
+          >
+            <FlaskConical className="w-5 h-5" />
+            New Recipe
+          </button>
+          <button
+            onClick={() => {
               setShowForm(true);
               setShowCalculator(false);
             }}
@@ -1441,6 +1450,52 @@ export default function SKUManagement() {
                   </div>
                 </div>
               </div>
+
+              {/* Live Cost Preview */}
+              {(() => {
+                let totalCost = 0;
+                let totalGrams = 0;
+                DAYS.forEach(day => {
+                  (formData.recipes[day] || []).forEach(item => {
+                    const grams = parseFloat(item.gramsPerSachet) || 0;
+                    const rate = parseFloat(item.pricePerGram) || 0;
+                    totalGrams += grams;
+                    totalCost += grams * rate;
+                  });
+                });
+                const sp = parseFloat(formData.sellingPrice) || 0;
+                const margin = sp > 0 ? ((sp - totalCost) / sp * 100) : 0;
+                const daysWithRecipes = DAYS.filter(d => (formData.recipes[d] || []).length > 0).length;
+                if (daysWithRecipes === 0) return null;
+                return (
+                  <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-lg p-4 mt-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <IndianRupee className="w-4 h-4 text-amber-600" />
+                      <span className="text-sm font-semibold text-amber-800">Live Cost Preview</span>
+                      <span className="text-xs text-amber-500 ml-auto">{daysWithRecipes}/7 days filled</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="bg-white rounded-lg p-2 text-center">
+                        <p className="text-[10px] text-gray-500">Raw Material / Pack</p>
+                        <p className="text-lg font-bold text-amber-700">₹{totalCost.toFixed(2)}</p>
+                        <p className="text-[10px] text-gray-400">{(totalGrams / 1000).toFixed(3)} kg</p>
+                      </div>
+                      <div className="bg-white rounded-lg p-2 text-center">
+                        <p className="text-[10px] text-gray-500">Per Sachet</p>
+                        <p className="text-lg font-bold text-blue-700">₹{daysWithRecipes > 0 ? (totalCost / daysWithRecipes).toFixed(2) : '0'}</p>
+                        <p className="text-[10px] text-gray-400">avg cost</p>
+                      </div>
+                      <div className={`rounded-lg p-2 text-center ${sp > 0 ? (margin > 0 ? 'bg-green-50' : 'bg-red-50') : 'bg-white'}`}>
+                        <p className="text-[10px] text-gray-500">Margin</p>
+                        <p className={`text-lg font-bold ${sp > 0 ? (margin > 0 ? 'text-green-700' : 'text-red-700') : 'text-gray-400'}`}>
+                          {sp > 0 ? `${margin.toFixed(1)}%` : '—'}
+                        </p>
+                        <p className="text-[10px] text-gray-400">{sp > 0 ? `₹${(sp - totalCost).toFixed(2)} profit` : 'set selling price'}</p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Navigation */}
               <div className="flex justify-between items-center mt-4">
