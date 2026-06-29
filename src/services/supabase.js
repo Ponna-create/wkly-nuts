@@ -970,20 +970,24 @@ const _realDbService = {
     if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
 
     try {
-      // For new invoices, use NULL for invoice_number (will be generated when status changes to 'paid')
-      // Only use provided invoiceNumber if it's explicitly set and not 'N/A'
       let invoiceNumberValue = null;
       if (invoice.invoiceNumber && invoice.invoiceNumber !== 'N/A') {
         invoiceNumberValue = invoice.invoiceNumber;
       }
 
-      console.log('Creating invoice with data:', {
-        invoiceNumber: invoiceNumberValue,
-        customerId: invoice.customerId,
-        status: invoice.status,
-        subtotal: invoice.subtotal,
-        totalAmount: invoice.totalAmount
-      });
+      if (!invoiceNumberValue) {
+        const year = new Date().getFullYear();
+        const { data: allInv } = await supabase
+          .from('invoices')
+          .select('invoice_number')
+          .like('invoice_number', `INV-${year}-%`);
+        const numbers = (allInv || []).map(inv => {
+          const m = (inv.invoice_number || '').match(/INV-\d{4}-(\d{5})/);
+          return m ? parseInt(m[1], 10) : 0;
+        });
+        const next = (numbers.length > 0 ? Math.max(...numbers) : 0) + 1;
+        invoiceNumberValue = `INV-${year}-${String(next).padStart(5, '0')}`;
+      }
 
       const { data, error } = await supabase
         .from('invoices')
@@ -1031,14 +1035,7 @@ const _realDbService = {
         throw error;
       }
 
-      // Map invoice_number: if NULL, use 'N/A' for display
-      const invoiceNumber = data.invoice_number || 'N/A';
-
-      console.log('✅ Invoice created successfully:', {
-        id: data.id,
-        invoiceNumber: invoiceNumber,
-        status: data.status
-      });
+      const invoiceNumber = data.invoice_number || invoiceNumberValue;
 
       return {
         data: {

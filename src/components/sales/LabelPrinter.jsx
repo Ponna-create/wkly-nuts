@@ -209,8 +209,8 @@ export default function LabelPrinter({ order, onClose, labelSize: initialSize = 
               {/* === BOTTOM: QR Code === */}
               <div style={{ padding: `${10*s}px`, display: 'flex', flexDirection: 'column', alignItems: 'center', background: '#fff' }}>
                 <QRCodeSVG
-                  value={JSON.stringify({ id: order.id, orderNumber: order.order_number, customer: order.customer_name, tracking: trackingNumber || undefined, total: order.total_amount })}
-                  size={isA4 ? 130 : 90} level="M" includeMargin={true}
+                  value={order.id}
+                  size={isA4 ? 150 : 120} level="L" includeMargin={true}
                 />
                 <div style={{ fontSize: `${9*s}px`, color: '#555', marginTop: `${2*s}px`, letterSpacing: '1px', fontWeight: '500' }}>
                   {trackingNumber || order.order_number}

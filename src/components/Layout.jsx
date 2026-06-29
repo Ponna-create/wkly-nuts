@@ -1,67 +1,36 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
-  Home, Package, Warehouse, ShoppingCart, BarChart3, FileText,
-  Menu, X, LogOut, Users, Truck, Receipt, FolderOpen, Factory, Box,
-  ChevronDown, ChevronRight, HelpCircle, Database, DollarSign, Megaphone, Building2
+  Home, Package, Warehouse, ShoppingCart, FileText,
+  Menu, X, LogOut, Users, Truck, Factory,
+  ChevronDown, ChevronRight, Database, Settings
 } from 'lucide-react';
 import { logout } from './Auth';
 import { isTestMode, setTestMode, resetTestData } from '../services/supabase';
 import logo from '../assets/wkly-nuts-logo.png';
 
-// Grouped navigation - clean categories
 const navGroups = [
   {
     label: null,
     items: [
-      { name: 'Home', href: '/', icon: Home },
-    ],
-  },
-  {
-    label: 'Orders & Sales',
-    items: [
-      { name: 'Sales Orders', href: '/orders', icon: Truck },
-      { name: 'Customers', href: '/customers', icon: Users },
-      { name: 'Invoices', href: '/invoices', icon: FileText },
-      { name: 'Pricing', href: '/pricing', icon: DollarSign },
-    ],
-  },
-  {
-    label: 'Purchasing',
-    items: [
-      { name: 'Purchase Orders', href: '/purchase-orders', icon: ShoppingCart },
-      { name: 'Expenses', href: '/expenses', icon: Receipt },
-      { name: 'Vendors', href: '/vendors', icon: ShoppingCart },
-    ],
-  },
-  {
-    label: 'Production & Stock',
-    items: [
-      { name: 'Production', href: '/production', icon: Factory },
-      { name: 'Packaging', href: '/packaging', icon: Box },
-      { name: 'Ingredients', href: '/ingredients', icon: Warehouse },
-      { name: 'SKU Items', href: '/skus', icon: Package },
-    ],
-  },
-  {
-    label: 'Marketing',
-    items: [
-      { name: 'Marketing', href: '/marketing', icon: Megaphone },
-    ],
-  },
-  {
-    label: 'Reports & Files',
-    items: [
-      { name: 'Reports', href: '/reports', icon: BarChart3 },
-      { name: 'GST & Tax', href: '/gst', icon: Building2 },
-      { name: 'Documents', href: '/documents', icon: FolderOpen },
+      { name: 'Dashboard', href: '/', icon: Home },
     ],
   },
   {
     label: null,
     items: [
-      { name: 'Backup & Settings', href: '/settings', icon: Database },
-      { name: 'Help Guide', href: '/help', icon: HelpCircle },
+      { name: 'Orders', href: '/orders', icon: Truck },
+      { name: 'Customers', href: '/customers', icon: Users },
+      { name: 'Production', href: '/production', icon: Factory },
+      { name: 'Inventory', href: '/ingredients', icon: Warehouse },
+      { name: 'Purchases', href: '/purchase-orders', icon: ShoppingCart },
+      { name: 'Invoices & GST', href: '/invoices', icon: FileText },
+    ],
+  },
+  {
+    label: null,
+    items: [
+      { name: 'Settings', href: '/settings', icon: Settings },
     ],
   },
 ];

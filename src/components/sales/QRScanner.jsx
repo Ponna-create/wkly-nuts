@@ -68,16 +68,20 @@ export default function QRScanner({ onClose, onScanComplete }) {
     // ── GATE 2: Processing lock ──
     if (processingRef.current) return;
 
-    // Parse QR data
     let data;
     try {
       data = JSON.parse(decodedText);
     } catch {
-      setError('Invalid QR code format');
-      return;
+      const trimmed = decodedText.trim();
+      if (trimmed.length >= 20 && !trimmed.includes(' ')) {
+        data = { id: trimmed, orderNumber: '' };
+      } else {
+        setError('Invalid QR code format');
+        return;
+      }
     }
 
-    if (!data.id || !data.orderNumber) {
+    if (!data.id) {
       setError('Invalid QR code - not a WKLY Nuts order');
       return;
     }
@@ -101,9 +105,11 @@ export default function QRScanner({ onClose, onScanComplete }) {
       if (fetchError || !dbOrder) {
         scannedIdsRef.current.delete(data.id);
         setLastScan({ ...data, status: 'error', message: 'Order not found in database' });
-        showToast(`Order ${data.orderNumber} not found`, 'error');
+        showToast(`Order not found`, 'error');
         return;
       }
+
+      if (!data.orderNumber) data.orderNumber = dbOrder.order_number;
 
       // Check if already dispatched or beyond
       if (ALREADY_DISPATCHED.includes(dbOrder.status)) {
