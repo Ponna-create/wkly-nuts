@@ -4,7 +4,7 @@ import { dbService } from '../services/supabase';
 import {
   Plus, Search, X, Edit2, Trash2, Package, ChevronDown, ChevronUp,
   IndianRupee, Truck, CheckCircle, Clock, AlertCircle, FileSpreadsheet,
-  RefreshCw
+  RefreshCw, TrendingUp, TrendingDown, Minus
 } from 'lucide-react';
 import BillCSVImport from '../components/BillCSVImport';
 
@@ -28,6 +28,7 @@ export default function PurchaseOrders() {
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [expandedId, setExpandedId] = useState(null);
+  const [showPriceTrends, setShowPriceTrends] = useState(false);
 
   const loadOrders = useCallback(async () => {
     setLoading(true);
@@ -140,6 +141,10 @@ export default function PurchaseOrders() {
           </select>
         </div>
         <div className="flex gap-2">
+          <button onClick={() => setShowPriceTrends(p => !p)}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border ${showPriceTrends ? 'bg-teal-50 text-teal-700 border-teal-200' : 'text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
+            <TrendingUp className="w-4 h-4" /> Price Trends
+          </button>
           <button onClick={() => setShowCSVImport(true)}
             className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
             title="Import POs from CSV (use ChatGPT/Gemini to convert bills)">
@@ -151,6 +156,9 @@ export default function PurchaseOrders() {
           </button>
         </div>
       </div>
+
+      {/* Vendor Price Trends */}
+      {showPriceTrends && orders.length > 0 && <PriceTrendsPanel orders={orders} />}
 
       {/* PO List */}
       {loading ? (
@@ -491,6 +499,103 @@ function POForm({ po, vendors, onClose, onSave }) {
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+function PriceTrendsPanel({ orders }) {
+  const trends = React.useMemo(() => {
+    const ingredientMap = {};
+    const sorted = [...orders]
+      .filter(o => Array.isArray(o.items) && o.items.length > 0)
+      .sort((a, b) => (a.order_date || '').localeCompare(b.order_date || ''));
+
+    sorted.forEach(po => {
+      po.items.forEach(item => {
+        const name = (item.ingredient_name || item.name || '').trim().toLowerCase();
+        if (!name) return;
+        const rate = parseFloat(item.unit_price || item.rate || 0);
+        if (rate <= 0) return;
+        if (!ingredientMap[name]) ingredientMap[name] = [];
+        ingredientMap[name].push({
+          rate,
+          vendor: po.vendor_name,
+          date: po.order_date,
+        });
+      });
+    });
+
+    return Object.entries(ingredientMap)
+      .filter(([_, entries]) => entries.length >= 1)
+      .map(([name, entries]) => {
+        const latest = entries[entries.length - 1];
+        const prev = entries.length > 1 ? entries[entries.length - 2] : null;
+        const change = prev ? ((latest.rate - prev.rate) / prev.rate) * 100 : 0;
+        const min = Math.min(...entries.map(e => e.rate));
+        const max = Math.max(...entries.map(e => e.rate));
+        const vendors = [...new Set(entries.map(e => e.vendor))];
+        return {
+          name: name.charAt(0).toUpperCase() + name.slice(1),
+          latestRate: latest.rate,
+          latestVendor: latest.vendor,
+          latestDate: latest.date,
+          change,
+          min, max,
+          entryCount: entries.length,
+          vendors,
+        };
+      })
+      .sort((a, b) => Math.abs(b.change) - Math.abs(a.change));
+  }, [orders]);
+
+  if (trends.length === 0) {
+    return (
+      <div className="bg-white rounded-lg shadow-sm border p-4 text-center text-gray-500 text-sm">
+        No price data yet. Price trends appear after your first PO with items.
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
+      <h3 className="text-sm font-bold text-gray-900 mb-3 flex items-center gap-2">
+        <TrendingUp className="w-4 h-4 text-teal-600" />
+        Ingredient Price Trends
+        <span className="text-xs text-gray-400 font-normal">({trends.length} ingredients tracked)</span>
+      </h3>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        {trends.map(t => {
+          const TrendIcon = t.change > 2 ? TrendingUp : t.change < -2 ? TrendingDown : Minus;
+          const trendColor = t.change > 2 ? 'text-red-600' : t.change < -2 ? 'text-green-600' : 'text-gray-500';
+          const trendBg = t.change > 2 ? 'bg-red-50' : t.change < -2 ? 'bg-green-50' : 'bg-gray-50';
+          return (
+            <div key={t.name} className={`p-3 rounded-lg border ${trendBg} border-gray-100`}>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-sm font-medium text-gray-900">{t.name}</span>
+                <div className={`flex items-center gap-1 ${trendColor}`}>
+                  <TrendIcon className="w-3.5 h-3.5" />
+                  <span className="text-xs font-bold">{t.change > 0 ? '+' : ''}{t.change.toFixed(1)}%</span>
+                </div>
+              </div>
+              <div className="text-lg font-bold text-gray-900">
+                ₹{t.latestRate.toLocaleString('en-IN')}<span className="text-xs text-gray-400 font-normal">/kg</span>
+              </div>
+              <div className="flex items-center justify-between mt-1 text-[10px] text-gray-500">
+                <span>Range: ₹{t.min.toLocaleString('en-IN')} – ₹{t.max.toLocaleString('en-IN')}</span>
+                <span>{t.entryCount} PO{t.entryCount > 1 ? 's' : ''}</span>
+              </div>
+              <div className="mt-1 text-[10px] text-gray-400">
+                Last: {t.latestVendor} ({t.latestDate ? new Date(t.latestDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '-'})
+              </div>
+              {t.vendors.length > 1 && (
+                <div className="mt-1 text-[10px] text-teal-600">
+                  {t.vendors.length} vendors: {t.vendors.join(', ')}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

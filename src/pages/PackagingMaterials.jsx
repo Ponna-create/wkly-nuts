@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, Package, AlertTriangle, Search, X, Trash2, Edit2, ArrowUpCircle, ArrowDownCircle, History } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Plus, Package, AlertTriangle, Search, X, Trash2, Edit2, ArrowUpCircle, ArrowDownCircle, History, Gauge, Calendar, RefreshCw } from 'lucide-react';
 import { dbService } from '../services/supabase';
 import { useApp } from '../context/AppContext';
 
@@ -104,7 +104,7 @@ export default function PackagingMaterials() {
       const mat = materials.find(m => m.id === txnForm.material_id);
       if (mat) {
         let newStock = mat.current_stock;
-        if (txnForm.type === 'purchase' || txnForm.type === 'return') {
+        if (txnForm.type === 'purchase' || txnForm.type === 'return' || txnForm.type === 'refill') {
           newStock += Number(txnForm.quantity);
         } else if (txnForm.type === 'usage') {
           newStock -= Number(txnForm.quantity);
@@ -185,6 +185,12 @@ export default function PackagingMaterials() {
           <p className="text-sm text-gray-600">Stock Value</p>
         </div>
       </div>
+
+      {/* Nitrogen Cylinder Tracker */}
+      <NitrogenTracker materials={materials} transactions={transactions} onRefill={(matId) => {
+        setTxnForm({ ...emptyTxn, material_id: matId, type: 'purchase', reference_note: 'Cylinder refill', transaction_date: new Date().toISOString().split('T')[0] });
+        setShowTxnForm(true);
+      }} />
 
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3">
@@ -340,6 +346,7 @@ export default function PackagingMaterials() {
                     <option value="liters">Liters</option>
                     <option value="meters">Meters</option>
                     <option value="sheets">Sheets</option>
+                    <option value="cylinders">Cylinders</option>
                   </select>
                 </div>
               </div>
@@ -381,6 +388,12 @@ export default function PackagingMaterials() {
         </div>
       )}
 
+      {/* Auto-Deduct Info */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
+        <strong>Auto-deduct:</strong> When you complete a production run, packaging materials listed in the run are automatically deducted from stock.
+        Add packaging items to your production run form to use this feature.
+      </div>
+
       {/* Stock In/Out Modal */}
       {showTxnForm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
@@ -409,6 +422,7 @@ export default function PackagingMaterials() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg">
                     <option value="purchase">Purchase (In)</option>
                     <option value="usage">Usage (Out)</option>
+                    <option value="refill">Refill (In)</option>
                     <option value="adjustment">Adjustment</option>
                     <option value="return">Return (In)</option>
                   </select>
@@ -451,6 +465,90 @@ export default function PackagingMaterials() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function NitrogenTracker({ materials, transactions, onRefill }) {
+  const nitrogenItems = materials.filter(m => m.category === 'nitrogen');
+  if (nitrogenItems.length === 0) return null;
+
+  return (
+    <div className="bg-purple-50 rounded-lg border border-purple-200 p-4">
+      <h3 className="text-sm font-bold text-purple-900 flex items-center gap-2 mb-3">
+        <Gauge className="w-4 h-4" />
+        Nitrogen Cylinder Tracker
+      </h3>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {nitrogenItems.map(cyl => {
+          const cylTxns = transactions
+            .filter(t => t.material_id === cyl.id)
+            .sort((a, b) => (b.transaction_date || '').localeCompare(a.transaction_date || ''));
+          const lastRefill = cylTxns.find(t => t.type === 'purchase' || t.type === 'refill');
+          const usageSinceRefill = cylTxns
+            .filter(t => t.type === 'usage' && (!lastRefill || t.transaction_date >= lastRefill.transaction_date))
+            .reduce((s, t) => s + (t.quantity || 0), 0);
+          const totalRefills = cylTxns.filter(t => t.type === 'purchase' || t.type === 'refill').length;
+
+          const lastRefillDate = lastRefill?.transaction_date;
+          let daysSinceRefill = null;
+          if (lastRefillDate) {
+            daysSinceRefill = Math.floor((Date.now() - new Date(lastRefillDate).getTime()) / 86400000);
+          }
+
+          const isLow = cyl.current_stock <= cyl.min_stock && cyl.min_stock > 0;
+          const needsRefill = daysSinceRefill !== null && daysSinceRefill > 30;
+
+          return (
+            <div key={cyl.id} className={`bg-white rounded-lg p-3 border ${isLow || needsRefill ? 'border-red-300' : 'border-purple-100'}`}>
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-semibold text-gray-900 text-sm">{cyl.name}</span>
+                {(isLow || needsRefill) && <AlertTriangle className="w-4 h-4 text-red-500" />}
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div>
+                  <span className="text-gray-500">Stock Level</span>
+                  <p className={`font-bold text-lg ${isLow ? 'text-red-600' : 'text-gray-900'}`}>
+                    {cyl.current_stock} <span className="text-xs font-normal">{cyl.unit}</span>
+                  </p>
+                </div>
+                <div>
+                  <span className="text-gray-500">Total Refills</span>
+                  <p className="font-bold text-lg text-purple-700">{totalRefills}</p>
+                </div>
+                <div>
+                  <span className="text-gray-500">Last Refill</span>
+                  <p className="font-medium text-gray-900">
+                    {lastRefillDate ? new Date(lastRefillDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'Never'}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-gray-500">Days Since</span>
+                  <p className={`font-medium ${needsRefill ? 'text-red-600' : 'text-gray-900'}`}>
+                    {daysSinceRefill !== null ? `${daysSinceRefill}d` : '-'}
+                  </p>
+                </div>
+                {cyl.vendor_name && (
+                  <div className="col-span-2">
+                    <span className="text-gray-500">Provider</span>
+                    <p className="font-medium text-gray-900">{cyl.vendor_name}</p>
+                  </div>
+                )}
+                {usageSinceRefill > 0 && (
+                  <div className="col-span-2">
+                    <span className="text-gray-500">Used since last refill</span>
+                    <p className="font-medium text-orange-600">{usageSinceRefill} {cyl.unit}</p>
+                  </div>
+                )}
+              </div>
+              <button onClick={() => onRefill(cyl.id)}
+                className="w-full mt-2 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-purple-600 text-white rounded-lg hover:bg-purple-700">
+                <RefreshCw className="w-3 h-3" /> Record Refill
+              </button>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

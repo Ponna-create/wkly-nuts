@@ -56,10 +56,15 @@ export default function ZohoImport({ onClose, onImportComplete }) {
         // Detect format: Zoho CSV vs manual Excel
         const headers = Object.keys(jsonData[0]);
         const isZohoCSV = headers.some(h => h === 'SalesOrder Number' || h === 'SalesOrder ID');
+        const isAmazonCSV = headers.some(h =>
+          h === 'amazon-order-id' || h === 'order-id' ||
+          h === 'Amazon Order Id' || h === 'Order ID' ||
+          headers.some(h2 => h2 === 'buyer-name' || h2 === 'ship-city' || h2 === 'purchase-date')
+        );
 
         // Filter out summary/total rows (manual Excel only)
         let filteredData = jsonData;
-        if (!isZohoCSV) {
+        if (!isZohoCSV && !isAmazonCSV) {
           const idCol = headers.find(h => h === '#' || h.toLowerCase() === 'id' || h.toLowerCase() === 's.no');
           if (idCol) {
             filteredData = jsonData.filter(row => {
@@ -95,6 +100,28 @@ export default function ZohoImport({ onClose, onImportComplete }) {
             if (h === 'Shipping Charge') mapping.shippingCharge = h;
             if (h === 'Notes') mapping.notes = h;
           });
+        } else if (isAmazonCSV) {
+          // Amazon Seller Central / Easy Ship report
+          detectedHeaders.forEach(h => {
+            const l = h.toLowerCase().replace(/[-_]/g, ' ');
+            if (l === 'amazon order id' || l === 'order id' || h === 'amazon-order-id' || h === 'order-id') mapping.orderNumber = h;
+            if (l === 'buyer name' || l === 'recipient name' || h === 'buyer-name' || h === 'recipient-name') mapping.customerName = h;
+            if (l === 'buyer phone number' || l === 'buyer phone' || h === 'buyer-phone-number') mapping.phone = h;
+            if (l === 'buyer email' || h === 'buyer-email') mapping.email = h;
+            if (l === 'ship address 1' || l === 'shipping address' || h === 'ship-address-1') mapping.shippingAddress = h;
+            if (l === 'ship city' || h === 'ship-city') mapping.city = h;
+            if (l === 'ship state' || h === 'ship-state') mapping.state = h;
+            if (l === 'ship postal code' || l === 'ship zip' || h === 'ship-postal-code') mapping.pincode = h;
+            if (l === 'order status' || h === 'order-status') mapping.status = h;
+            if (l === 'item price' || l === 'order total' || h === 'item-price') mapping.amount = h;
+            if (l === 'purchase date' || l === 'order date' || h === 'purchase-date') mapping.date = h;
+            if (l === 'sales channel' || h === 'sales-channel') mapping.channel = h;
+            if (l === 'product name' || l === 'item name' || h === 'product-name') mapping.itemName = h;
+            if (l === 'quantity' || l === 'quantity purchased' || h === 'quantity-purchased') mapping.itemQuantity = h;
+            if (l === 'item price' || h === 'item-price') mapping.itemRate = h;
+            if (l === 'shipping price' || h === 'shipping-price') mapping.shippingCharge = h;
+          });
+          if (!mapping.channel) mapping.channel = '__amazon__';
         } else {
           // Manual Excel — fuzzy header matching
           detectedHeaders.forEach(h => {
@@ -152,8 +179,9 @@ export default function ZohoImport({ onClose, onImportComplete }) {
     if (l.includes('pack')) return 'packed';
     if (l.includes('ship') || l.includes('dispatch')) return 'dispatched';
     if (l.includes('deliver')) return 'delivered';
-    if (l.includes('cancel')) return 'cancelled';
-    if (l.includes('draft') || l.includes('pending')) return 'follow_up';
+    if (l.includes('cancel') || l === 'cancelled') return 'cancelled';
+    if (l.includes('draft') || l.includes('pending') || l === 'unshipped') return 'packing';
+    if (l === 'shipped') return 'dispatched';
     return 'packing';
   };
 
@@ -262,7 +290,7 @@ export default function ZohoImport({ onClose, onImportComplete }) {
         else if (paymentStr) paymentMethod = 'upi';
 
         // Source detection
-        const sourceStr = String(row[columnMapping.channel] || '').toLowerCase();
+        const sourceStr = columnMapping.channel === '__amazon__' ? 'amazon' : String(row[columnMapping.channel] || '').toLowerCase();
         let orderSource = 'direct';
         if (sourceStr.includes('website') || sourceStr.includes('web')) orderSource = 'website';
         else if (sourceStr.includes('amazon')) orderSource = 'amazon';
@@ -326,7 +354,7 @@ export default function ZohoImport({ onClose, onImportComplete }) {
         <div className="sticky top-0 bg-white border-b p-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <FileSpreadsheet className="w-5 h-5 text-teal-600" />
-            <h2 className="text-xl font-bold">Import from Zoho / CSV</h2>
+            <h2 className="text-xl font-bold">Import Orders (Zoho / Amazon / CSV)</h2>
           </div>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700"><X className="w-6 h-6" /></button>
         </div>
@@ -345,7 +373,7 @@ export default function ZohoImport({ onClose, onImportComplete }) {
             ) : (
               <div>
                 <p className="font-medium">Click to upload CSV or Excel file</p>
-                <p className="text-sm text-gray-500 mt-1">Supports .csv, .xlsx from Zoho Commerce</p>
+                <p className="text-sm text-gray-500 mt-1">Supports Zoho Commerce, Amazon Seller Central, or custom Excel</p>
               </div>
             )}
           </div>

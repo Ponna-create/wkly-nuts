@@ -1863,6 +1863,91 @@ export default function InvoiceManagement() {
     showToast(`Exported ${invoicesToExport.length} invoice(s) with item details to CSV`, 'success');
   };
 
+  const exportGSTReport = () => {
+    const invoicesToExport = filteredInvoices.length > 0 ? filteredInvoices : invoices;
+    const paidOrSent = invoicesToExport.filter(inv => inv.status === 'paid' || inv.status === 'sent');
+    if (paidOrSent.length === 0) {
+      showToast('No paid/sent invoices to export for GST', 'error');
+      return;
+    }
+
+    const getHSN = (skuName) => {
+      const name = (skuName || '').toLowerCase();
+      if (name.includes('seed cycle') || name.includes('seedcycle')) return '1204';
+      return '2008 19 20';
+    };
+
+    const getChannel = (inv) => {
+      const src = inv.orderSource || inv.order_source || '';
+      if (src.includes('amazon')) return 'Amazon';
+      if (src.includes('website') || src.includes('shopify')) return 'Website';
+      return 'Direct';
+    };
+
+    const csvRows = [];
+    const headers = ['Date', 'Invoice #', 'Customer', 'GSTIN', 'Product', 'HSN Code', 'Qty', 'Taxable Value', 'CGST @2.5%', 'SGST @2.5%', 'IGST @5%', 'Total Tax', 'Invoice Total', 'Channel'];
+    csvRows.push(headers.join(','));
+
+    let totalTaxable = 0, totalCGST = 0, totalSGST = 0, totalIGST = 0, totalTax = 0, grandTotal = 0;
+
+    paidOrSent.forEach(inv => {
+      const customer = inv.customer || (inv.customerId ? customers.find(c => String(c.id) === String(inv.customerId)) : null);
+      const custState = (customer?.state || customer?.city || '').toLowerCase();
+      const isTN = custState.includes('tamil') || custState.includes('chennai') || custState.includes('tn') || !custState;
+      const items = inv.items || [];
+      const gstRate = inv.gstRate || 5;
+      const channel = getChannel(inv);
+
+      if (items.length === 0) {
+        const taxable = inv.subtotal || inv.totalAmount || 0;
+        const tax = taxable * (gstRate / 100);
+        const cgst = isTN ? tax / 2 : 0;
+        const sgst = isTN ? tax / 2 : 0;
+        const igst = isTN ? 0 : tax;
+        totalTaxable += taxable; totalCGST += cgst; totalSGST += sgst; totalIGST += igst; totalTax += tax; grandTotal += taxable + tax;
+        const row = [
+          inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString('en-IN') : '',
+          inv.invoiceNumber || '', customer?.name || '', customer?.gstin || '',
+          'Mixed Products', '2008 19 20', '1', taxable.toFixed(2),
+          cgst.toFixed(2), sgst.toFixed(2), igst.toFixed(2), tax.toFixed(2), (taxable + tax).toFixed(2), channel
+        ].map(c => { const s = String(c || ''); return s.includes(',') ? `"${s}"` : s; });
+        csvRows.push(row.join(','));
+      } else {
+        items.forEach(item => {
+          const qty = item.quantity || 1;
+          const taxable = item.total || (qty * (item.unitPrice || 0));
+          const tax = taxable * (gstRate / 100);
+          const cgst = isTN ? tax / 2 : 0;
+          const sgst = isTN ? tax / 2 : 0;
+          const igst = isTN ? 0 : tax;
+          totalTaxable += taxable; totalCGST += cgst; totalSGST += sgst; totalIGST += igst; totalTax += tax; grandTotal += taxable + tax;
+          const row = [
+            inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString('en-IN') : '',
+            inv.invoiceNumber || '', customer?.name || '', customer?.gstin || '',
+            item.skuName || 'Unknown', getHSN(item.skuName), qty, taxable.toFixed(2),
+            cgst.toFixed(2), sgst.toFixed(2), igst.toFixed(2), tax.toFixed(2), (taxable + tax).toFixed(2), channel
+          ].map(c => { const s = String(c || ''); return s.includes(',') ? `"${s}"` : s; });
+          csvRows.push(row.join(','));
+        });
+      }
+    });
+
+    csvRows.push('');
+    csvRows.push(['', '', '', '', '', '', 'TOTALS', totalTaxable.toFixed(2), totalCGST.toFixed(2), totalSGST.toFixed(2), totalIGST.toFixed(2), totalTax.toFixed(2), grandTotal.toFixed(2), ''].join(','));
+
+    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const monthLabel = new Date().toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }).replace(' ', '-');
+    link.download = `GST-Report-${monthLabel}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    showToast(`GST report exported: ${paidOrSent.length} invoices, ₹${grandTotal.toFixed(0)} total`, 'success');
+  };
+
   // Get status icon and color
   const getStatusInfo = (status) => {
     switch (status) {
@@ -1889,13 +1974,23 @@ export default function InvoiceManagement() {
         </div>
         <div className="flex gap-2">
           {!showForm && invoices.length > 0 && (
-            <button
-              onClick={exportInvoices}
-              className="btn-secondary flex items-center gap-2"
-            >
-              <Download className="w-5 h-5" />
-              Export
-            </button>
+            <>
+              <button
+                onClick={exportGSTReport}
+                className="btn-secondary flex items-center gap-2 text-sm"
+                title="Export GST report with HSN codes for GSTR-3B filing"
+              >
+                <FileText className="w-4 h-4" />
+                GST Export
+              </button>
+              <button
+                onClick={exportInvoices}
+                className="btn-secondary flex items-center gap-2"
+              >
+                <Download className="w-5 h-5" />
+                Export
+              </button>
+            </>
           )}
           <button
             onClick={() => setShowForm(true)}
