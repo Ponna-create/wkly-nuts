@@ -631,8 +631,8 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
 
   // Build SKU codes list from database SKUs, fallback to hardcoded if none exist
   const skuCodes = (skus && skus.length > 0)
-    ? skus.filter(s => s.skuCode).map(s => ({
-        code: s.skuCode,
+    ? skus.filter(s => s.skuCode || s.sku_code).map(s => ({
+        code: s.skuCode || s.sku_code,
         name: s.name,
         id: s.id,
         hasPhases: s.name?.toLowerCase().includes('seed cycle'),
@@ -885,7 +885,7 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
             </div>
           )}
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Pack Type</label>
               <select value={form.packType} onChange={e => setForm(f => ({ ...f, packType: e.target.value }))}
@@ -895,241 +895,70 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Planned Qty *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">How many packs? *</label>
               <input type="number" value={form.plannedQuantity} onChange={e => { const v = e.target.value; setForm(f => ({ ...f, plannedQuantity: v })); if (form.skuCode) handleSkuChange(form.skuCode, v); }}
                 disabled={isEditing}
                 className="w-full border rounded-lg px-3 py-2 text-sm disabled:bg-gray-100" min="1" required />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Shelf Life (days)</label>
-              <input type="number" value={form.shelfLifeDays} onChange={e => setForm(f => ({ ...f, shelfLifeDays: e.target.value }))}
-                className="w-full border rounded-lg px-3 py-2 text-sm" min="1" placeholder="30" />
-            </div>
           </div>
-
-          {/* Batch Label Preview */}
-          {form.skuCode && form.batchDate && form.plannedQuantity > 0 && (
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-              <p className="text-xs font-medium text-blue-700 mb-2">Batch Label Preview</p>
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div><span className="text-blue-500">Batch No:</span> <span className="font-mono font-bold text-blue-900">
-                  {isEditing && run.instance_start ? run.instance_start : `${form.skuCode}-${form.batchDate.slice(0, 4)}-${form.batchDate.slice(5).replace('-', '')}-001`}
-                </span></div>
-                <div><span className="text-blue-500">Qty:</span> <span className="font-bold text-blue-900">{form.actualQuantity || form.plannedQuantity} boxes</span></div>
-                <div><span className="text-blue-500">MFD:</span> <span className="font-bold text-blue-900">{mfdDisplay}</span></div>
-                <div><span className="text-blue-500">Use By:</span> <span className="font-bold text-blue-900">{useByDisplay}</span></div>
-              </div>
-            </div>
-          )}
-
-          {/* Instance Number Preview (new runs only) */}
-          {!isEditing && form.skuCode && form.batchDate && form.plannedQuantity > 0 && (
-            <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
-              <p className="text-xs font-medium text-emerald-700 mb-1">Instance Numbers (auto-generated)</p>
-              <p className="font-mono text-sm text-emerald-900">
-                {form.skuCode}-{form.batchDate.slice(0, 4)}-{form.batchDate.slice(5).replace('-', '')}-001 &rarr; {form.skuCode}-{form.batchDate.slice(0, 4)}-{form.batchDate.slice(5).replace('-', '')}-{String(form.plannedQuantity).padStart(3, '0')}
-              </p>
-            </div>
-          )}
 
           {/* Edit-only fields */}
           {isEditing && (
-            <>
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Actual Qty</label>
-                  <input type="number" value={form.actualQuantity} onChange={e => setForm(f => ({ ...f, actualQuantity: e.target.value }))}
-                    className="w-full border rounded-lg px-3 py-2 text-sm" min="0" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Rejected</label>
-                  <input type="number" value={form.rejectedQuantity} onChange={e => setForm(f => ({ ...f, rejectedQuantity: e.target.value }))}
-                    className="w-full border rounded-lg px-3 py-2 text-sm" min="0" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                  <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
-                    className="w-full border rounded-lg px-3 py-2 text-sm">
-                    {STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-                  </select>
-                </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Actual Qty Produced</label>
+                <input type="number" value={form.actualQuantity} onChange={e => setForm(f => ({ ...f, actualQuantity: e.target.value }))}
+                  className="w-full border rounded-lg px-3 py-2 text-sm" min="0" />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Quality Status</label>
-                  <select value={form.qualityStatus} onChange={e => setForm(f => ({ ...f, qualityStatus: e.target.value }))}
-                    className="w-full border rounded-lg px-3 py-2 text-sm">
-                    {QUALITY_STATUSES.map(q => <option key={q.value} value={q.value}>{q.label}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Quality Notes</label>
-                  <input type="text" value={form.qualityNotes} onChange={e => setForm(f => ({ ...f, qualityNotes: e.target.value }))}
-                    className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Any QC remarks" />
-                </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
+                  className="w-full border rounded-lg px-3 py-2 text-sm">
+                  {STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                </select>
               </div>
-            </>
-          )}
-
-          {/* Ingredients Used - DROPDOWN from inventory */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-sm font-medium text-gray-700 flex items-center gap-1">
-                <Leaf className="w-4 h-4 text-amber-600" /> Raw Materials Used
-              </label>
-              <button type="button" onClick={addIngredient} className="text-xs text-emerald-600 hover:text-emerald-700 font-medium">+ Add Ingredient</button>
-            </div>
-            {loadingDropdowns ? (
-              <p className="text-xs text-gray-400">Loading ingredients...</p>
-            ) : (
-              form.ingredientsUsed.map((ing, i) => {
-                const match = availableIngredients.find(ai => ai.name === ing.ingredient_name);
-                return (
-                  <div key={i} className="mb-2">
-                    <div className="flex items-center gap-2">
-                      <select
-                        value={ing.ingredient_name}
-                        onChange={e => updateIngredient(i, 'ingredient_name', e.target.value)}
-                        className="flex-1 border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-emerald-500"
-                      >
-                        <option value="">Select ingredient...</option>
-                        {availableIngredients.map(ai => (
-                          <option key={ai.id} value={ai.name}>
-                            {ai.name} ({ai.current_stock_total} {ai.unit} available)
-                          </option>
-                        ))}
-                      </select>
-                      <input type="number" value={ing.quantity_grams} onChange={e => updateIngredient(i, 'quantity_grams', e.target.value)}
-                        className="w-24 border rounded-lg px-3 py-1.5 text-sm" placeholder="grams" min="0" />
-                      <button type="button" onClick={() => removeIngredient(i)} className="p-1 text-red-400 hover:text-red-600"><X className="w-4 h-4" /></button>
-                    </div>
-                    {match && ing.quantity_grams > 0 && (
-                      <p className={`text-[10px] mt-0.5 ml-1 ${(parseFloat(ing.quantity_grams) / 1000) > match.current_stock_total ? 'text-red-500 font-medium' : 'text-gray-400'}`}>
-                        {(parseFloat(ing.quantity_grams) / 1000) > match.current_stock_total
-                          ? `Insufficient! Need ${(parseFloat(ing.quantity_grams) / 1000).toFixed(2)} kg, have ${match.current_stock_total} ${match.unit}`
-                          : `Will use ${(parseFloat(ing.quantity_grams) / 1000).toFixed(2)} kg of ${match.current_stock_total} ${match.unit} available`
-                        }
-                      </p>
-                    )}
-                  </div>
-                );
-              })
-            )}
-            {form.ingredientsUsed.length === 0 && (
-              <p className="text-xs text-gray-400 italic">No ingredients added. Click "+ Add Ingredient" to select from inventory.</p>
-            )}
-          </div>
-
-          {/* Weight Check Alert */}
-          {expectedTotalGrams > 0 && totalIngredientGrams > 0 && (
-            <div className={`rounded-lg p-3 border ${Math.abs(weightDiffPercent) > 15 ? 'bg-red-50 border-red-200' : Math.abs(weightDiffPercent) > 5 ? 'bg-amber-50 border-amber-200' : 'bg-green-50 border-green-200'}`}>
-              <div className="flex items-center gap-2 mb-1">
-                <AlertTriangle className={`w-4 h-4 ${Math.abs(weightDiffPercent) > 15 ? 'text-red-600' : Math.abs(weightDiffPercent) > 5 ? 'text-amber-600' : 'text-green-600'}`} />
-                <p className={`text-sm font-medium ${Math.abs(weightDiffPercent) > 15 ? 'text-red-800' : Math.abs(weightDiffPercent) > 5 ? 'text-amber-800' : 'text-green-800'}`}>
-                  Weight Check
-                </p>
-              </div>
-              <div className="grid grid-cols-3 gap-2 text-xs">
-                <div>
-                  <span className="text-gray-500">Expected:</span>
-                  <p className="font-bold">{(expectedTotalGrams).toLocaleString()}g</p>
-                  <p className="text-[10px] text-gray-400">{plannedQty} boxes x {sachetsPerBox} sachets x {targetWeightPerSachet}g</p>
-                </div>
-                <div>
-                  <span className="text-gray-500">Actual Used:</span>
-                  <p className="font-bold">{totalIngredientGrams.toLocaleString()}g</p>
-                </div>
-                <div>
-                  <span className="text-gray-500">Difference:</span>
-                  <p className={`font-bold ${weightDiffPercent > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                    {weightDiffPercent > 0 ? '+' : ''}{weightDiffPercent}%
-                    ({weightDiffPercent > 0 ? '+' : ''}{(totalIngredientGrams - expectedTotalGrams).toLocaleString()}g)
-                  </p>
-                </div>
-              </div>
-              {Math.abs(weightDiffPercent) > 15 && (
-                <p className="text-xs text-red-600 mt-1 font-medium">
-                  Sachets are likely overweight — check filling machine calibration
-                </p>
-              )}
             </div>
           )}
 
-          {/* Packaging Used - DROPDOWN from inventory */}
+          {/* Raw Materials — auto-populated from SKU recipe */}
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-sm font-medium text-gray-700 flex items-center gap-1">
-                <Box className="w-4 h-4 text-indigo-600" /> Packaging Materials
-              </label>
-              <button type="button" onClick={addPackaging} className="text-xs text-emerald-600 hover:text-emerald-700 font-medium">+ Add Material</button>
-            </div>
-            {loadingDropdowns ? (
-              <p className="text-xs text-gray-400">Loading packaging...</p>
-            ) : (
-              form.packagingUsed.map((pkg, i) => {
-                const match = availablePackaging.find(ap => ap.name === pkg.material_name);
-                return (
-                  <div key={i} className="mb-2">
-                    <div className="flex items-center gap-2">
-                      <select
-                        value={pkg.material_name}
-                        onChange={e => updatePackaging(i, 'material_name', e.target.value)}
-                        className="flex-1 border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-emerald-500"
-                      >
-                        <option value="">Select material...</option>
-                        {availablePackaging.map(ap => (
-                          <option key={ap.id} value={ap.name}>
-                            {ap.name} ({ap.current_stock} {ap.unit || 'pcs'} in stock)
-                          </option>
-                        ))}
-                      </select>
-                      <input type="number" value={pkg.quantity} onChange={e => updatePackaging(i, 'quantity', e.target.value)}
-                        className="w-20 border rounded-lg px-3 py-1.5 text-sm" placeholder="Qty" min="0" />
-                      <span className="text-xs text-gray-500 w-8">{pkg.unit}</span>
-                      <button type="button" onClick={() => removePackaging(i)} className="p-1 text-red-400 hover:text-red-600"><X className="w-4 h-4" /></button>
-                    </div>
-                    {match && pkg.quantity > 0 && (
-                      <p className={`text-[10px] mt-0.5 ml-1 ${parseFloat(pkg.quantity) > match.current_stock ? 'text-red-500 font-medium' : 'text-gray-400'}`}>
-                        {parseFloat(pkg.quantity) > match.current_stock
-                          ? `Insufficient! Need ${pkg.quantity}, have ${match.current_stock} ${match.unit || 'pcs'}`
-                          : `Will use ${pkg.quantity} of ${match.current_stock} ${match.unit || 'pcs'} available`
-                        }
-                      </p>
-                    )}
+            <label className="text-sm font-medium text-gray-700 flex items-center gap-1 mb-2">
+              <Leaf className="w-4 h-4 text-amber-600" /> Raw Materials (from SKU recipe)
+            </label>
+            {form.ingredientsUsed.length > 0 ? (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-1.5">
+                {form.ingredientsUsed.map((ing, i) => (
+                  <div key={i} className="flex items-center justify-between text-sm">
+                    <span className="font-medium text-gray-800">{ing.ingredient_name || 'Unknown'}</span>
+                    <span className="text-amber-700 font-semibold">{(parseFloat(ing.quantity_grams) / 1000).toFixed(2)} kg</span>
                   </div>
-                );
-              })
-            )}
-            {form.packagingUsed.length === 0 && (
-              <p className="text-xs text-gray-400 italic">No packaging added. Click "+ Add Material" to select from inventory.</p>
+                ))}
+                <div className="border-t border-amber-300 pt-1.5 mt-1.5 flex justify-between text-sm font-bold">
+                  <span className="text-gray-700">Total</span>
+                  <span className="text-amber-800">{(totalIngredientGrams / 1000).toFixed(2)} kg</span>
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-gray-400 italic">Select an SKU and set quantity — ingredients auto-populate from the recipe.</p>
             )}
           </div>
 
-          {/* Costs */}
-          <div className="grid grid-cols-3 gap-3">
+          {/* Packaging — auto-populated from SKU */}
+          {form.packagingUsed.length > 0 && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Ingredient Cost</label>
-              <input type="number" step="0.01" value={form.ingredientCost} onChange={e => setForm(f => ({ ...f, ingredientCost: e.target.value }))}
-                className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="0" />
+              <label className="text-sm font-medium text-gray-700 flex items-center gap-1 mb-2">
+                <Box className="w-4 h-4 text-indigo-600" /> Packaging (from SKU)
+              </label>
+              <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 space-y-1.5">
+                {form.packagingUsed.map((pkg, i) => (
+                  <div key={i} className="flex items-center justify-between text-sm">
+                    <span className="font-medium text-gray-800">{pkg.material_name}</span>
+                    <span className="text-indigo-700 font-semibold">{pkg.quantity} {pkg.unit}</span>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Packaging Cost</label>
-              <input type="number" step="0.01" value={form.packagingCost} onChange={e => setForm(f => ({ ...f, packagingCost: e.target.value }))}
-                className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="0" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Labor Cost</label>
-              <input type="number" step="0.01" value={form.laborCost} onChange={e => setForm(f => ({ ...f, laborCost: e.target.value }))}
-                className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="0" />
-            </div>
-          </div>
-          <div className="bg-emerald-50 rounded-lg p-3 flex items-center justify-between">
-            <div>
-              <span className="text-sm font-medium text-emerald-800">Total Cost</span>
-              <span className="text-xs text-emerald-600 ml-2">({costPerUnit.toFixed(2)}/unit)</span>
-            </div>
-            <span className="text-lg font-bold text-emerald-900">{totalCost.toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}</span>
-          </div>
+          )}
 
           {/* Notes */}
           <div>
