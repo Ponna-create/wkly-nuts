@@ -683,13 +683,33 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
 
   const handleSkuChange = (code) => {
     const sku = skuCodes.find(s => s.code === code);
+    const fullSku = (skus || []).find(s => (s.skuCode || s.sku_code) === code);
+    const recipe = fullSku?.recipes || {};
+    const recipeIngredients = Object.entries(recipe)
+      .filter(([_, v]) => v && typeof v === 'object' && v.quantity)
+      .map(([name, v]) => ({
+        ingredient_name: name,
+        quantity_grams: String(parseFloat(v.quantity) * (parseInt(form.plannedQuantity) || 1)),
+      }));
+
     setForm(f => ({
       ...f,
       skuCode: code,
       skuName: sku?.name || code,
       seedCyclePhase: sku?.hasPhases ? (f.seedCyclePhase || 'phase1') : '',
+      ingredientsUsed: recipeIngredients.length > 0 ? recipeIngredients : f.ingredientsUsed,
     }));
   };
+
+  // Weight check: expected vs actual ingredient weight
+  const totalIngredientGrams = form.ingredientsUsed.reduce((s, i) => s + (parseFloat(i.quantity_grams) || 0), 0);
+  const fullSku = (skus || []).find(s => (s.skuCode || s.sku_code) === form.skuCode);
+  const targetWeightPerSachet = fullSku?.targetWeightPerSachet || fullSku?.target_weight_per_sachet || 0;
+  const sachetsPerBox = form.packType === 'monthly' ? 28 : 7;
+  const plannedQty = parseInt(form.plannedQuantity) || 0;
+  const expectedTotalGrams = targetWeightPerSachet > 0 ? plannedQty * sachetsPerBox * targetWeightPerSachet : 0;
+  const weightDiffPercent = expectedTotalGrams > 0 && totalIngredientGrams > 0
+    ? (((totalIngredientGrams - expectedTotalGrams) / expectedTotalGrams) * 100).toFixed(1) : 0;
 
   // Ingredient row management - with dropdown
   const addIngredient = () => setForm(f => ({
@@ -970,6 +990,41 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
             )}
           </div>
 
+          {/* Weight Check Alert */}
+          {expectedTotalGrams > 0 && totalIngredientGrams > 0 && (
+            <div className={`rounded-lg p-3 border ${Math.abs(weightDiffPercent) > 15 ? 'bg-red-50 border-red-200' : Math.abs(weightDiffPercent) > 5 ? 'bg-amber-50 border-amber-200' : 'bg-green-50 border-green-200'}`}>
+              <div className="flex items-center gap-2 mb-1">
+                <AlertTriangle className={`w-4 h-4 ${Math.abs(weightDiffPercent) > 15 ? 'text-red-600' : Math.abs(weightDiffPercent) > 5 ? 'text-amber-600' : 'text-green-600'}`} />
+                <p className={`text-sm font-medium ${Math.abs(weightDiffPercent) > 15 ? 'text-red-800' : Math.abs(weightDiffPercent) > 5 ? 'text-amber-800' : 'text-green-800'}`}>
+                  Weight Check
+                </p>
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-xs">
+                <div>
+                  <span className="text-gray-500">Expected:</span>
+                  <p className="font-bold">{(expectedTotalGrams).toLocaleString()}g</p>
+                  <p className="text-[10px] text-gray-400">{plannedQty} boxes x {sachetsPerBox} sachets x {targetWeightPerSachet}g</p>
+                </div>
+                <div>
+                  <span className="text-gray-500">Actual Used:</span>
+                  <p className="font-bold">{totalIngredientGrams.toLocaleString()}g</p>
+                </div>
+                <div>
+                  <span className="text-gray-500">Difference:</span>
+                  <p className={`font-bold ${weightDiffPercent > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                    {weightDiffPercent > 0 ? '+' : ''}{weightDiffPercent}%
+                    ({weightDiffPercent > 0 ? '+' : ''}{(totalIngredientGrams - expectedTotalGrams).toLocaleString()}g)
+                  </p>
+                </div>
+              </div>
+              {Math.abs(weightDiffPercent) > 15 && (
+                <p className="text-xs text-red-600 mt-1 font-medium">
+                  Sachets are likely overweight — check filling machine calibration
+                </p>
+              )}
+            </div>
+          )}
+
           {/* Packaging Used - DROPDOWN from inventory */}
           <div>
             <div className="flex items-center justify-between mb-2">
@@ -1116,6 +1171,7 @@ const WASTE_TYPES = [
   { value: 'spillage', label: 'Spillage', icon: '💧' },
   { value: 'expired', label: 'Expired / Stale', icon: '📅' },
   { value: 'quality_reject', label: 'Quality Rejected', icon: '❌' },
+  { value: 'overweight', label: 'Overweight Sachets', icon: '⚖️' },
   { value: 'other', label: 'Other', icon: '📝' },
 ];
 
@@ -1127,6 +1183,7 @@ function WastageModal({ run, onClose, showToast }) {
     ingredientName: '',
     wasteQuantityGrams: '',
     wasteType: 'broken',
+    isReusable: false,
     costImpact: '',
     notes: '',
   });
@@ -1162,6 +1219,7 @@ function WastageModal({ run, onClose, showToast }) {
       ingredientName: form.ingredientName,
       wasteQuantityGrams: form.wasteQuantityGrams,
       wasteType: form.wasteType,
+      isReusable: form.isReusable,
       costImpact: form.costImpact || 0,
       notes: form.notes,
     });
@@ -1169,7 +1227,7 @@ function WastageModal({ run, onClose, showToast }) {
       showToast('Failed to save wastage record', 'error');
     } else {
       setRecords(prev => [...prev, data]);
-      setForm({ ingredientName: '', wasteQuantityGrams: '', wasteType: 'broken', costImpact: '', notes: '' });
+      setForm({ ingredientName: '', wasteQuantityGrams: '', wasteType: 'broken', isReusable: false, costImpact: '', notes: '' });
       showToast('Wastage recorded');
     }
     setSaving(false);
@@ -1270,6 +1328,21 @@ function WastageModal({ run, onClose, showToast }) {
               </div>
             </div>
 
+            {/* Reusable vs Utter Waste */}
+            <div className="flex items-center gap-3">
+              <label className="text-xs text-gray-600">Category:</label>
+              <button type="button"
+                onClick={() => setForm(f => ({ ...f, isReusable: false }))}
+                className={`px-3 py-1 rounded-full text-xs font-medium transition ${!form.isReusable ? 'bg-red-100 text-red-700 ring-2 ring-red-400' : 'bg-gray-100 text-gray-500'}`}>
+                Utter Waste (written off)
+              </button>
+              <button type="button"
+                onClick={() => setForm(f => ({ ...f, isReusable: true }))}
+                className={`px-3 py-1 rounded-full text-xs font-medium transition ${form.isReusable ? 'bg-green-100 text-green-700 ring-2 ring-green-400' : 'bg-gray-100 text-gray-500'}`}>
+                Reusable (can be processed)
+              </button>
+            </div>
+
             <div>
               <label className="block text-xs text-gray-600 mb-1">Notes</label>
               <input type="text" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
@@ -1291,7 +1364,7 @@ function WastageModal({ run, onClose, showToast }) {
             <div className="space-y-2">
               <p className="text-sm font-medium text-gray-700">Wastage Records</p>
               {records.map(rec => {
-                const typeInfo = WASTE_TYPES.find(t => t.value === rec.waste_type) || WASTE_TYPES[5];
+                const typeInfo = WASTE_TYPES.find(t => t.value === rec.waste_type) || WASTE_TYPES[6];
                 return (
                   <div key={rec.id} className="flex items-center gap-3 p-3 bg-white border rounded-lg">
                     <span className="text-lg">{typeInfo.icon}</span>
@@ -1300,6 +1373,11 @@ function WastageModal({ run, onClose, showToast }) {
                       <div className="flex items-center gap-2 text-xs text-gray-500">
                         <span>{rec.waste_quantity_grams}g</span>
                         <span>{typeInfo.label}</span>
+                        {rec.is_reusable ? (
+                          <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-[10px] font-medium">Reusable</span>
+                        ) : (
+                          <span className="px-1.5 py-0.5 bg-red-100 text-red-700 rounded text-[10px] font-medium">Written Off</span>
+                        )}
                         {parseFloat(rec.cost_impact) > 0 && (
                           <span className="text-red-600">-{parseFloat(rec.cost_impact).toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}</span>
                         )}

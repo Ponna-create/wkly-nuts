@@ -8,6 +8,7 @@ import DashboardStats from '../components/DashboardStats';
 import TopItems from '../components/TopItems';
 import RecentActivity from '../components/RecentActivity';
 import StockAlerts from '../components/StockAlerts';
+import LapsedCustomers from '../components/LapsedCustomers';
 import logo from '../assets/wkly-nuts-logo.png';
 
 export default function Dashboard() {
@@ -152,6 +153,9 @@ export default function Dashboard() {
               )}
             </div>
           )}
+
+          {/* Lapsed Customers */}
+          <LapsedCustomers />
 
           {/* Stock Alerts Widget */}
           <StockAlerts compact={false} showTitle={true} />

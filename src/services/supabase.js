@@ -744,6 +744,48 @@ const _realDbService = {
     }
   },
 
+  async getLapsedCustomers(daysSince = 30) {
+    if (!isSupabaseAvailable()) return { data: [], error: null };
+    try {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - daysSince);
+      const cutoffStr = cutoff.toISOString().split('T')[0];
+
+      const { data: customers, error: custErr } = await supabase
+        .from('customers')
+        .select('id, name, phone, city');
+      if (custErr) throw custErr;
+
+      const { data: orders, error: ordErr } = await supabase
+        .from('sales_orders')
+        .select('customer_id, order_date')
+        .not('status', 'eq', 'cancelled')
+        .order('order_date', { ascending: false });
+      if (ordErr) throw ordErr;
+
+      const lastOrderMap = {};
+      for (const o of (orders || [])) {
+        if (!lastOrderMap[o.customer_id] || o.order_date > lastOrderMap[o.customer_id]) {
+          lastOrderMap[o.customer_id] = o.order_date;
+        }
+      }
+
+      const lapsed = (customers || [])
+        .filter(c => lastOrderMap[c.id] && lastOrderMap[c.id] < cutoffStr)
+        .map(c => ({
+          ...c,
+          lastOrderDate: lastOrderMap[c.id],
+          daysSinceOrder: Math.floor((Date.now() - new Date(lastOrderMap[c.id]).getTime()) / (1000 * 60 * 60 * 24)),
+        }))
+        .sort((a, b) => b.daysSinceOrder - a.daysSinceOrder);
+
+      return { data: lapsed, error: null };
+    } catch (error) {
+      console.error('Error fetching lapsed customers:', error);
+      return { data: [], error };
+    }
+  },
+
   async createCustomer(customer) {
     if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
 
@@ -2445,16 +2487,19 @@ const _realDbService = {
   async createWastageRecord(record) {
     if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
     try {
+      const insertData = {
+        production_run_id: record.productionRunId,
+        ingredient_name: record.ingredientName,
+        waste_quantity_grams: parseFloat(record.wasteQuantityGrams) || 0,
+        waste_type: record.wasteType || 'other',
+        cost_impact: parseFloat(record.costImpact) || 0,
+        notes: record.notes || '',
+      };
+      if (record.isReusable !== undefined) insertData.is_reusable = record.isReusable;
+
       const { data, error } = await supabase
         .from('production_wastage')
-        .insert([{
-          production_run_id: record.productionRunId,
-          ingredient_name: record.ingredientName,
-          waste_quantity_grams: parseFloat(record.wasteQuantityGrams) || 0,
-          waste_type: record.wasteType || 'other',
-          cost_impact: parseFloat(record.costImpact) || 0,
-          notes: record.notes || '',
-        }])
+        .insert([insertData])
         .select()
         .single();
       if (error) throw error;

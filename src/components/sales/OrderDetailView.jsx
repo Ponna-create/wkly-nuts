@@ -83,6 +83,45 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
         if (invResult.warnings.length > 0) {
           showToast(`Stock warning: ${invResult.warnings[0]}`, 'error');
         }
+
+        // Auto-generate invoice on dispatch if not already linked
+        if (!currentOrder.invoice_id) {
+          try {
+            const invoiceData = {
+              customerId: currentOrder.customer_id,
+              invoiceDate: new Date().toISOString().split('T')[0],
+              items: (currentOrder.items || []).map(item => ({
+                skuId: item.sku_id || item.skuId,
+                skuName: item.sku_name || item.skuName,
+                packType: item.pack_type || item.packType,
+                quantity: item.quantity,
+                unitPrice: item.unit_price || item.unitPrice,
+                total: item.total,
+              })),
+              gstRate: currentOrder.gst_rate || 5,
+              subtotal: currentOrder.subtotal || 0,
+              gstAmount: currentOrder.gst_amount || 0,
+              discountPercent: currentOrder.discount_percent || 0,
+              discountAmount: currentOrder.discount_amount || 0,
+              shippingCharge: currentOrder.shipping_charge || 0,
+              totalAmount: currentOrder.total_amount || 0,
+              balanceDue: (currentOrder.total_amount || 0) - (currentOrder.amount_paid || 0),
+              advancePaid: currentOrder.amount_paid || 0,
+              status: currentOrder.payment_status === 'received' ? 'paid' : 'sent',
+              paymentMethod: currentOrder.payment_method,
+              notes: `Auto-generated on dispatch — ${currentOrder.order_number}`,
+            };
+            const { data: autoInvoice } = await dbService.createInvoice(invoiceData);
+            if (autoInvoice) {
+              updateData.invoice_id = autoInvoice.id;
+              await dbService.updateSalesOrder({ id: currentOrder.id, invoice_id: autoInvoice.id });
+              dispatch({ type: 'ADD_INVOICE', payload: autoInvoice });
+              showToast(`Invoice ${autoInvoice.invoiceNumber || autoInvoice.invoice_number} auto-generated`, 'success');
+            }
+          } catch (invErr) {
+            console.warn('Auto-invoice failed:', invErr);
+          }
+        }
       }
       showToast(`Status updated to ${getStatusBadge(newStatus).label}`, 'success');
       setCurrentOrder(prev => ({ ...prev, status: newStatus }));
