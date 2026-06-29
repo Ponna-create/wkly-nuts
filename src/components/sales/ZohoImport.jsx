@@ -112,7 +112,7 @@ export default function ZohoImport({ onClose, onImportComplete }) {
             if (l.includes('dispatch') || l.includes('order date') || l === 'date' || l.includes('created')) mapping.date = h;
             if (l.includes('source') || l.includes('channel')) mapping.channel = h;
             if (l.includes('payment')) mapping.payment = h;
-            if (l.includes('product') || l.includes('item name') || l.includes('items') || l === 'item') mapping.itemName = h;
+            if ((l.includes('product') || l.includes('item name') || l.includes('items') || l === 'item') && !l.includes('price') && !l.includes('rate') && !l.includes('amount')) mapping.itemName = h;
             if (l === 'qty' || l === 'quantity' || (l.includes('quantity') && !l.includes('ship'))) mapping.itemQuantity = h;
             if (l.includes('product price') || l.includes('item price') || l.includes('rate') || l.includes('unit price')) mapping.itemRate = h;
             if (l.includes('shipping') && !l.includes('address')) mapping.shippingCharge = h;
@@ -147,7 +147,7 @@ export default function ZohoImport({ onClose, onImportComplete }) {
 
   const mapZohoStatus = (zohoStatus) => {
     if (!zohoStatus) return 'packing';
-    const l = zohoStatus.toLowerCase();
+    const l = String(zohoStatus).toLowerCase();
     if (l === 'invoiced' || l.includes('confirm') || l.includes('approved')) return 'packing';
     if (l.includes('pack')) return 'packed';
     if (l.includes('ship') || l.includes('dispatch')) return 'dispatched';
@@ -158,14 +158,14 @@ export default function ZohoImport({ onClose, onImportComplete }) {
   };
 
   const detectPackType = (itemName) => {
-    const l = (itemName || '').toLowerCase();
+    const l = String(itemName || '').toLowerCase();
     if (l.includes('monthly') || l.includes('month pack')) return 'monthly';
     return 'weekly';
   };
 
   const matchSku = (itemName) => {
     if (!itemName) return null;
-    const l = itemName.toLowerCase();
+    const l = String(itemName).toLowerCase();
     return skus.find(s =>
       l.includes(s.name.toLowerCase()) ||
       l.includes((s.code || '').toLowerCase()) ||
@@ -191,7 +191,7 @@ export default function ZohoImport({ onClose, onImportComplete }) {
 
         // Build items array
         const items = orderGroup.items.map(r => {
-          const itemName = r[columnMapping.itemName] || '';
+          const itemName = String(r[columnMapping.itemName] || '');
           const sku = matchSku(itemName);
           const qty = parseInt(r[columnMapping.itemQuantity]) || 1;
           const price = parseFloat(r[columnMapping.itemRate]) || 0;
@@ -230,7 +230,7 @@ export default function ZohoImport({ onClose, onImportComplete }) {
           row[columnMapping.pincode],
         ].filter(Boolean);
 
-        const paymentStr = (row[columnMapping.payment] || '').toLowerCase();
+        const paymentStr = String(row[columnMapping.payment] || '').toLowerCase();
         const isPaid = paymentStr.includes('paid') || paymentStr.includes('received') ||
           paymentStr.includes('gpay') || paymentStr.includes('upi') || paymentStr.includes('epay') ||
           paymentStr.includes('bank') || paymentStr.includes('neft');
@@ -262,7 +262,7 @@ export default function ZohoImport({ onClose, onImportComplete }) {
         else if (paymentStr) paymentMethod = 'upi';
 
         // Source detection
-        const sourceStr = (row[columnMapping.channel] || '').toLowerCase();
+        const sourceStr = String(row[columnMapping.channel] || '').toLowerCase();
         let orderSource = 'direct';
         if (sourceStr.includes('website') || sourceStr.includes('web')) orderSource = 'website';
         else if (sourceStr.includes('amazon')) orderSource = 'amazon';
@@ -272,7 +272,7 @@ export default function ZohoImport({ onClose, onImportComplete }) {
         else if (sourceStr.includes('direct')) orderSource = 'direct';
         else if (sourceStr) orderSource = sourceStr;
 
-        const excelNotes = row[columnMapping.notes] || '';
+        const excelNotes = String(row[columnMapping.notes] || '');
 
         const orderData = {
           customerName: customer?.name || row[columnMapping.customerName] || 'Unknown',
