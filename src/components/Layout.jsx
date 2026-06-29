@@ -25,7 +25,7 @@ const navGroups = [
       { name: 'Inventory', href: '/ingredients', icon: Warehouse },
       { name: 'Purchases', href: '/purchase-orders', icon: ShoppingCart },
       { name: 'Packaging', href: '/packaging', icon: Boxes },
-      { name: 'Invoices & GST', href: '/invoices', icon: FileText },
+      { name: 'GST Filing', href: '/invoices', icon: FileText },
       { name: 'Reports', href: '/reports', icon: BarChart3 },
     ],
   },

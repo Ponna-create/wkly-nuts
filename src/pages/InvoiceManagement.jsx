@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Plus, Edit, Trash2, Search, X, FileText, CheckCircle, AlertCircle, Clock, DollarSign, Package, User, Save, Printer, Download } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, X, FileText, CheckCircle, AlertCircle, Clock, DollarSign, Package, User, Save, Printer, Download, Calendar } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { dbService, isSupabaseAvailable } from '../services/supabase';
 import jsPDF from 'jspdf';
@@ -13,6 +13,7 @@ export default function InvoiceManagement() {
   const [editingInvoice, setEditingInvoice] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
   
   const [formData, setFormData] = useState({
     customerId: '',
@@ -1649,6 +1650,13 @@ export default function InvoiceManagement() {
   const filteredInvoices = useMemo(() => {
     let filtered = invoices;
 
+    if (selectedMonth) {
+      filtered = filtered.filter(inv => {
+        const d = inv.invoiceDate || inv.created_at?.split('T')[0];
+        return d && d.startsWith(selectedMonth);
+      });
+    }
+
     if (statusFilter !== 'all') {
       filtered = filtered.filter(inv => inv.status === statusFilter);
     }
@@ -1661,19 +1669,8 @@ export default function InvoiceManagement() {
       );
     }
 
-    // Debug: Log all invoices with missing customers
-    const invoicesWithMissingCustomers = filtered.filter(inv => !inv.customer && inv.customerId);
-    if (invoicesWithMissingCustomers.length > 0) {
-      console.log('🔍 Invoices with missing customers:', invoicesWithMissingCustomers.map(inv => ({
-        invoiceNumber: inv.invoiceNumber,
-        invoiceId: inv.id,
-        customerId: inv.customerId,
-        invoiceDate: inv.invoiceDate
-      })));
-    }
-
     return filtered;
-  }, [invoices, statusFilter, searchTerm]);
+  }, [invoices, statusFilter, searchTerm, selectedMonth]);
 
   // Helper function to find customer by ID (exposed for debugging)
   const findCustomerById = (customerId) => {
@@ -1939,7 +1936,8 @@ export default function InvoiceManagement() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    const monthLabel = new Date().toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }).replace(' ', '-');
+    const [y, m] = selectedMonth.split('-');
+    const monthLabel = new Date(y, m - 1).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }).replace(' ', '-');
     link.download = `GST-Report-${monthLabel}.csv`;
     document.body.appendChild(link);
     link.click();
@@ -1964,20 +1962,27 @@ export default function InvoiceManagement() {
     }
   };
 
+  const monthSummary = useMemo(() => {
+    const total = filteredInvoices.reduce((s, inv) => s + (inv.totalAmount || 0), 0);
+    const gst = filteredInvoices.reduce((s, inv) => s + (inv.gstAmount || 0), 0);
+    const paid = filteredInvoices.filter(inv => inv.status === 'paid').length;
+    return { total, gst, count: filteredInvoices.length, paid };
+  }, [filteredInvoices]);
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Invoice Management</h1>
-          <p className="text-gray-600 mt-1">Create and manage customer invoices</p>
+          <h1 className="text-2xl font-bold text-gray-900">GST Filing</h1>
+          <p className="text-gray-600 mt-1">Invoice registry & GST export for tax filing</p>
         </div>
         <div className="flex gap-2">
-          {!showForm && invoices.length > 0 && (
+          {filteredInvoices.length > 0 && (
             <>
               <button
                 onClick={exportGSTReport}
-                className="btn-secondary flex items-center gap-2 text-sm"
+                className="btn-primary flex items-center gap-2 text-sm"
                 title="Export GST report with HSN codes for GSTR-3B filing"
               >
                 <FileText className="w-4 h-4" />
@@ -1985,25 +1990,52 @@ export default function InvoiceManagement() {
               </button>
               <button
                 onClick={exportInvoices}
-                className="btn-secondary flex items-center gap-2"
+                className="btn-secondary flex items-center gap-2 text-sm"
               >
-                <Download className="w-5 h-5" />
-                Export
+                <Download className="w-4 h-4" />
+                Full Export
               </button>
             </>
           )}
-          <button
-            onClick={() => setShowForm(true)}
-            className="btn-primary flex items-center gap-2"
-          >
-            <Plus className="w-5 h-5" />
-            Create Invoice
-          </button>
+        </div>
+      </div>
+
+      {/* Month Picker + Summary */}
+      <div className="bg-white rounded-lg border border-gray-200 p-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Calendar className="w-5 h-5 text-teal-600" />
+            <label className="text-sm font-medium text-gray-700">Period:</label>
+            <input
+              type="month"
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+            />
+          </div>
+          <div className="flex gap-4 text-sm">
+            <div className="text-center px-3 py-1 bg-gray-50 rounded">
+              <span className="text-gray-500">Invoices</span>
+              <p className="font-bold text-gray-900">{monthSummary.count}</p>
+            </div>
+            <div className="text-center px-3 py-1 bg-green-50 rounded">
+              <span className="text-gray-500">Total</span>
+              <p className="font-bold text-green-700">₹{monthSummary.total.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
+            </div>
+            <div className="text-center px-3 py-1 bg-blue-50 rounded">
+              <span className="text-gray-500">GST</span>
+              <p className="font-bold text-blue-700">₹{monthSummary.gst.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
+            </div>
+            <div className="text-center px-3 py-1 bg-teal-50 rounded">
+              <span className="text-gray-500">Paid</span>
+              <p className="font-bold text-teal-700">{monthSummary.paid}/{monthSummary.count}</p>
+            </div>
+          </div>
         </div>
       </div>
 
       {/* Filters */}
-      {!showForm && invoices.length > 0 && (
+      {invoices.length > 0 && (
         <div className="flex flex-col sm:flex-row gap-4">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
@@ -2433,15 +2465,11 @@ export default function InvoiceManagement() {
       {/* Invoices List */}
       {!showForm && (
         <div className="card">
-          {invoices.length === 0 ? (
+          {filteredInvoices.length === 0 ? (
             <div className="text-center py-12">
               <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">No invoices yet</h3>
-              <p className="text-gray-600 mb-4">Create your first invoice to get started</p>
-              <button onClick={() => setShowForm(true)} className="btn-primary">
-                <Plus className="w-5 h-5 inline mr-2" />
-                Create Invoice
-              </button>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">No invoices for this period</h3>
+              <p className="text-gray-600 mb-4">Invoices are auto-generated when orders are dispatched. Try selecting a different month.</p>
             </div>
           ) : (
             <>
