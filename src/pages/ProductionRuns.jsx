@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
 import StockAlerts from '../components/StockAlerts';
+import COGSCalculator from '../components/COGSCalculator';
 import {
   Plus, Search, X, Edit2, Trash2, Factory, Play, CheckCircle2,
   Clock, AlertTriangle, ChevronDown, ChevronUp, Package, Hash,
@@ -207,6 +208,9 @@ export default function ProductionRuns() {
           <p className="text-xs text-gray-400">production cost</p>
         </div>
       </div>
+
+      {/* COGS Calculator */}
+      <COGSCalculator />
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -681,16 +685,41 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
   const totalCost = (parseFloat(form.ingredientCost) || 0) + (parseFloat(form.packagingCost) || 0) + (parseFloat(form.laborCost) || 0);
   const costPerUnit = form.actualQuantity > 0 ? totalCost / parseInt(form.actualQuantity) : form.plannedQuantity > 0 ? totalCost / parseInt(form.plannedQuantity) : 0;
 
-  const handleSkuChange = (code) => {
+  const handleSkuChange = (code, overrideQty) => {
     const sku = skuCodes.find(s => s.code === code);
     const fullSku = (skus || []).find(s => (s.skuCode || s.sku_code) === code);
-    const recipe = fullSku?.recipes || {};
-    const recipeIngredients = Object.entries(recipe)
-      .filter(([_, v]) => v && typeof v === 'object' && v.quantity)
-      .map(([name, v]) => ({
-        ingredient_name: name,
-        quantity_grams: String(parseFloat(v.quantity) * (parseInt(form.plannedQuantity) || 1)),
-      }));
+    const recipes = fullSku?.recipes || {};
+    const qty = parseInt(overrideQty ?? form.plannedQuantity) || 1;
+    const sachetsPerBox = form.packType === 'monthly' ? 28 : 7;
+
+    // Consolidate ingredients across all 7 days
+    const consolidated = new Map();
+    const days = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+    days.forEach(day => {
+      (recipes[day] || []).forEach(item => {
+        const name = item.ingredientName || item.ingredient_name || '';
+        const grams = parseFloat(item.gramsPerSachet || item.quantityPerSachet || 0);
+        if (!name || !grams) return;
+        if (consolidated.has(name)) {
+          consolidated.set(name, consolidated.get(name) + grams);
+        } else {
+          consolidated.set(name, grams);
+        }
+      });
+    });
+
+    const recipeIngredients = Array.from(consolidated.entries()).map(([name, gramsPerWeek]) => ({
+      ingredient_name: name,
+      quantity_grams: String(Math.round(gramsPerWeek * qty)),
+    }));
+
+    // Auto-populate packaging from SKU if stored
+    const skuPackaging = fullSku?.weeklyPack?.packaging || fullSku?.monthlyPack?.packaging || [];
+    const recipePackaging = skuPackaging.map(pkg => ({
+      material_name: pkg.material_name || pkg.name || '',
+      quantity: String((parseInt(pkg.quantity_per_pack) || parseInt(pkg.quantity) || 0) * qty),
+      unit: pkg.unit || 'pcs',
+    })).filter(p => p.material_name);
 
     setForm(f => ({
       ...f,
@@ -698,6 +727,7 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
       skuName: sku?.name || code,
       seedCyclePhase: sku?.hasPhases ? (f.seedCyclePhase || 'phase1') : '',
       ingredientsUsed: recipeIngredients.length > 0 ? recipeIngredients : f.ingredientsUsed,
+      packagingUsed: recipePackaging.length > 0 ? recipePackaging : f.packagingUsed,
     }));
   };
 
@@ -866,7 +896,7 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Planned Qty *</label>
-              <input type="number" value={form.plannedQuantity} onChange={e => setForm(f => ({ ...f, plannedQuantity: e.target.value }))}
+              <input type="number" value={form.plannedQuantity} onChange={e => { const v = e.target.value; setForm(f => ({ ...f, plannedQuantity: v })); if (form.skuCode) handleSkuChange(form.skuCode, v); }}
                 disabled={isEditing}
                 className="w-full border rounded-lg px-3 py-2 text-sm disabled:bg-gray-100" min="1" required />
             </div>

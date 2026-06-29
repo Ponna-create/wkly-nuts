@@ -26,6 +26,7 @@ import HelpGuide from './pages/HelpGuide';
 import BackupSettings from './pages/BackupSettings';
 import Marketing from './pages/Marketing';
 import GSTFiling from './pages/GSTFiling';
+import RecipeMaker from './pages/RecipeMaker';
 
 function App() {
   return (
@@ -39,6 +40,7 @@ function App() {
               <Route path="/purchase-orders" element={<ErrorBoundary><PurchaseOrders /></ErrorBoundary>} />
               <Route path="/expenses" element={<ErrorBoundary><Expenses /></ErrorBoundary>} />
               <Route path="/documents" element={<ErrorBoundary><Documents /></ErrorBoundary>} />
+              <Route path="/recipe-maker" element={<ErrorBoundary><RecipeMaker /></ErrorBoundary>} />
               <Route path="/production" element={<ErrorBoundary><ProductionRuns /></ErrorBoundary>} />
               <Route path="/packaging" element={<ErrorBoundary><PackagingMaterials /></ErrorBoundary>} />
               <Route path="/vendors" element={<ErrorBoundary><VendorManagement /></ErrorBoundary>} />

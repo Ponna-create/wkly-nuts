@@ -287,6 +287,11 @@ const _realDbService = {
         recipes: sku.recipes || {},
         weeklyPack: sku.weekly_pack || {},
         monthlyPack: sku.monthly_pack || {},
+        packagingMaterials: sku.weekly_pack?.packaging || [],
+        processingIngredients: sku.weekly_pack?.processingIngredients || [],
+        processingNotes: sku.weekly_pack?.processingNotes || '',
+        shelfLifeDays: sku.weekly_pack?.shelfLifeDays || 30,
+        sellingPrice: sku.weekly_pack?.sellingPrice || 0,
         created_at: sku.created_at,
       }));
 
@@ -301,6 +306,22 @@ const _realDbService = {
     if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
 
     try {
+      const weeklyPack = {
+        ...(sku.weeklyPack || {}),
+        packaging: sku.packagingMaterials || [],
+        processingIngredients: sku.processingIngredients || [],
+        processingNotes: sku.processingNotes || '',
+        shelfLifeDays: sku.shelfLifeDays || 30,
+        sellingPrice: sku.sellingPrice || 0,
+      };
+      const monthlyPack = {
+        ...(sku.monthlyPack || {}),
+        packaging: sku.packagingMaterials || [],
+        processingIngredients: sku.processingIngredients || [],
+        processingNotes: sku.processingNotes || '',
+        shelfLifeDays: sku.shelfLifeDays || 30,
+        sellingPrice: sku.sellingPrice || 0,
+      };
       const { data, error } = await supabase
         .from('skus')
         .insert([{
@@ -309,8 +330,8 @@ const _realDbService = {
           description: sku.description,
           target_weight_per_sachet: sku.targetWeightPerSachet,
           recipes: sku.recipes || {},
-          weekly_pack: sku.weeklyPack || {},
-          monthly_pack: sku.monthlyPack || {},
+          weekly_pack: weeklyPack,
+          monthly_pack: monthlyPack,
         }])
         .select()
         .single();
@@ -340,6 +361,22 @@ const _realDbService = {
     if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
 
     try {
+      const weeklyPackUpdate = {
+        ...(sku.weeklyPack || {}),
+        packaging: sku.packagingMaterials || sku.weeklyPack?.packaging || [],
+        processingIngredients: sku.processingIngredients || sku.weeklyPack?.processingIngredients || [],
+        processingNotes: sku.processingNotes || sku.weeklyPack?.processingNotes || '',
+        shelfLifeDays: sku.shelfLifeDays || sku.weeklyPack?.shelfLifeDays || 30,
+        sellingPrice: sku.sellingPrice || sku.weeklyPack?.sellingPrice || 0,
+      };
+      const monthlyPackUpdate = {
+        ...(sku.monthlyPack || {}),
+        packaging: sku.packagingMaterials || sku.monthlyPack?.packaging || [],
+        processingIngredients: sku.processingIngredients || sku.monthlyPack?.processingIngredients || [],
+        processingNotes: sku.processingNotes || sku.monthlyPack?.processingNotes || '',
+        shelfLifeDays: sku.shelfLifeDays || sku.monthlyPack?.shelfLifeDays || 30,
+        sellingPrice: sku.sellingPrice || sku.monthlyPack?.sellingPrice || 0,
+      };
       const { data, error } = await supabase
         .from('skus')
         .update({
@@ -348,8 +385,8 @@ const _realDbService = {
           description: sku.description,
           target_weight_per_sachet: sku.targetWeightPerSachet,
           recipes: sku.recipes || {},
-          weekly_pack: sku.weeklyPack || {},
-          monthly_pack: sku.monthlyPack || {},
+          weekly_pack: weeklyPackUpdate,
+          monthly_pack: monthlyPackUpdate,
         })
         .eq('id', sku.id)
         .select()
@@ -2393,7 +2430,6 @@ const _realDbService = {
           labor_cost: run.laborCost || 0,
           total_cost: run.totalCost || 0,
           cost_per_unit: run.costPerUnit || 0,
-          shelf_life_days: run.shelfLifeDays || 30,
           notes: run.notes,
         }])
         .select()
@@ -2423,7 +2459,6 @@ const _realDbService = {
         labor_cost: run.labor_cost,
         total_cost: run.total_cost,
         cost_per_unit: run.cost_per_unit,
-        shelf_life_days: run.shelf_life_days || 30,
         batch_date: run.batch_date,
         notes: run.notes,
       };

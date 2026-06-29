@@ -138,6 +138,16 @@ export default function SKUManagement() {
     },
     // For single unit SKUs - direct ingredient list
     singleUnitIngredients: [],
+    // Packaging materials per pack
+    packagingMaterials: [],
+    // Processing ingredients (ghee, honey, etc. used during prep but not in sachet weight)
+    processingIngredients: [],
+    // Processing notes (roast, grind, etc.)
+    processingNotes: '',
+    // Shelf life in days
+    shelfLifeDays: 30,
+    // Selling price for margin reference
+    sellingPrice: '',
   });
 
   const [currentRecipeItem, setCurrentRecipeItem] = useState({
@@ -200,6 +210,11 @@ export default function SKUManagement() {
         SUN: [],
       },
       singleUnitIngredients: [],
+      packagingMaterials: [],
+      processingIngredients: [],
+      processingNotes: '',
+      shelfLifeDays: 30,
+      sellingPrice: '',
     });
     setCurrentRecipeItem({ ingredientId: '', gramsPerSachet: '' });
     setCurrentStep(1);
@@ -371,12 +386,14 @@ export default function SKUManagement() {
           sachets: 7,
           totalGrams: weeklyTotalGrams,
           rawMaterialCost: weeklyRawMaterialCost,
+          packaging: formData.packagingMaterials || [],
         },
         monthlyPack: {
           sachets: 28,
           weeklyPacksIncluded: 4,
           totalGrams: monthlyTotalGrams,
           rawMaterialCost: monthlyRawMaterialCost,
+          packaging: formData.packagingMaterials || [],
         },
       };
     }
@@ -418,6 +435,11 @@ export default function SKUManagement() {
       ...totals,
       targetWeightPerSachet: formData.skuType === 'weekly' ? parseFloat(formData.targetWeightPerSachet) : null,
       unitWeight: formData.skuType === 'single' ? parseFloat(formData.unitWeight) : null,
+      packagingMaterials: formData.packagingMaterials || [],
+      processingIngredients: formData.processingIngredients || [],
+      processingNotes: formData.processingNotes || '',
+      shelfLifeDays: parseInt(formData.shelfLifeDays) || 30,
+      sellingPrice: parseFloat(formData.sellingPrice) || 0,
     };
 
     if (editingSKU) {
@@ -450,6 +472,11 @@ export default function SKUManagement() {
         MON: [], TUE: [], WED: [], THU: [], FRI: [], SAT: [], SUN: [],
       },
       singleUnitIngredients: sku.singleUnitIngredients || [],
+      packagingMaterials: sku.packagingMaterials || [],
+      processingIngredients: sku.processingIngredients || [],
+      processingNotes: sku.processingNotes || '',
+      shelfLifeDays: sku.shelfLifeDays || 30,
+      sellingPrice: sku.sellingPrice || '',
     });
     setEditingSKU(sku);
     setShowForm(true);
@@ -1316,8 +1343,107 @@ export default function SKUManagement() {
                 </div>
               </div>
 
+              {/* Packaging, Processing & Pricing */}
+              <div className="space-y-4 mt-4 pt-4 border-t border-gray-200">
+                {/* Packaging Materials */}
+                <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-semibold text-indigo-800">Packaging Materials (per pack)</label>
+                    <button type="button" onClick={() => setFormData(f => ({ ...f, packagingMaterials: [...f.packagingMaterials, { name: '', quantity_per_pack: '', unit: 'pcs' }] }))}
+                      className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">+ Add Material</button>
+                  </div>
+                  {formData.packagingMaterials.map((pkg, idx) => (
+                    <div key={idx} className="flex items-center gap-2 mb-2">
+                      <input type="text" value={pkg.name} onChange={e => {
+                        const updated = [...formData.packagingMaterials];
+                        updated[idx] = { ...updated[idx], name: e.target.value };
+                        setFormData(f => ({ ...f, packagingMaterials: updated }));
+                      }} className="flex-1 border rounded-lg px-3 py-1.5 text-sm" placeholder="e.g. Weekly Box, Sachet 100g" />
+                      <input type="number" value={pkg.quantity_per_pack} onChange={e => {
+                        const updated = [...formData.packagingMaterials];
+                        updated[idx] = { ...updated[idx], quantity_per_pack: e.target.value };
+                        setFormData(f => ({ ...f, packagingMaterials: updated }));
+                      }} className="w-20 border rounded-lg px-3 py-1.5 text-sm" placeholder="Qty" min="0" />
+                      <select value={pkg.unit} onChange={e => {
+                        const updated = [...formData.packagingMaterials];
+                        updated[idx] = { ...updated[idx], unit: e.target.value };
+                        setFormData(f => ({ ...f, packagingMaterials: updated }));
+                      }} className="w-20 border rounded-lg px-2 py-1.5 text-sm">
+                        <option value="pcs">pcs</option>
+                        <option value="sheets">sheets</option>
+                        <option value="meters">meters</option>
+                      </select>
+                      <button type="button" onClick={() => setFormData(f => ({ ...f, packagingMaterials: f.packagingMaterials.filter((_, i) => i !== idx) }))}
+                        className="p-1 text-red-400 hover:text-red-600"><X className="w-4 h-4" /></button>
+                    </div>
+                  ))}
+                  {formData.packagingMaterials.length === 0 && (
+                    <p className="text-xs text-indigo-500 italic">e.g. 1 weekly box, 7 sachets, 1 label sheet</p>
+                  )}
+                </div>
+
+                {/* Processing Ingredients */}
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-semibold text-orange-800">Processing Ingredients (used during prep)</label>
+                    <button type="button" onClick={() => setFormData(f => ({ ...f, processingIngredients: [...f.processingIngredients, { name: '', quantity_per_pack: '', unit: 'g' }] }))}
+                      className="text-xs text-orange-600 hover:text-orange-800 font-medium">+ Add</button>
+                  </div>
+                  {formData.processingIngredients.map((item, idx) => (
+                    <div key={idx} className="flex items-center gap-2 mb-2">
+                      <input type="text" value={item.name} onChange={e => {
+                        const updated = [...formData.processingIngredients];
+                        updated[idx] = { ...updated[idx], name: e.target.value };
+                        setFormData(f => ({ ...f, processingIngredients: updated }));
+                      }} className="flex-1 border rounded-lg px-3 py-1.5 text-sm" placeholder="e.g. Ghee, Honey, Jaggery" />
+                      <input type="number" value={item.quantity_per_pack} onChange={e => {
+                        const updated = [...formData.processingIngredients];
+                        updated[idx] = { ...updated[idx], quantity_per_pack: e.target.value };
+                        setFormData(f => ({ ...f, processingIngredients: updated }));
+                      }} className="w-20 border rounded-lg px-3 py-1.5 text-sm" placeholder="Qty" min="0" step="0.1" />
+                      <select value={item.unit} onChange={e => {
+                        const updated = [...formData.processingIngredients];
+                        updated[idx] = { ...updated[idx], unit: e.target.value };
+                        setFormData(f => ({ ...f, processingIngredients: updated }));
+                      }} className="w-16 border rounded-lg px-2 py-1.5 text-sm">
+                        <option value="g">g</option>
+                        <option value="ml">ml</option>
+                        <option value="pcs">pcs</option>
+                      </select>
+                      <button type="button" onClick={() => setFormData(f => ({ ...f, processingIngredients: f.processingIngredients.filter((_, i) => i !== idx) }))}
+                        className="p-1 text-red-400 hover:text-red-600"><X className="w-4 h-4" /></button>
+                    </div>
+                  ))}
+                  {formData.processingIngredients.length === 0 && (
+                    <p className="text-xs text-orange-500 italic">e.g. Ghee for roasting, Honey for binding (not counted in sachet weight)</p>
+                  )}
+                </div>
+
+                {/* Processing Notes */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Processing Steps / Notes</label>
+                  <textarea value={formData.processingNotes} onChange={e => setFormData(f => ({ ...f, processingNotes: e.target.value }))}
+                    className="w-full border rounded-lg px-3 py-2 text-sm" rows={2}
+                    placeholder="e.g. Roast flax & pumpkin seeds at 150°C for 10 min → Mix with honey → Form balls → Pack" />
+                </div>
+
+                {/* Shelf Life & Selling Price */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Shelf Life (days)</label>
+                    <input type="number" value={formData.shelfLifeDays} onChange={e => setFormData(f => ({ ...f, shelfLifeDays: e.target.value }))}
+                      className="w-full border rounded-lg px-3 py-2 text-sm" min="1" placeholder="30" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Selling Price / Pack (MRP)</label>
+                    <input type="number" value={formData.sellingPrice} onChange={e => setFormData(f => ({ ...f, sellingPrice: e.target.value }))}
+                      className="w-full border rounded-lg px-3 py-2 text-sm" min="0" placeholder="e.g. 399" />
+                  </div>
+                </div>
+              </div>
+
               {/* Navigation */}
-              <div className="flex justify-between items-center">
+              <div className="flex justify-between items-center mt-4">
                 <div className="flex gap-2">
                   <button
                     onClick={() => {
