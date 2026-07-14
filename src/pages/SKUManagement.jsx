@@ -279,6 +279,21 @@ export default function SKUManagement() {
     });
   };
 
+  // Copy the current day's recipe to all 7 days (for same-mix-daily products)
+  const handleCopyDayToAll = () => {
+    const source = formData.recipes[currentDay] || [];
+    if (source.length === 0) {
+      showToast(`${currentDay} recipe is empty — add ingredients first`, 'error');
+      return;
+    }
+    const copied = {};
+    DAYS.forEach(day => {
+      copied[day] = source.map(item => ({ ...item, id: Date.now() + Math.random() }));
+    });
+    setFormData({ ...formData, recipes: copied });
+    showToast(`${currentDay} recipe copied to all 7 days!`, 'success');
+  };
+
   // Single unit ingredient handlers
   const handleAddSingleUnitIngredient = () => {
     if (!currentRecipeItem.ingredientId || !currentRecipeItem.gramsPerSachet) {
@@ -1265,8 +1280,19 @@ export default function SKUManagement() {
               <div className={`p-6 rounded-lg border-2 ${DAY_COLORS_LIGHT[currentDay]}`}>
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-xl font-bold text-gray-900">{currentDay} Recipe</h3>
-                  <div className={`px-4 py-2 rounded-lg border-2 ${weightStatusColors[weightStatus]}`}>
-                    <span className="font-bold">{currentDayTotal}g</span> / {targetWeight}g
+                  <div className="flex items-center gap-2">
+                    {formData.recipes[currentDay].length > 0 && (
+                      <button
+                        onClick={handleCopyDayToAll}
+                        className="px-3 py-2 text-sm font-medium text-teal-700 bg-teal-50 border border-teal-200 rounded-lg hover:bg-teal-100"
+                        title="Same mix every day? Build one day and copy it to all 7"
+                      >
+                        📋 Copy to All Days
+                      </button>
+                    )}
+                    <div className={`px-4 py-2 rounded-lg border-2 ${weightStatusColors[weightStatus]}`}>
+                      <span className="font-bold">{currentDayTotal}g</span> / {targetWeight}g
+                    </div>
                   </div>
                 </div>
 
