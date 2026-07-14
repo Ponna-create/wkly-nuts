@@ -12,6 +12,7 @@ export default function NewOrderForm({ onClose }) {
   const [newCustomerMode, setNewCustomerMode] = useState(false);
   const [showCustomerForm, setShowCustomerForm] = useState(false);
   const [phoneMatch, setPhoneMatch] = useState(null);
+  const [savingCustomer, setSavingCustomer] = useState(false);
 
   // SKUs and pricing from state
   const skus = state.skus || [];
@@ -148,12 +149,15 @@ export default function NewOrderForm({ onClose }) {
   };
 
   const handleCreateCustomer = async () => {
+    if (savingCustomer) return; // block double-clicks — two rapid saves create duplicate customers
     if (!newCustomer.name || !newCustomer.phone) {
       showToast('Name and phone are required', 'error');
       return;
     }
 
+    setSavingCustomer(true);
     const { data, error, isExisting } = await dbService.findOrCreateCustomer(newCustomer);
+    setSavingCustomer(false);
 
     if (error) {
       showToast('Error creating customer', 'error');
@@ -163,7 +167,9 @@ export default function NewOrderForm({ onClose }) {
     if (isExisting) {
       showToast(`Found existing customer: ${data.name}`, 'info');
     } else {
-      dispatch({ type: 'ADD_CUSTOMER', payload: data });
+      // Customer is already saved in DB by findOrCreateCustomer —
+      // REPLACE_CUSTOMER only updates local state (no second DB insert)
+      dispatch({ type: 'REPLACE_CUSTOMER', payload: { tempId: data.id, customer: data } });
     }
 
     setSelectedCustomer(data);
@@ -373,9 +379,10 @@ export default function NewOrderForm({ onClose }) {
                   <button
                     type="button"
                     onClick={handleCreateCustomer}
-                    className="flex-1 px-3 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 text-sm font-medium"
+                    disabled={savingCustomer}
+                    className="flex-1 px-3 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 text-sm font-medium disabled:opacity-50"
                   >
-                    Create Customer
+                    {savingCustomer ? 'Saving...' : 'Create Customer'}
                   </button>
                   <button
                     type="button"

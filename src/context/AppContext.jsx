@@ -379,7 +379,8 @@ export function AppProvider({ children }) {
               await dbService.deleteSalesTarget(action.payload);
               break;
             case 'ADD_CUSTOMER':
-              const customerRes = await dbService.createCustomer(action.payload);
+              // findOrCreateCustomer dedups by phone — reuses existing customer instead of inserting a twin
+              const customerRes = await dbService.findOrCreateCustomer(action.payload);
               if (customerRes.data) {
                 const tempId = action.payload.id;
                 dispatchReducer({
