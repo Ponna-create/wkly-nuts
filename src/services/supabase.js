@@ -1839,7 +1839,16 @@ const _realDbService = {
 
       if (error) throw error;
 
-      return { data: data || [], error: null };
+      // Flatten customer contact info onto each order — orders don't store
+      // phone themselves; WhatsApp/display features read order.phone directly
+      const enriched = (data || []).map(o => ({
+        ...o,
+        phone: o.phone || o.customers?.phone || null,
+        customer_name: o.customer_name || o.customers?.name || '',
+        shipping_city: o.shipping_city || o.customers?.city || null,
+      }));
+
+      return { data: enriched, error: null };
     } catch (error) {
       console.error('Error fetching sales orders:', error);
       return { data: [], error };
@@ -1876,7 +1885,15 @@ const _realDbService = {
 
       if (error) throw error;
 
-      return { data, error: null };
+      // Flatten customer contact info onto the order (same as getSalesOrders)
+      const enriched = data ? {
+        ...data,
+        phone: data.phone || data.customers?.phone || null,
+        customer_name: data.customer_name || data.customers?.name || '',
+        shipping_city: data.shipping_city || data.customers?.city || null,
+      } : data;
+
+      return { data: enriched, error: null };
     } catch (error) {
       console.error('Error fetching sales order:', error);
       return { data: null, error };
