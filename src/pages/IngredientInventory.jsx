@@ -26,6 +26,8 @@ export default function IngredientInventory() {
   const [showAddBatchModal, setShowAddBatchModal] = useState(false);
   const [editingExpiry, setEditingExpiry] = useState(null); // { batchId, ingredientId, value }
   const [savingExpiry, setSavingExpiry] = useState(false);
+  const [editingWaste, setEditingWaste] = useState(null); // { batchId, ingredientId, value }
+  const [savingWaste, setSavingWaste] = useState(false);
 
   const [batchForm, setBatchForm] = useState({
     ingredientId: '', vendorName: '', batchNumber: '',
@@ -77,6 +79,40 @@ export default function IngredientInventory() {
       setEditingExpiry(null);
     }
     setSavingExpiry(false);
+  };
+
+  // ── Enter sorting waste inline ──
+  const startEditWaste = (batch, ingredientId) => {
+    setEditingWaste({
+      batchId: batch.id,
+      ingredientId,
+      value: parseFloat(batch.waste_quantity || 0) > 0 ? String(batch.waste_quantity) : '',
+    });
+  };
+
+  const saveWaste = async () => {
+    if (!editingWaste) return;
+    setSavingWaste(true);
+    const { data, error } = await dbService.recordBatchWaste(editingWaste.batchId, editingWaste.value || 0);
+    if (error) {
+      showToast('Failed to save waste', 'error');
+    } else {
+      showToast('Waste recorded — stock and cost updated', 'success');
+      setIngredients(prev => prev.map(ing => {
+        if (ing.id !== editingWaste.ingredientId) return ing;
+        return {
+          ...ing,
+          ingredient_batches: (ing.ingredient_batches || []).map(b =>
+            b.id === editingWaste.batchId
+              ? { ...b, waste_quantity: data?.waste_quantity ?? (parseFloat(editingWaste.value) || 0), quantity_remaining: data?.quantity_remaining ?? b.quantity_remaining }
+              : b
+          ),
+        };
+      }));
+      setEditingWaste(null);
+      loadIngredients(); // refresh master stock total
+    }
+    setSavingWaste(false);
   };
 
   // ── Add new batch ──
@@ -183,13 +219,15 @@ export default function IngredientInventory() {
                       <p className="text-sm text-gray-400 italic">No batch records found.</p>
                     ) : (
                       <div className="overflow-x-auto">
-                        <table className="w-full text-sm min-w-[600px]">
+                        <table className="w-full text-sm min-w-[820px]">
                           <thead>
                             <tr className="text-xs text-gray-500 border-b border-gray-200">
-                              <th className="text-left pb-3 font-medium w-48">Batch #</th>
+                              <th className="text-left pb-3 font-medium w-44">Batch #</th>
                               <th className="text-right pb-3 font-medium w-28">Qty Remaining</th>
-                              <th className="text-left pb-3 font-medium w-28 pl-4">Received</th>
-                              <th className="text-left pb-3 font-medium w-40 pl-4">Expiry Date</th>
+                              <th className="text-right pb-3 font-medium w-24 pl-4">Rate/kg</th>
+                              <th className="text-left pb-3 font-medium w-52 pl-4">Waste (sort)</th>
+                              <th className="text-left pb-3 font-medium w-24 pl-4">Received</th>
+                              <th className="text-left pb-3 font-medium w-36 pl-4">Expiry Date</th>
                               <th className="text-left pb-3 font-medium w-24">Status</th>
                               <th className="text-left pb-3 font-medium">Priority</th>
                             </tr>
@@ -207,7 +245,15 @@ export default function IngredientInventory() {
                               .map((batch, idx) => {
                                 const batchStatus = getBatchStatus(batch);
                                 const isEditingThis = editingExpiry?.batchId === batch.id;
+                                const isEditingWasteThis = editingWaste?.batchId === batch.id;
                                 const hasExpiry = !!batch.expiry_date;
+                                const rate = parseFloat(batch.price_per_unit || 0);
+                                const initialQty = parseFloat(batch.quantity_initial || 0);
+                                const wasteQty = parseFloat(batch.waste_quantity || 0);
+                                const usableQty = Math.max(0, initialQty - wasteQty);
+                                const effectiveRate = (wasteQty > 0 && usableQty > 0 && rate > 0)
+                                  ? (initialQty * rate) / usableQty
+                                  : rate;
 
                                 return (
                                   <tr key={batch.id} className={batch.status !== 'active' ? 'opacity-50' : ''}>
@@ -218,6 +264,63 @@ export default function IngredientInventory() {
                                     <td className="py-3 text-right font-semibold text-gray-900 pr-4">
                                       {parseFloat(batch.quantity_remaining || 0).toFixed(2)}
                                       <span className="text-xs font-normal text-gray-400 ml-1">{ing.unit}</span>
+                                    </td>
+
+                                    {/* Rate / kg */}
+                                    <td className="py-3 text-right pl-4 pr-4">
+                                      {rate > 0 ? (
+                                        <>
+                                          <span className="text-gray-700">₹{rate.toLocaleString('en-IN')}</span>
+                                          {wasteQty > 0 && (
+                                            <span className="block text-[11px] text-amber-600 font-medium">
+                                              ₹{Math.round(effectiveRate).toLocaleString('en-IN')} usable
+                                            </span>
+                                          )}
+                                        </>
+                                      ) : <span className="text-gray-300">—</span>}
+                                    </td>
+
+                                    {/* Waste (sort) */}
+                                    <td className="py-3 pl-4">
+                                      {isEditingWasteThis ? (
+                                        <div className="flex items-center gap-1.5">
+                                          <input type="number" min="0" step="0.01" value={editingWaste.value}
+                                            onChange={e => setEditingWaste(prev => ({ ...prev, value: e.target.value }))}
+                                            placeholder="kg" autoFocus
+                                            className="border rounded px-2 py-1 text-xs focus:ring-2 focus:ring-amber-500 w-20" />
+                                          <button onClick={saveWaste} disabled={savingWaste}
+                                            className="p-1 text-green-600 hover:bg-green-50 rounded-lg" title="Save">
+                                            <Check className="w-3.5 h-3.5" />
+                                          </button>
+                                          <button onClick={() => setEditingWaste(null)}
+                                            className="p-1 text-gray-400 hover:bg-gray-100 rounded-lg" title="Cancel">
+                                            <X className="w-3.5 h-3.5" />
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <div className="flex items-center gap-2">
+                                          {wasteQty > 0 ? (
+                                            <span className="text-xs text-gray-700">
+                                              {wasteQty.toFixed(2)} {ing.unit}
+                                              <span className="text-gray-400"> → {usableQty.toFixed(2)} usable</span>
+                                            </span>
+                                          ) : (
+                                            <span className="text-gray-300 text-xs">No waste</span>
+                                          )}
+                                          {batch.status === 'active' && (
+                                            <button onClick={() => startEditWaste(batch, ing.id)}
+                                              className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-xs transition ${
+                                                wasteQty > 0
+                                                  ? 'text-gray-400 hover:text-amber-600 hover:bg-amber-50'
+                                                  : 'text-amber-600 bg-amber-50 hover:bg-amber-100'
+                                              }`}
+                                              title="Enter sorting waste">
+                                              <Edit2 className="w-3 h-3" />
+                                              {wasteQty === 0 && <span>Sort</span>}
+                                            </button>
+                                          )}
+                                        </div>
+                                      )}
                                     </td>
 
                                     {/* Received Date */}

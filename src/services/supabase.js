@@ -1597,7 +1597,10 @@ const _realDbService = {
           ingredient_batches (
             id,
             batch_number,
+            quantity_initial,
             quantity_remaining,
+            waste_quantity,
+            price_per_unit,
             expiry_date,
             received_date,
             status
@@ -1676,6 +1679,40 @@ const _realDbService = {
       return { error: null };
     } catch (error) {
       console.error('Error updating batch expiry:', error);
+      return { error };
+    }
+  },
+
+  // Record sorting waste for a batch. Waste is removed from available stock,
+  // so quantity_remaining drops by the change in waste; effective cost per unit
+  // (paid ÷ usable) is derived in the UI. Editable — applies only the delta.
+  async recordBatchWaste(batchId, wasteQuantity) {
+    if (!isSupabaseAvailable()) return { error: new Error('Supabase not configured') };
+    try {
+      const { data: batch, error: fetchErr } = await supabase
+        .from('ingredient_batches')
+        .select('ingredient_id, quantity_remaining, waste_quantity')
+        .eq('id', batchId)
+        .single();
+      if (fetchErr) throw fetchErr;
+
+      const newWaste = Math.max(0, parseFloat(wasteQuantity) || 0);
+      const oldWaste = parseFloat(batch.waste_quantity || 0);
+      const delta = newWaste - oldWaste;
+      const newRemaining = Math.max(0, parseFloat(batch.quantity_remaining || 0) - delta);
+
+      const { data, error } = await supabase
+        .from('ingredient_batches')
+        .update({ waste_quantity: newWaste, quantity_remaining: newRemaining })
+        .eq('id', batchId)
+        .select()
+        .single();
+      if (error) throw error;
+
+      await this.recalculateIngredientStock(batch.ingredient_id);
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error recording batch waste:', error);
       return { error };
     }
   },
