@@ -3128,6 +3128,28 @@ const _realDbService = {
     return results;
   },
 
+  // Order returned (RTO) → add the finished goods back into stock
+  async restockInventoryForOrder(order) {
+    const results = { restocked: 0, warnings: [] };
+    const items = Array.isArray(order.items) ? order.items : [];
+    if (items.length === 0) return results;
+
+    for (const item of items) {
+      try {
+        const skuId = item.sku_id || item.skuId;
+        const packType = item.pack_type || item.packType || 'weekly';
+        const quantity = parseInt(item.quantity) || 1;
+        if (!skuId) continue;
+        const reason = `RTO return — Order ${order.order_number || order.id}`;
+        await this.updateInventoryStock(skuId, packType, quantity, 'add', reason);
+        results.restocked++;
+      } catch (err) {
+        results.warnings.push(`${item.sku_name || item.skuName}: ${err.message}`);
+      }
+    }
+    return results;
+  },
+
   // P1: Zoho Import helpers
   async findOrderByZohoId(zohoOrderId) {
     if (!isSupabaseAvailable() || !zohoOrderId) return null;

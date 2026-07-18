@@ -44,6 +44,7 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
       in_transit: { bg: 'bg-indigo-100', text: 'text-indigo-800', label: 'In Transit' },
       delivered: { bg: 'bg-green-100', text: 'text-green-800', label: 'Delivered' },
       completed: { bg: 'bg-teal-100', text: 'text-teal-800', label: 'Completed' },
+      returned: { bg: 'bg-rose-100', text: 'text-rose-800', label: 'Returned (RTO)' },
       cancelled: { bg: 'bg-gray-100', text: 'text-gray-800', label: 'Cancelled' },
     };
     return badges[status] || badges.packing;
@@ -74,6 +75,13 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
     if (error) {
       showToast('Error updating status', 'error');
     } else {
+      // Order returned (RTO) → put the packs back into finished-goods stock
+      if (newStatus === 'returned') {
+        const restock = await dbService.restockInventoryForOrder(currentOrder);
+        if (restock.restocked > 0) {
+          showToast(`${restock.restocked} item(s) returned to stock`, 'success');
+        }
+      }
       // Deduct finished goods from inventory on dispatch
       if (newStatus === 'dispatched') {
         const invResult = await dbService.deductInventoryForOrder(currentOrder);
@@ -332,9 +340,15 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
               <option value="in_transit">In Transit</option>
               <option value="delivered">Delivered</option>
               <option value="completed">Completed</option>
+              <option value="returned">Returned (RTO)</option>
               <option value="cancelled">Cancelled</option>
             </select>
           </div>
+          {currentOrder.status === 'returned' && (
+            <p className="text-xs text-rose-600">
+              Packs are back in stock. To resend, set the status to <strong>Dispatched</strong> again — stock will deduct once more.
+            </p>
+          )}
 
           {/* Customer */}
           <div className="grid grid-cols-2 gap-4">
