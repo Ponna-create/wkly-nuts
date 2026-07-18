@@ -98,9 +98,14 @@ export default function SKUManagement() {
     name: '',
     skuCode: '',
     description: '',
-    skuType: 'weekly', // 'weekly' or 'single'
+    skuType: 'weekly', // weekly | processed | repack | resale
     targetWeightPerSachet: '', // For weekly packs
-    unitWeight: '', // For single unit SKUs (in kg, e.g., 0.5 or 1)
+    unitWeight: '', // For processed/single unit SKUs (in kg, e.g., 0.5 or 1)
+    yieldPercent: '', // Processing yield % (blank = no loss). e.g. 90 = keeps 90%
+    bulkQty: '', // Repack: bulk purchase quantity (kg)
+    bulkPrice: '', // Repack: total price paid for the bulk
+    packSize: '', // Repack: sellable pack size (grams)
+    buyPrice: '', // Resale: purchase price per unit
     selectedVendorId: '',
     recipes: {
       MON: [],
@@ -197,6 +202,11 @@ export default function SKUManagement() {
       skuType: 'weekly',
       targetWeightPerSachet: '',
       unitWeight: '',
+      yieldPercent: '',
+      bulkQty: '',
+      bulkPrice: '',
+      packSize: '',
+      buyPrice: '',
       selectedVendorId: '',
       recipes: {
         MON: [],
@@ -419,7 +429,6 @@ export default function SKUManagement() {
     }
 
     if (formData.skuType === 'weekly') {
-      // Weekly pack validation
       if (!formData.targetWeightPerSachet) {
         showToast('Please enter target weight per sachet', 'error');
         return;
@@ -429,14 +438,19 @@ export default function SKUManagement() {
         showToast(`Please complete all 7 day recipes (${completedDays.length}/7 done)`, 'error');
         return;
       }
-    } else {
-      // Single unit validation
-      if (!formData.unitWeight) {
-        showToast('Please enter unit weight (e.g., 0.5 or 1 for kg)', 'error');
+    } else if (formData.skuType === 'single') {
+      if (formData.singleUnitIngredients.length === 0) {
+        showToast('Please add at least one ingredient/pouch', 'error');
         return;
       }
-      if (formData.singleUnitIngredients.length === 0) {
-        showToast('Please add at least one ingredient', 'error');
+    } else if (formData.skuType === 'repack') {
+      if (!formData.bulkQty || !formData.bulkPrice || !formData.packSize) {
+        showToast('Enter bulk quantity, bulk price, and pack size', 'error');
+        return;
+      }
+    } else if (formData.skuType === 'resale') {
+      if (!formData.buyPrice) {
+        showToast('Enter the purchase price per unit', 'error');
         return;
       }
     }
@@ -447,7 +461,12 @@ export default function SKUManagement() {
       ...formData,
       ...totals,
       targetWeightPerSachet: formData.skuType === 'weekly' ? parseFloat(formData.targetWeightPerSachet) : null,
-      unitWeight: formData.skuType === 'single' ? parseFloat(formData.unitWeight) : null,
+      unitWeight: (formData.skuType === 'single' && formData.unitWeight) ? parseFloat(formData.unitWeight) : null,
+      yieldPercent: formData.yieldPercent !== '' ? parseFloat(formData.yieldPercent) : null,
+      bulkQty: formData.bulkQty !== '' ? parseFloat(formData.bulkQty) : null,
+      bulkPrice: formData.bulkPrice !== '' ? parseFloat(formData.bulkPrice) : null,
+      packSize: formData.packSize !== '' ? parseFloat(formData.packSize) : null,
+      buyPrice: formData.buyPrice !== '' ? parseFloat(formData.buyPrice) : null,
       packagingMaterials: formData.packagingMaterials || [],
       processingIngredients: formData.processingIngredients || [],
       processingNotes: formData.processingNotes || '',
@@ -480,6 +499,11 @@ export default function SKUManagement() {
       skuType: sku.skuType || 'weekly',
       targetWeightPerSachet: sku.targetWeightPerSachet || '',
       unitWeight: sku.unitWeight || '',
+      yieldPercent: sku.yieldPercent ?? '',
+      bulkQty: sku.bulkQty ?? '',
+      bulkPrice: sku.bulkPrice ?? '',
+      packSize: sku.packSize ?? '',
+      buyPrice: sku.buyPrice ?? '',
       selectedVendorId: sku.selectedVendorId || '',
       recipes: sku.recipes || {
         MON: [], TUE: [], WED: [], THU: [], FRI: [], SAT: [], SUN: [],
@@ -1033,11 +1057,13 @@ export default function SKUManagement() {
                     }}
                     className="input-field"
                   >
-                    <option value="weekly">Weekly Pack (7-day recipes)</option>
-                    <option value="single">Single Unit (e.g., Dates 0.5kg, 1kg)</option>
+                    <option value="weekly">Recipe Pack — 7-day sachets (Day Pack, Night Soak)</option>
+                    <option value="single">Processed Pack — pouches, roasted/powdered (Seed Cycle)</option>
+                    <option value="repack">Repack — buy bulk, sell smaller (Dates, Party Mix)</option>
+                    <option value="resale">Resale — buy finished, sell as-is (Date Bytes)</option>
                   </select>
                 </div>
-                {formData.skuType === 'weekly' ? (
+                {formData.skuType === 'weekly' && (
                   <div>
                     <label className="label">Target Weight per Sachet (grams) <span className="text-red-500">*</span></label>
                     <input
@@ -1048,20 +1074,59 @@ export default function SKUManagement() {
                       placeholder="e.g., 30 or 44"
                     />
                   </div>
-                ) : (
+                )}
+                {formData.skuType === 'single' && (
                   <div>
-                    <label className="label">Unit Weight (kg) <span className="text-red-500">*</span></label>
+                    <label className="label">Net Weight per Unit (kg)</label>
                     <input
                       type="number"
-                      step="0.1"
+                      step="0.01"
                       value={formData.unitWeight}
                       onChange={(e) => setFormData({ ...formData, unitWeight: e.target.value })}
                       className="input-field"
-                      placeholder="e.g., 0.5 or 1"
+                      placeholder="e.g., 0.28 (2 pouches × 140g)"
                     />
-                    <p className="text-xs text-gray-500 mt-1">Enter weight in kilograms (e.g., 0.5 for half kg, 1 for 1 kg)</p>
+                    <p className="text-xs text-gray-500 mt-1">Optional — the net weight printed on the pack.</p>
                   </div>
                 )}
+                {formData.skuType === 'repack' && (
+                  <>
+                    <div>
+                      <label className="label">Bulk Quantity (kg) <span className="text-red-500">*</span></label>
+                      <input type="number" step="0.01" value={formData.bulkQty}
+                        onChange={(e) => setFormData({ ...formData, bulkQty: e.target.value })}
+                        className="input-field" placeholder="e.g., 3" />
+                    </div>
+                    <div>
+                      <label className="label">Bulk Price paid (₹) <span className="text-red-500">*</span></label>
+                      <input type="number" step="0.01" value={formData.bulkPrice}
+                        onChange={(e) => setFormData({ ...formData, bulkPrice: e.target.value })}
+                        className="input-field" placeholder="e.g., 900" />
+                    </div>
+                    <div>
+                      <label className="label">Pack Size to sell (grams) <span className="text-red-500">*</span></label>
+                      <input type="number" step="1" value={formData.packSize}
+                        onChange={(e) => setFormData({ ...formData, packSize: e.target.value })}
+                        className="input-field" placeholder="e.g., 250" />
+                    </div>
+                    <div>
+                      <label className="label">Usable yield %</label>
+                      <input type="number" step="1" value={formData.yieldPercent}
+                        onChange={(e) => setFormData({ ...formData, yieldPercent: e.target.value })}
+                        className="input-field" placeholder="Blank = no loss. e.g. 85 (dates sorting)" />
+                    </div>
+                  </>
+                )}
+                {formData.skuType === 'resale' && (
+                  <div>
+                    <label className="label">Purchase Price per Unit (₹) <span className="text-red-500">*</span></label>
+                    <input type="number" step="0.01" value={formData.buyPrice}
+                      onChange={(e) => setFormData({ ...formData, buyPrice: e.target.value })}
+                      className="input-field" placeholder="e.g., 120" />
+                    <p className="text-xs text-gray-500 mt-1">What you pay per finished unit before your packaging.</p>
+                  </div>
+                )}
+                {(formData.skuType === 'weekly' || formData.skuType === 'single') && (
                 <div className="md:col-span-2">
                   <label className="label">Select Vendor for All Ingredients <span className="text-red-500">*</span></label>
                   <div className="relative" style={{ zIndex: 99999, isolation: 'isolate' }}>
@@ -1092,6 +1157,7 @@ export default function SKUManagement() {
                     </p>
                   )}
                 </div>
+                )}
                 <div className="md:col-span-2">
                   <label className="label">Description <span className="text-red-500">*</span></label>
                   <textarea
@@ -1107,23 +1173,30 @@ export default function SKUManagement() {
               <div className="flex justify-end">
                 <button
                   onClick={() => {
-                    if (!formData.name || !formData.description || !formData.selectedVendorId) {
-                      showToast('Please fill in all required fields including vendor selection', 'error');
+                    const needsVendor = formData.skuType === 'weekly' || formData.skuType === 'single';
+                    if (!formData.name || !formData.description || (needsVendor && !formData.selectedVendorId)) {
+                      showToast('Please fill in all required fields' + (needsVendor ? ' including vendor selection' : ''), 'error');
                       return;
                     }
                     if (formData.skuType === 'weekly' && !formData.targetWeightPerSachet) {
                       showToast('Please enter target weight per sachet', 'error');
                       return;
                     }
-                    if (formData.skuType === 'single' && !formData.unitWeight) {
-                      showToast('Please enter unit weight', 'error');
+                    if (formData.skuType === 'repack' && (!formData.bulkQty || !formData.bulkPrice || !formData.packSize)) {
+                      showToast('Enter bulk quantity, bulk price, and pack size', 'error');
+                      return;
+                    }
+                    if (formData.skuType === 'resale' && !formData.buyPrice) {
+                      showToast('Enter the purchase price per unit', 'error');
                       return;
                     }
                     setCurrentStep(2);
                   }}
                   className="btn-primary"
                 >
-                  Next: {formData.skuType === 'single' ? 'Add Ingredients' : 'Build Day Recipes'}
+                  Next: {formData.skuType === 'weekly' ? 'Build Day Recipes'
+                    : formData.skuType === 'single' ? 'Add Ingredients'
+                    : 'Packaging & Price'}
                 </button>
               </div>
             </div>
@@ -1132,7 +1205,91 @@ export default function SKUManagement() {
           {/* Step 2: Day Recipes or Single Unit Details */}
           {currentStep === 2 && (
             <div className="space-y-6">
-              {formData.skuType === 'single' ? (
+              {(formData.skuType === 'repack' || formData.skuType === 'resale') ? (
+                /* Repack / Resale Form */
+                (() => {
+                  const yieldF = formData.yieldPercent ? (parseFloat(formData.yieldPercent) / 100) : 1;
+                  let materialCost = 0;
+                  let detail = '';
+                  if (formData.skuType === 'repack') {
+                    const bulkQtyG = (parseFloat(formData.bulkQty) || 0) * 1000;
+                    const usableG = bulkQtyG * yieldF;
+                    const costPerG = usableG > 0 ? (parseFloat(formData.bulkPrice) || 0) / usableG : 0;
+                    materialCost = costPerG * (parseFloat(formData.packSize) || 0);
+                    detail = `${formData.bulkQty || 0}kg @ ₹${formData.bulkPrice || 0}${formData.yieldPercent ? ` · ${formData.yieldPercent}% usable` : ''} → ₹${(costPerG * 1000).toFixed(0)}/kg × ${formData.packSize || 0}g`;
+                  } else {
+                    materialCost = parseFloat(formData.buyPrice) || 0;
+                    detail = 'Purchase price per finished unit';
+                  }
+                  const sp = parseFloat(formData.sellingPrice) || 0;
+                  const margin = sp > 0 ? ((sp - materialCost) / sp * 100) : 0;
+                  return (
+                    <div className="space-y-6">
+                      {/* Cost preview */}
+                      <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-5">
+                        <h3 className="text-lg font-bold text-gray-900 mb-1">{formData.name || 'New product'}</h3>
+                        <p className="text-xs text-gray-500 mb-3">{detail}</p>
+                        <div className="grid grid-cols-3 gap-3 text-center">
+                          <div>
+                            <p className="text-xs text-gray-500">Cost / unit</p>
+                            <p className="text-xl font-bold text-amber-700">₹{materialCost.toFixed(2)}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500">Selling price</p>
+                            <p className="text-xl font-bold text-gray-900">₹{sp.toFixed(2)}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500">Margin</p>
+                            <p className={`text-xl font-bold ${margin > 30 ? 'text-green-600' : margin > 15 ? 'text-amber-600' : 'text-red-600'}`}>{margin.toFixed(1)}%</p>
+                          </div>
+                        </div>
+                        <p className="text-[11px] text-gray-400 mt-2">Packaging &amp; labour add on top; final COGS is refined from live raw prices.</p>
+                      </div>
+
+                      {/* Packaging materials */}
+                      <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="text-sm font-semibold text-indigo-800">Packaging Materials (per unit)</label>
+                          <button type="button" onClick={() => setFormData(f => ({ ...f, packagingMaterials: [...f.packagingMaterials, { name: '', quantity_per_pack: '', unit: 'pcs' }] }))}
+                            className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">+ Add Material</button>
+                        </div>
+                        {formData.packagingMaterials.map((pkg, idx) => (
+                          <div key={idx} className="flex items-center gap-2 mb-2">
+                            <input type="text" value={pkg.name} onChange={e => { const u = [...formData.packagingMaterials]; u[idx] = { ...u[idx], name: e.target.value }; setFormData(f => ({ ...f, packagingMaterials: u })); }}
+                              className="flex-1 border rounded-lg px-3 py-1.5 text-sm" placeholder="e.g. Pouch 250g, Label" />
+                            <input type="number" value={pkg.quantity_per_pack} onChange={e => { const u = [...formData.packagingMaterials]; u[idx] = { ...u[idx], quantity_per_pack: e.target.value }; setFormData(f => ({ ...f, packagingMaterials: u })); }}
+                              className="w-20 border rounded-lg px-3 py-1.5 text-sm" placeholder="Qty" min="0" />
+                            <button type="button" onClick={() => setFormData(f => ({ ...f, packagingMaterials: f.packagingMaterials.filter((_, i) => i !== idx) }))}
+                              className="p-1 text-red-400 hover:text-red-600"><X className="w-4 h-4" /></button>
+                          </div>
+                        ))}
+                        {formData.packagingMaterials.length === 0 && (
+                          <p className="text-xs text-indigo-500 italic">e.g. 1 pouch, 1 label</p>
+                        )}
+                      </div>
+
+                      {/* Shelf life + selling price */}
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Shelf Life (days)</label>
+                          <input type="number" value={formData.shelfLifeDays} onChange={e => setFormData(f => ({ ...f, shelfLifeDays: e.target.value }))}
+                            className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="e.g. 180" />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Selling Price / Unit (MRP)</label>
+                          <input type="number" value={formData.sellingPrice} onChange={e => setFormData(f => ({ ...f, sellingPrice: e.target.value }))}
+                            className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="e.g. 149" />
+                        </div>
+                      </div>
+
+                      <div className="flex justify-between pt-2">
+                        <button onClick={() => setCurrentStep(1)} className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg">Back</button>
+                        <button onClick={handleSaveSKU} className="btn-primary">{editingSKU ? 'Update SKU' : 'Save SKU'}</button>
+                      </div>
+                    </div>
+                  );
+                })()
+              ) : formData.skuType === 'single' ? (
                 /* Single Unit Form */
                 <div className="space-y-6">
                   <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
