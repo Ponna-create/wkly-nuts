@@ -50,7 +50,6 @@ export default function ProductionRuns() {
   const [filterStatus, setFilterStatus] = useState('all');
   const [expandedId, setExpandedId] = useState(null);
   const [completionDialog, setCompletionDialog] = useState(null); // {run, processing, result}
-  const [wastageRun, setWastageRun] = useState(null); // run to record wastage for
 
   const loadRuns = useCallback(async () => {
     setLoading(true);
@@ -388,9 +387,6 @@ export default function ProductionRuns() {
                       </div>
                     )}
 
-                    {/* Wastage Summary (inline) */}
-                    <WastageSummaryInline runId={run.id} actualQuantity={run.actual_quantity} />
-
                     {run.notes && <p className="text-sm text-gray-600 bg-white p-2 rounded">{run.notes}</p>}
 
                     {/* Status Actions */}
@@ -423,10 +419,6 @@ export default function ProductionRuns() {
                       <button onClick={(e) => { e.stopPropagation(); handlePrintBatchLabel(run); }}
                         className="flex items-center gap-1 px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded-lg">
                         <Printer className="w-3.5 h-3.5" /> Print Label
-                      </button>
-                      <button onClick={(e) => { e.stopPropagation(); setWastageRun(run); }}
-                        className="flex items-center gap-1 px-3 py-1.5 text-sm text-orange-600 hover:bg-orange-50 rounded-lg">
-                        <Recycle className="w-3.5 h-3.5" /> Wastage
                       </button>
                       <button onClick={(e) => { e.stopPropagation(); setEditingRun(run); setShowForm(true); }}
                         className="flex items-center gap-1 px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded-lg">
@@ -480,14 +472,6 @@ export default function ProductionRuns() {
         />
       )}
 
-      {/* Wastage Tracking Modal */}
-      {wastageRun && (
-        <WastageModal
-          run={wastageRun}
-          onClose={() => setWastageRun(null)}
-          showToast={showToast}
-        />
-      )}
     </div>
   );
 }
@@ -656,6 +640,10 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
     ingredientCost: run?.ingredient_cost || '',
     packagingCost: run?.packaging_cost || '',
     laborCost: run?.labor_cost || '',
+    labourStart: run?.labour_start || '',
+    labourEnd: run?.labour_end || '',
+    labourPeople: run?.labour_people || '',
+    labourRate: run?.labour_rate_per_hour || '',
     notes: run?.notes || '',
     shelfLifeDays: run?.shelf_life_days || 30,
     ingredientsUsed: run?.ingredients_used || [],
@@ -682,8 +670,17 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
     loadDropdowns();
   }, []);
 
-  const totalCost = (parseFloat(form.ingredientCost) || 0) + (parseFloat(form.packagingCost) || 0) + (parseFloat(form.laborCost) || 0);
-  const costPerUnit = form.actualQuantity > 0 ? totalCost / parseInt(form.actualQuantity) : form.plannedQuantity > 0 ? totalCost / parseInt(form.plannedQuantity) : 0;
+  // Time-based labour: hours between start & end × total ₹/hour for all staff
+  const parseHM = (t) => { if (!t) return null; const [h, m] = String(t).split(':').map(Number); return (h || 0) * 60 + (m || 0); };
+  const startMin = parseHM(form.labourStart);
+  const endMin = parseHM(form.labourEnd);
+  const labourHours = (startMin != null && endMin != null && endMin > startMin) ? (endMin - startMin) / 60 : 0;
+  const labourRate = parseFloat(form.labourRate) || 0;
+  const labourCost = labourHours * labourRate;
+
+  const totalCost = (parseFloat(form.ingredientCost) || 0) + (parseFloat(form.packagingCost) || 0) + labourCost;
+  const runQty = parseInt(form.actualQuantity) || parseInt(form.plannedQuantity) || 0;
+  const costPerUnit = runQty > 0 ? totalCost / runQty : 0;
 
   const handleSkuChange = (code, overrideQty) => {
     const sku = skuCodes.find(s => s.code === code);
@@ -802,7 +799,11 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
       quality_notes: form.qualityNotes,
       ingredient_cost: parseFloat(form.ingredientCost) || 0,
       packaging_cost: parseFloat(form.packagingCost) || 0,
-      labor_cost: parseFloat(form.laborCost) || 0,
+      labor_cost: labourCost,
+      labour_start: form.labourStart || null,
+      labour_end: form.labourEnd || null,
+      labour_people: parseInt(form.labourPeople) || null,
+      labour_rate_per_hour: parseFloat(form.labourRate) || null,
       total_cost: totalCost,
       cost_per_unit: costPerUnit,
       shelf_life_days: parseInt(form.shelfLifeDays) || 30,
@@ -819,7 +820,11 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
       shelfLifeDays: parseInt(form.shelfLifeDays) || 30,
       ingredientCost: parseFloat(form.ingredientCost) || 0,
       packagingCost: parseFloat(form.packagingCost) || 0,
-      laborCost: parseFloat(form.laborCost) || 0,
+      laborCost: labourCost,
+      labourStart: form.labourStart || null,
+      labourEnd: form.labourEnd || null,
+      labourPeople: parseInt(form.labourPeople) || null,
+      labourRate: parseFloat(form.labourRate) || null,
       totalCost: totalCost,
       costPerUnit: costPerUnit,
       ingredientsUsed: form.ingredientsUsed.filter(i => i.ingredient_name),
@@ -959,6 +964,46 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
               </div>
             </div>
           )}
+
+          {/* Labour — time-based */}
+          <div>
+            <label className="text-sm font-medium text-gray-700 flex items-center gap-1 mb-2">
+              <Clock className="w-4 h-4 text-teal-600" /> Labour (time worked)
+            </label>
+            <div className="bg-teal-50 border border-teal-200 rounded-lg p-3 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Start time</label>
+                  <input type="time" value={form.labourStart} onChange={e => setForm(f => ({ ...f, labourStart: e.target.value }))}
+                    className="w-full border rounded-lg px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">End time</label>
+                  <input type="time" value={form.labourEnd} onChange={e => setForm(f => ({ ...f, labourEnd: e.target.value }))}
+                    className="w-full border rounded-lg px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">People worked</label>
+                  <input type="number" min="0" value={form.labourPeople} onChange={e => setForm(f => ({ ...f, labourPeople: e.target.value }))}
+                    className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="e.g. 2" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">₹/hour (all staff)</label>
+                  <input type="number" min="0" step="0.01" value={form.labourRate} onChange={e => setForm(f => ({ ...f, labourRate: e.target.value }))}
+                    className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="e.g. 40" />
+                </div>
+              </div>
+              {labourCost > 0 && (
+                <div className="border-t border-teal-300 pt-2 flex items-center justify-between text-sm">
+                  <span className="text-gray-600">{labourHours.toFixed(2)} hr × ₹{labourRate.toLocaleString('en-IN')}/hr</span>
+                  <span className="font-bold text-teal-800">
+                    ₹{labourCost.toFixed(2)}
+                    {runQty > 0 && <span className="font-normal text-teal-600"> · ₹{(labourCost / runQty).toFixed(2)}/unit</span>}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
 
           {/* Notes */}
           <div>
