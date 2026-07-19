@@ -675,7 +675,14 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
   // Load available ingredients and packaging from DB for dropdowns
   const [availableIngredients, setAvailableIngredients] = useState([]);
   const [availablePackaging, setAvailablePackaging] = useState([]);
+  const [availableStaff, setAvailableStaff] = useState([]);
+  const [showStaffManager, setShowStaffManager] = useState(false);
   const [loadingDropdowns, setLoadingDropdowns] = useState(true);
+
+  const loadStaff = async () => {
+    const { data } = await dbService.getStaff();
+    setAvailableStaff(data || []);
+  };
 
   useEffect(() => {
     const loadDropdowns = async () => {
@@ -689,6 +696,7 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
       setLoadingDropdowns(false);
     };
     loadDropdowns();
+    loadStaff();
   }, []);
 
   // Time-based labour across one or more sessions (different days / processes).
@@ -697,10 +705,23 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
   const sessionMetrics = (s) => {
     const sm = parseHM(s.start), em = parseHM(s.end);
     const hrs = (sm != null && em != null && em > sm) ? (em - sm) / 60 : 0;
-    const ppl = parseInt(s.people) || 1;
-    const rate = parseFloat(s.rate) || 0;
-    return { hrs, ppl, rate, hourly: ppl * rate, cost: hrs * ppl * rate };
+    // If named staff are picked, hourly = sum of their rates. Else fall back to people × rate.
+    const hasStaff = Array.isArray(s.staff) && s.staff.length > 0;
+    const hourly = hasStaff
+      ? s.staff.reduce((sum, st) => sum + (parseFloat(st.rate) || 0), 0)
+      : (parseInt(s.people) || 1) * (parseFloat(s.rate) || 0);
+    const ppl = hasStaff ? s.staff.length : (parseInt(s.people) || 1);
+    return { hrs, ppl, hourly, cost: hrs * hourly };
   };
+  const toggleSessionStaff = (idx, member) => setForm(f => ({
+    ...f, labourSessions: f.labourSessions.map((s, i) => {
+      if (i !== idx) return s;
+      const cur = Array.isArray(s.staff) ? s.staff : [];
+      const exists = cur.some(x => x.id === member.id);
+      const staff = exists ? cur.filter(x => x.id !== member.id) : [...cur, { id: member.id, name: member.name, rate: member.rate_per_hour }];
+      return { ...s, staff };
+    }),
+  }));
   const labourSessions = form.labourSessions || [];
   const labourHours = labourSessions.reduce((sum, s) => sum + sessionMetrics(s).hrs, 0);
   const labourCost = labourSessions.reduce((sum, s) => sum + sessionMetrics(s).cost, 0);
@@ -1010,8 +1031,12 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
               <label className="text-sm font-medium text-gray-700 flex items-center gap-1">
                 <Clock className="w-4 h-4 text-teal-600" /> Labour (time worked)
               </label>
-              <button type="button" onClick={addSession}
-                className="text-xs text-teal-600 hover:text-teal-800 font-medium">+ Add work session</button>
+              <div className="flex items-center gap-3">
+                <button type="button" onClick={() => setShowStaffManager(true)}
+                  className="text-xs text-gray-500 hover:text-gray-700 font-medium">Manage staff</button>
+                <button type="button" onClick={addSession}
+                  className="text-xs text-teal-600 hover:text-teal-800 font-medium">+ Add work session</button>
+              </div>
             </div>
             <div className="bg-teal-50 border border-teal-200 rounded-lg p-3 space-y-3">
               {labourSessions.length === 0 && (
@@ -1054,20 +1079,40 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
                         <label className="block text-[11px] text-gray-500 mb-1">End time</label>
                         <TimeInput12 value={s.end} onChange={v => updateSession(idx, 'end', v)} />
                       </div>
-                      <div>
-                        <label className="block text-[11px] text-gray-500 mb-1">People</label>
-                        <input type="number" min="0" value={s.people} onChange={e => updateSession(idx, 'people', e.target.value)}
-                          className="w-full border rounded-lg px-2 py-1.5 text-sm" placeholder="3" />
-                      </div>
-                      <div>
-                        <label className="block text-[11px] text-gray-500 mb-1">₹/hour per person</label>
-                        <input type="number" min="0" step="0.01" value={s.rate} onChange={e => updateSession(idx, 'rate', e.target.value)}
-                          className="w-full border rounded-lg px-2 py-1.5 text-sm" placeholder="40" />
-                      </div>
+                      {availableStaff.length === 0 && (
+                        <>
+                          <div>
+                            <label className="block text-[11px] text-gray-500 mb-1">People</label>
+                            <input type="number" min="0" value={s.people} onChange={e => updateSession(idx, 'people', e.target.value)}
+                              className="w-full border rounded-lg px-2 py-1.5 text-sm" placeholder="3" />
+                          </div>
+                          <div>
+                            <label className="block text-[11px] text-gray-500 mb-1">₹/hour per person</label>
+                            <input type="number" min="0" step="0.01" value={s.rate} onChange={e => updateSession(idx, 'rate', e.target.value)}
+                              className="w-full border rounded-lg px-2 py-1.5 text-sm" placeholder="40" />
+                          </div>
+                        </>
+                      )}
                     </div>
+                    {availableStaff.length > 0 && (
+                      <div>
+                        <label className="block text-[11px] text-gray-500 mb-1">Who worked</label>
+                        <div className="flex flex-wrap gap-1.5">
+                          {availableStaff.map(member => {
+                            const picked = Array.isArray(s.staff) && s.staff.some(x => x.id === member.id);
+                            return (
+                              <button type="button" key={member.id} onClick={() => toggleSessionStaff(idx, member)}
+                                className={`px-2.5 py-1 rounded-full text-xs font-medium border transition ${picked ? 'bg-teal-600 text-white border-teal-600' : 'bg-white text-gray-600 border-gray-300 hover:border-teal-400'}`}>
+                                {picked ? '✓ ' : ''}{member.name} <span className="opacity-70">₹{member.rate_per_hour}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                     {m.cost > 0 && (
                       <div className="text-[11px] text-gray-500 flex justify-between border-t border-gray-100 pt-1.5">
-                        <span>{m.hrs.toFixed(2)} hr × {m.ppl} × ₹{m.rate.toLocaleString('en-IN')} (₹{m.hourly.toLocaleString('en-IN')}/hr)</span>
+                        <span>{m.hrs.toFixed(2)} hr × {m.ppl} {m.ppl === 1 ? 'person' : 'people'} (₹{m.hourly.toLocaleString('en-IN')}/hr)</span>
                         <span className="font-semibold text-teal-700">₹{m.cost.toFixed(2)}</span>
                       </div>
                     )}
@@ -1110,6 +1155,89 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
             </button>
           </div>
         </form>
+      </div>
+      {showStaffManager && (
+        <StaffManager
+          staff={availableStaff}
+          onClose={() => setShowStaffManager(false)}
+          onChanged={loadStaff}
+        />
+      )}
+    </div>
+  );
+}
+
+// ============================================
+// STAFF MANAGER (add / edit / remove staff)
+// ============================================
+function StaffManager({ staff, onClose, onChanged }) {
+  const { showToast } = useApp();
+  const [name, setName] = useState('');
+  const [rate, setRate] = useState('');
+  const [role, setRole] = useState('production');
+  const [saving, setSaving] = useState(false);
+
+  const add = async () => {
+    if (!name.trim() || !rate) { showToast('Enter name and ₹/hour', 'error'); return; }
+    setSaving(true);
+    const { error } = await dbService.createStaff({ name: name.trim(), ratePerHour: rate, role });
+    setSaving(false);
+    if (error) { showToast('Failed to add staff', 'error'); return; }
+    setName(''); setRate(''); setRole('production');
+    showToast('Staff added', 'success');
+    onChanged();
+  };
+
+  const remove = async (id) => {
+    if (!confirm('Remove this staff member?')) return;
+    const { error } = await dbService.deleteStaff(id);
+    if (error) { showToast('Failed to remove', 'error'); return; }
+    showToast('Staff removed');
+    onChanged();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-4 border-b">
+          <h3 className="text-lg font-semibold">Staff</h3>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-5 h-5" /></button>
+        </div>
+        <div className="p-4 space-y-3">
+          <p className="text-xs text-gray-500">Add the people you pay for work. Pick them on each production session; each one’s ₹/hour is used to cost the work.</p>
+          {staff.length > 0 && (
+            <div className="space-y-1.5">
+              {staff.map(s => (
+                <div key={s.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2 text-sm">
+                  <span className="font-medium text-gray-800">{s.name}
+                    <span className="ml-2 text-xs text-gray-400">₹{s.rate_per_hour}/hr · {s.role}</span>
+                  </span>
+                  <button onClick={() => remove(s.id)} className="text-red-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="grid grid-cols-12 gap-2 items-end border-t pt-3">
+            <div className="col-span-5">
+              <label className="block text-[11px] text-gray-500 mb-1">Name</label>
+              <input type="text" value={name} onChange={e => setName(e.target.value)} className="w-full border rounded-lg px-2 py-1.5 text-sm" placeholder="e.g. Ravi" />
+            </div>
+            <div className="col-span-3">
+              <label className="block text-[11px] text-gray-500 mb-1">₹/hour</label>
+              <input type="number" min="0" value={rate} onChange={e => setRate(e.target.value)} className="w-full border rounded-lg px-2 py-1.5 text-sm" placeholder="40" />
+            </div>
+            <div className="col-span-4">
+              <label className="block text-[11px] text-gray-500 mb-1">Role</label>
+              <select value={role} onChange={e => setRole(e.target.value)} className="w-full border rounded-lg px-2 py-1.5 text-sm">
+                <option value="production">Production</option>
+                <option value="sales">Sales</option>
+              </select>
+            </div>
+          </div>
+          <button onClick={add} disabled={saving} className="w-full px-4 py-2 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50">
+            {saving ? 'Adding...' : '+ Add staff'}
+          </button>
+        </div>
       </div>
     </div>
   );

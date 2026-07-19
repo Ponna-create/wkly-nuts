@@ -464,6 +464,71 @@ const _realDbService = {
     }
   },
 
+  // ==========================================
+  // STAFF (people paid for work)
+  // ==========================================
+  async getStaff() {
+    if (!isSupabaseAvailable()) return { data: [], error: null };
+    try {
+      const { data, error } = await supabase
+        .from('staff')
+        .select('*')
+        .eq('active', true)
+        .order('name');
+      if (error) throw error;
+      return { data: data || [], error: null };
+    } catch (error) {
+      console.error('Error fetching staff:', error);
+      return { data: [], error };
+    }
+  },
+
+  async createStaff(staff) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    try {
+      const { data, error } = await supabase
+        .from('staff')
+        .insert([{ name: staff.name, rate_per_hour: parseFloat(staff.ratePerHour) || 0, role: staff.role || 'production' }])
+        .select()
+        .single();
+      if (error) throw error;
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error creating staff:', error);
+      return { data: null, error };
+    }
+  },
+
+  async updateStaff(staff) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    try {
+      const { data, error } = await supabase
+        .from('staff')
+        .update({ name: staff.name, rate_per_hour: parseFloat(staff.ratePerHour) || 0, role: staff.role || 'production' })
+        .eq('id', staff.id)
+        .select()
+        .single();
+      if (error) throw error;
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error updating staff:', error);
+      return { data: null, error };
+    }
+  },
+
+  async deleteStaff(id) {
+    if (!isSupabaseAvailable()) return { error: new Error('Supabase not configured') };
+    try {
+      // Soft-delete so past runs keep their reference
+      const { error } = await supabase.from('staff').update({ active: false }).eq('id', id);
+      if (error) throw error;
+      return { error: null };
+    } catch (error) {
+      console.error('Error deleting staff:', error);
+      return { error };
+    }
+  },
+
   // Pricing Strategies
   async getPricingStrategies() {
     if (!isSupabaseAvailable()) return { data: [], error: null };
