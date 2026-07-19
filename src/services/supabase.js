@@ -295,6 +295,9 @@ const _realDbService = {
         // Type + type-specific config (persisted in the JSONB)
         skuType: sku.weekly_pack?.skuType || 'weekly',
         unitWeight: sku.weekly_pack?.unitWeight ?? '',
+        unitOfMeasure: sku.weekly_pack?.unitOfMeasure || 'g',
+        pouchCount: sku.weekly_pack?.pouchCount ?? '',
+        pouchWeight: sku.weekly_pack?.pouchWeight ?? '',
         singleUnitIngredients: sku.weekly_pack?.singleUnitIngredients || [],
         yieldPercent: sku.weekly_pack?.yieldPercent ?? '',
         bulkQty: sku.weekly_pack?.bulkQty ?? '',
@@ -319,6 +322,9 @@ const _realDbService = {
       const typeConfig = {
         skuType: sku.skuType || 'weekly',
         unitWeight: sku.unitWeight ?? null,
+        unitOfMeasure: sku.unitOfMeasure || 'g',
+        pouchCount: sku.pouchCount ?? null,
+        pouchWeight: sku.pouchWeight ?? null,
         singleUnitIngredients: sku.singleUnitIngredients || [],
         yieldPercent: sku.yieldPercent ?? null,
         bulkQty: sku.bulkQty ?? null,
@@ -386,6 +392,9 @@ const _realDbService = {
       const typeConfig = {
         skuType: sku.skuType || sku.weeklyPack?.skuType || 'weekly',
         unitWeight: sku.unitWeight ?? sku.weeklyPack?.unitWeight ?? null,
+        unitOfMeasure: sku.unitOfMeasure || sku.weeklyPack?.unitOfMeasure || 'g',
+        pouchCount: sku.pouchCount ?? sku.weeklyPack?.pouchCount ?? null,
+        pouchWeight: sku.pouchWeight ?? sku.weeklyPack?.pouchWeight ?? null,
         singleUnitIngredients: sku.singleUnitIngredients || sku.weeklyPack?.singleUnitIngredients || [],
         yieldPercent: sku.yieldPercent ?? sku.weeklyPack?.yieldPercent ?? null,
         bulkQty: sku.bulkQty ?? sku.weeklyPack?.bulkQty ?? null,

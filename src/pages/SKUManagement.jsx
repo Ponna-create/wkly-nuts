@@ -101,10 +101,13 @@ export default function SKUManagement() {
     skuType: 'weekly', // weekly | processed | repack | resale
     targetWeightPerSachet: '', // For weekly packs
     unitWeight: '', // For processed/single unit SKUs (in kg, e.g., 0.5 or 1)
+    unitOfMeasure: 'g', // g | kg | ml — how this product is measured
+    pouchCount: '', // Processed: how many pouches per unit (e.g. 2 for Seed Cycle)
+    pouchWeight: '', // Processed: weight/volume per pouch (in unitOfMeasure)
     yieldPercent: '', // Processing yield % (blank = no loss). e.g. 90 = keeps 90%
     bulkQty: '', // Repack: bulk purchase quantity (kg)
     bulkPrice: '', // Repack: total price paid for the bulk
-    packSize: '', // Repack: sellable pack size (grams)
+    packSize: '', // Repack: sellable pack size (in unitOfMeasure)
     buyPrice: '', // Resale: purchase price per unit
     selectedVendorId: '',
     recipes: {
@@ -202,6 +205,9 @@ export default function SKUManagement() {
       skuType: 'weekly',
       targetWeightPerSachet: '',
       unitWeight: '',
+      unitOfMeasure: 'g',
+      pouchCount: '',
+      pouchWeight: '',
       yieldPercent: '',
       bulkQty: '',
       bulkPrice: '',
@@ -462,6 +468,9 @@ export default function SKUManagement() {
       ...totals,
       targetWeightPerSachet: formData.skuType === 'weekly' ? parseFloat(formData.targetWeightPerSachet) : null,
       unitWeight: (formData.skuType === 'single' && formData.unitWeight) ? parseFloat(formData.unitWeight) : null,
+      unitOfMeasure: formData.unitOfMeasure || 'g',
+      pouchCount: formData.pouchCount !== '' ? parseInt(formData.pouchCount) : null,
+      pouchWeight: formData.pouchWeight !== '' ? parseFloat(formData.pouchWeight) : null,
       yieldPercent: formData.yieldPercent !== '' ? parseFloat(formData.yieldPercent) : null,
       bulkQty: formData.bulkQty !== '' ? parseFloat(formData.bulkQty) : null,
       bulkPrice: formData.bulkPrice !== '' ? parseFloat(formData.bulkPrice) : null,
@@ -499,6 +508,9 @@ export default function SKUManagement() {
       skuType: sku.skuType || 'weekly',
       targetWeightPerSachet: sku.targetWeightPerSachet || '',
       unitWeight: sku.unitWeight || '',
+      unitOfMeasure: sku.unitOfMeasure || 'g',
+      pouchCount: sku.pouchCount ?? '',
+      pouchWeight: sku.pouchWeight ?? '',
       yieldPercent: sku.yieldPercent ?? '',
       bulkQty: sku.bulkQty ?? '',
       bulkPrice: sku.bulkPrice ?? '',
@@ -1076,17 +1088,37 @@ export default function SKUManagement() {
                   </div>
                 )}
                 {formData.skuType === 'single' && (
-                  <div>
-                    <label className="label">Net Weight per Unit (kg)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={formData.unitWeight}
-                      onChange={(e) => setFormData({ ...formData, unitWeight: e.target.value })}
-                      className="input-field"
-                      placeholder="e.g., 0.28 (2 pouches × 140g)"
-                    />
-                    <p className="text-xs text-gray-500 mt-1">Optional — the net weight printed on the pack.</p>
+                  <div className="md:col-span-2">
+                    <label className="label">Pack contents</label>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <label className="text-xs text-gray-500">Number of pouches</label>
+                        <input type="number" min="1" value={formData.pouchCount}
+                          onChange={(e) => setFormData({ ...formData, pouchCount: e.target.value })}
+                          className="input-field" placeholder="e.g., 2" />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500">Weight per pouch</label>
+                        <input type="number" step="0.01" value={formData.pouchWeight}
+                          onChange={(e) => setFormData({ ...formData, pouchWeight: e.target.value })}
+                          className="input-field" placeholder="e.g., 140" />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500">Unit</label>
+                        <select value={formData.unitOfMeasure}
+                          onChange={(e) => setFormData({ ...formData, unitOfMeasure: e.target.value })}
+                          className="input-field">
+                          <option value="g">grams (g)</option>
+                          <option value="kg">kilograms (kg)</option>
+                          <option value="ml">millilitres (ml)</option>
+                        </select>
+                      </div>
+                    </div>
+                    {(parseFloat(formData.pouchCount) > 0 && parseFloat(formData.pouchWeight) > 0) && (
+                      <p className="text-xs text-teal-700 mt-1.5 font-medium">
+                        Net per unit: {formData.pouchCount} × {formData.pouchWeight}{formData.unitOfMeasure} = {(parseFloat(formData.pouchCount) * parseFloat(formData.pouchWeight)).toFixed(2)} {formData.unitOfMeasure}
+                      </p>
+                    )}
                   </div>
                 )}
                 {formData.skuType === 'repack' && (
@@ -1104,10 +1136,19 @@ export default function SKUManagement() {
                         className="input-field" placeholder="e.g., 900" />
                     </div>
                     <div>
-                      <label className="label">Pack Size to sell (grams) <span className="text-red-500">*</span></label>
-                      <input type="number" step="1" value={formData.packSize}
-                        onChange={(e) => setFormData({ ...formData, packSize: e.target.value })}
-                        className="input-field" placeholder="e.g., 250" />
+                      <label className="label">Pack Size to sell <span className="text-red-500">*</span></label>
+                      <div className="flex gap-2">
+                        <input type="number" step="1" value={formData.packSize}
+                          onChange={(e) => setFormData({ ...formData, packSize: e.target.value })}
+                          className="input-field flex-1" placeholder="e.g., 250" />
+                        <select value={formData.unitOfMeasure}
+                          onChange={(e) => setFormData({ ...formData, unitOfMeasure: e.target.value })}
+                          className="input-field w-24">
+                          <option value="g">g</option>
+                          <option value="kg">kg</option>
+                          <option value="ml">ml</option>
+                        </select>
+                      </div>
                     </div>
                     <div>
                       <label className="label">Usable yield %</label>
@@ -1215,8 +1256,10 @@ export default function SKUManagement() {
                     const bulkQtyG = (parseFloat(formData.bulkQty) || 0) * 1000;
                     const usableG = bulkQtyG * yieldF;
                     const costPerG = usableG > 0 ? (parseFloat(formData.bulkPrice) || 0) / usableG : 0;
-                    materialCost = costPerG * (parseFloat(formData.packSize) || 0);
-                    detail = `${formData.bulkQty || 0}kg @ ₹${formData.bulkPrice || 0}${formData.yieldPercent ? ` · ${formData.yieldPercent}% usable` : ''} → ₹${(costPerG * 1000).toFixed(0)}/kg × ${formData.packSize || 0}g`;
+                    // Convert pack size to grams based on chosen unit (kg ×1000; g/ml as-is)
+                    const packG = (parseFloat(formData.packSize) || 0) * (formData.unitOfMeasure === 'kg' ? 1000 : 1);
+                    materialCost = costPerG * packG;
+                    detail = `${formData.bulkQty || 0}kg @ ₹${formData.bulkPrice || 0}${formData.yieldPercent ? ` · ${formData.yieldPercent}% usable` : ''} → ₹${(costPerG * 1000).toFixed(0)}/kg × ${formData.packSize || 0}${formData.unitOfMeasure}`;
                   } else {
                     materialCost = parseFloat(formData.buyPrice) || 0;
                     detail = 'Purchase price per finished unit';
