@@ -20,6 +20,7 @@ import Expenses from './pages/Expenses';
 import PurchaseOrders from './pages/PurchaseOrders';
 import Documents from './pages/Documents';
 import ProductionRuns from './pages/ProductionRuns';
+import WorkLog from './pages/WorkLog';
 import PackagingMaterials from './pages/PackagingMaterials';
 import Reports from './pages/Reports';
 import HelpGuide from './pages/HelpGuide';
@@ -40,6 +41,7 @@ function App() {
               <Route path="/expenses" element={<ErrorBoundary><Expenses /></ErrorBoundary>} />
               <Route path="/documents" element={<ErrorBoundary><Documents /></ErrorBoundary>} />
               <Route path="/production" element={<ErrorBoundary><ProductionRuns /></ErrorBoundary>} />
+              <Route path="/work-log" element={<ErrorBoundary><WorkLog /></ErrorBoundary>} />
               <Route path="/packaging" element={<ErrorBoundary><PackagingMaterials /></ErrorBoundary>} />
               <Route path="/vendors" element={<ErrorBoundary><VendorManagement /></ErrorBoundary>} />
               <Route path="/ingredients" element={<ErrorBoundary><IngredientInventory /></ErrorBoundary>} />

@@ -42,7 +42,7 @@ const QUALITY_STATUSES = [
 
 // 12-hour AM/PM time entry. Stores/returns a 24-hour "HH:MM" string so the
 // labour math (parseHM) and DB stay unchanged.
-function TimeInput12({ value, onChange }) {
+export function TimeInput12({ value, onChange }) {
   const parse = (v) => {
     if (!v || !String(v).includes(':')) return { h12: '', min: '', ampm: 'AM' };
     const [H, M] = String(v).split(':').map(Number);

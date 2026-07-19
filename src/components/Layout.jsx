@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import {
   Home, Package, Warehouse, ShoppingCart, FileText,
   Menu, X, LogOut, Users, Truck, Factory,
-  ChevronDown, ChevronRight, Database, Settings, BarChart3, Boxes, Tag
+  ChevronDown, ChevronRight, Database, Settings, BarChart3, Boxes, Tag, ClipboardList
 } from 'lucide-react';
 import { logout } from './Auth';
 import { isTestMode, setTestMode, resetTestData } from '../services/supabase';
@@ -23,6 +23,7 @@ const navGroups = [
       { name: 'Customers', href: '/customers', icon: Users },
       { name: 'SKUs', href: '/skus', icon: Tag },
       { name: 'Production', href: '/production', icon: Factory },
+      { name: 'Work Log', href: '/work-log', icon: ClipboardList },
       { name: 'Inventory', href: '/ingredients', icon: Warehouse },
       { name: 'Purchases', href: '/purchase-orders', icon: ShoppingCart },
       { name: 'Packaging', href: '/packaging', icon: Boxes },

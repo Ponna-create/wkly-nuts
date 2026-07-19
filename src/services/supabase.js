@@ -529,6 +529,62 @@ const _realDbService = {
     }
   },
 
+  // ==========================================
+  // WORK LOG (non-production / overhead work — sales, fulfilment)
+  // ==========================================
+  async getWorkLog() {
+    if (!isSupabaseAvailable()) return { data: [], error: null };
+    try {
+      const { data, error } = await supabase
+        .from('work_log')
+        .select('*')
+        .order('work_date', { ascending: false })
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return { data: data || [], error: null };
+    } catch (error) {
+      console.error('Error fetching work log:', error);
+      return { data: [], error };
+    }
+  },
+
+  async createWorkLogEntry(entry) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    try {
+      const { data, error } = await supabase
+        .from('work_log')
+        .insert([{
+          work_date: entry.workDate || new Date().toISOString().split('T')[0],
+          activity: entry.activity || '',
+          start_time: entry.startTime || null,
+          end_time: entry.endTime || null,
+          staff: entry.staff || [],
+          hours: entry.hours || 0,
+          cost: entry.cost || 0,
+          notes: entry.notes || null,
+        }])
+        .select()
+        .single();
+      if (error) throw error;
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error creating work log entry:', error);
+      return { data: null, error };
+    }
+  },
+
+  async deleteWorkLogEntry(id) {
+    if (!isSupabaseAvailable()) return { error: new Error('Supabase not configured') };
+    try {
+      const { error } = await supabase.from('work_log').delete().eq('id', id);
+      if (error) throw error;
+      return { error: null };
+    } catch (error) {
+      console.error('Error deleting work log entry:', error);
+      return { error };
+    }
+  },
+
   // Pricing Strategies
   async getPricingStrategies() {
     if (!isSupabaseAvailable()) return { data: [], error: null };
