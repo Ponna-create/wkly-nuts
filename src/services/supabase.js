@@ -488,7 +488,10 @@ const _realDbService = {
     try {
       const { data, error } = await supabase
         .from('staff')
-        .insert([{ name: staff.name, rate_per_hour: parseFloat(staff.ratePerHour) || 0, role: staff.role || 'production' }])
+        .insert([{
+          name: staff.name, rate_per_hour: parseFloat(staff.ratePerHour) || 0, role: staff.role || 'production',
+          mobile: staff.mobile || null, address: staff.address || null, employee_id: staff.employeeId || null,
+        }])
         .select()
         .single();
       if (error) throw error;
@@ -504,7 +507,10 @@ const _realDbService = {
     try {
       const { data, error } = await supabase
         .from('staff')
-        .update({ name: staff.name, rate_per_hour: parseFloat(staff.ratePerHour) || 0, role: staff.role || 'production' })
+        .update({
+          name: staff.name, rate_per_hour: parseFloat(staff.ratePerHour) || 0, role: staff.role || 'production',
+          mobile: staff.mobile || null, address: staff.address || null, employee_id: staff.employeeId || null,
+        })
         .eq('id', staff.id)
         .select()
         .single();
