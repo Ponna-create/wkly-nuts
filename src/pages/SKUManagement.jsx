@@ -2532,14 +2532,19 @@ export default function SKUManagement() {
                       <h3 className="text-lg font-bold text-gray-900">{sku.name}</h3>
                       {sku.skuType === 'single' && (
                         <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-semibold rounded">
-                          Single Unit
+                          Processed Pack
                         </span>
                       )}
                     </div>
                     <p className="text-sm text-gray-600">{sku.description}</p>
                     {sku.skuType === 'single' ? (
                       <p className="text-sm text-primary font-semibold mt-1">
-                        Unit Weight: {sku.unitWeight} kg
+                        Net: {(() => {
+                          const pc = parseFloat(sku.pouchCount) || 0, pw = parseFloat(sku.pouchWeight) || 0, u = sku.unitOfMeasure || 'g';
+                          if (pc > 0 && pw > 0) return `${(pc * pw).toFixed(0)}${u} (${pc} × ${pw}${u})`;
+                          const sum = (sku.singleUnitIngredients || []).reduce((s, i) => s + (parseFloat(i.gramsPerUnit) || 0), 0);
+                          return sum > 0 ? `${sum.toFixed(0)}g` : '—';
+                        })()}
                       </p>
                     ) : (
                       <p className="text-sm text-primary font-semibold mt-1">
@@ -2574,27 +2579,26 @@ export default function SKUManagement() {
                           {sku.singleUnitIngredients.map((ing, idx) => (
                             <div key={idx} className="bg-gray-50 p-2 rounded text-sm flex justify-between">
                               <span>{ing.ingredientName}</span>
-                              <span className="font-semibold">{ing.gramsPerUnit}g ({ing.percentage}%)</span>
+                              <span className="font-semibold">{ing.gramsPerUnit}g</span>
                             </div>
                           ))}
                         </div>
                       ) : (
                         <p className="text-sm text-gray-500 mb-4">No ingredients added</p>
                       )}
-                      <div className="bg-blue-50 p-3 rounded-lg border-t">
-                        <p className="text-xs text-blue-600 font-semibold mb-1">SINGLE UNIT</p>
-                        <p className="text-sm text-gray-700">Weight: {sku.unitWeight} kg</p>
-                        {sku.singleUnit && (
-                          <>
-                            <p className="text-sm text-gray-700">
-                              Total: {((sku.singleUnit?.totalGrams || 0) / 1000).toFixed(2)} kg
-                            </p>
-                            <p className="text-sm font-bold text-blue-700">
-                              ₹{(sku.singleUnit?.rawMaterialCost || 0).toFixed(2)} per unit
-                            </p>
-                          </>
-                        )}
-                      </div>
+                      {(() => {
+                        const pc = parseFloat(sku.pouchCount) || 0, pw = parseFloat(sku.pouchWeight) || 0, u = sku.unitOfMeasure || 'g';
+                        const ingSum = (sku.singleUnitIngredients || []).reduce((s, i) => s + (parseFloat(i.gramsPerUnit) || 0), 0);
+                        const netStr = (pc > 0 && pw > 0) ? `${(pc * pw).toFixed(0)} ${u}` : (ingSum > 0 ? `${ingSum.toFixed(0)} g` : '—');
+                        const cost = (sku.singleUnitIngredients || []).reduce((s, i) => s + ((parseFloat(i.gramsPerUnit) || 0) * (parseFloat(i.pricePerGram) || 0)), 0);
+                        return (
+                          <div className="bg-blue-50 p-3 rounded-lg border-t">
+                            <p className="text-xs text-blue-600 font-semibold mb-1">PROCESSED PACK</p>
+                            <p className="text-sm text-gray-700">Net weight: {netStr}{pc > 1 ? ` (${pc} × ${pw}${u})` : ''}</p>
+                            {cost > 0 && <p className="text-sm font-bold text-blue-700">₹{cost.toFixed(2)} per unit (raw material)</p>}
+                          </div>
+                        );
+                      })()}
                     </div>
                   ) : (
                     /* Weekly Pack Details */
