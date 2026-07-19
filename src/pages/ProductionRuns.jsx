@@ -1040,7 +1040,8 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
                     <div className="grid grid-cols-2 gap-2">
                       <div>
                         <label className="block text-[11px] text-gray-500 mb-1">Date</label>
-                        <input type="date" value={s.date || ''} onChange={e => updateSession(idx, 'date', e.target.value)}
+                        <input type="date" value={s.date || ''} max={new Date().toISOString().split('T')[0]}
+                          onChange={e => updateSession(idx, 'date', e.target.value)}
                           className="w-full border rounded-lg px-2 py-1.5 text-sm" />
                       </div>
                       <div>
