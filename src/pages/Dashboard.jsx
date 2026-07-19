@@ -51,6 +51,20 @@ export default function Dashboard() {
     .filter(o => o.order_date === new Date().toISOString().split('T')[0])
     .reduce((sum, o) => sum + (o.total_amount || 0), 0);
 
+  // Backup reminder — days since the last export on this device
+  const lastBackupRaw = typeof localStorage !== 'undefined' ? localStorage.getItem('wklyNutsLastBackup') : null;
+  const backupDays = lastBackupRaw ? Math.floor((Date.now() - new Date(lastBackupRaw).getTime()) / 86400000) : null;
+  const backupTone = backupDays === null ? 'red' : backupDays >= 7 ? 'amber' : backupDays >= 3 ? 'amber' : 'green';
+  const backupStyles = {
+    green: 'bg-green-50 border-green-200 text-green-800',
+    amber: 'bg-amber-50 border-amber-200 text-amber-800',
+    red: 'bg-red-50 border-red-200 text-red-800',
+  }[backupTone];
+  const backupText = backupDays === null
+    ? 'No backup yet on this device — export one now to be safe.'
+    : backupDays === 0 ? 'Backed up today. ✓'
+    : `Last backup was ${backupDays} day${backupDays === 1 ? '' : 's'} ago${backupDays >= 7 ? ' — time to back up!' : '.'}`;
+
   const quickActions = [
     { title: 'New Order', href: '/orders', icon: Truck, color: 'bg-teal-500' },
     { title: 'Add Vendor', href: '/vendors', icon: Users, color: 'bg-blue-500' },
@@ -62,6 +76,15 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
+      {/* Backup reminder */}
+      <Link to="/settings" className={`flex items-center justify-between gap-3 border rounded-xl px-4 py-2.5 text-sm hover:opacity-90 transition ${backupStyles}`}>
+        <span className="flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+          <span className="font-medium">{backupText}</span>
+        </span>
+        <span className="text-xs font-semibold underline whitespace-nowrap">Back up now →</span>
+      </Link>
+
       {/* Welcome Section */}
       <div className="bg-gradient-to-r from-primary to-primary-700 rounded-2xl p-6 text-white">
         <div className="flex items-start gap-4">
