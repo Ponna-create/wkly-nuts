@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Plus, Edit, Trash2, Calculator, X, Package, ChevronLeft, ChevronRight, Check, Printer, FlaskConical, IndianRupee } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import logo from '../assets/wkly-nuts-logo.png';
@@ -94,6 +94,21 @@ export default function SKUManagement() {
     return words.map(w => w[0]).join('').toUpperCase();
   };
 
+  // Full auto SKU: PRODUCT-SIZE (e.g. SC-280G, DT-250G). Still editable.
+  const buildAutoSku = (fd) => {
+    const base = generateSkuCode(fd.name);
+    if (!base) return '';
+    const u = (fd.unitOfMeasure || 'g').toUpperCase();
+    let size = '';
+    if (fd.skuType === 'single') {
+      const net = (parseFloat(fd.pouchCount) || 0) * (parseFloat(fd.pouchWeight) || 0);
+      if (net > 0) size = `${net}${u}`;
+    } else if (fd.skuType === 'repack') {
+      if (fd.packSize) size = `${fd.packSize}${u}`;
+    }
+    return size ? `${base}-${size}` : base;
+  };
+
   const [formData, setFormData] = useState({
     name: '',
     skuCode: '',
@@ -145,6 +160,17 @@ export default function SKUManagement() {
   });
 
   const [productionRequirements, setProductionRequirements] = useState(null);
+  const [skuCodeEdited, setSkuCodeEdited] = useState(false);
+
+  // Auto-build the SKU code from name + size, until the user edits it by hand
+  useEffect(() => {
+    if (skuCodeEdited || editingSKU) return;
+    setFormData(f => {
+      const auto = buildAutoSku(f);
+      return (auto && auto !== f.skuCode) ? { ...f, skuCode: auto } : f;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.name, formData.skuType, formData.pouchCount, formData.pouchWeight, formData.packSize, formData.unitOfMeasure, skuCodeEdited, editingSKU]);
 
   if (!state) {
     return (
@@ -231,6 +257,7 @@ export default function SKUManagement() {
       sellingPrice: '',
     });
     setCurrentRecipeItem({ ingredientId: '', gramsPerSachet: '' });
+    setSkuCodeEdited(false);
     setCurrentStep(1);
     setCurrentDay('MON');
     setEditingSKU(null);
@@ -975,6 +1002,7 @@ export default function SKUManagement() {
           </button>
           <button
             onClick={() => {
+              resetForm();
               setShowForm(true);
               setShowCalculator(false);
             }}
@@ -1028,11 +1056,7 @@ export default function SKUManagement() {
                   <input
                     type="text"
                     value={formData.name}
-                    onChange={(e) => {
-                      const newName = e.target.value;
-                      const autoCode = generateSkuCode(newName);
-                      setFormData({ ...formData, name: newName, skuCode: formData.skuCode === generateSkuCode(formData.name) || !formData.skuCode ? autoCode : formData.skuCode });
-                    }}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     className="input-field"
                     placeholder="e.g., Day Pack, Night Pack, Dates 0.5kg"
                   />
@@ -1042,7 +1066,7 @@ export default function SKUManagement() {
                   <input
                     type="text"
                     value={formData.skuCode}
-                    onChange={(e) => setFormData({ ...formData, skuCode: e.target.value.toUpperCase() })}
+                    onChange={(e) => { setSkuCodeEdited(true); setFormData({ ...formData, skuCode: e.target.value.toUpperCase() }); }}
                     className="input-field font-mono"
                     placeholder="e.g., DP, SO, SC"
                     maxLength={10}
