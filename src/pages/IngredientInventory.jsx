@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, ChevronDown, ChevronRight, Package, AlertCircle, Search, X, Edit2, Check, RefreshCw } from 'lucide-react';
+import { Plus, ChevronDown, ChevronRight, Package, AlertCircle, Search, X, Edit2, Check, RefreshCw, Warehouse, Boxes } from 'lucide-react';
 import { dbService } from '../services/supabase';
 import { useApp } from '../context/AppContext';
 
@@ -35,6 +35,9 @@ export default function IngredientInventory() {
     receivedDate: new Date().toISOString().split('T')[0],
   });
   const [addingBatch, setAddingBatch] = useState(false);
+  const [activeTab, setActiveTab] = useState('raw'); // 'raw' | 'finished'
+  const [finishedGoods, setFinishedGoods] = useState([]);
+  const [loadingFinished, setLoadingFinished] = useState(true);
 
   const loadIngredients = useCallback(async () => {
     setLoading(true);
@@ -43,7 +46,27 @@ export default function IngredientInventory() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { loadIngredients(); }, [loadIngredients]);
+  const loadFinished = useCallback(async () => {
+    setLoadingFinished(true);
+    const { data } = await dbService.getInventory();
+    setFinishedGoods(data || []);
+    setLoadingFinished(false);
+  }, []);
+
+  useEffect(() => { loadIngredients(); loadFinished(); }, [loadIngredients, loadFinished]);
+
+  // Finished-goods rows flattened to one line per pack type in stock
+  const finishedRows = finishedGoods.flatMap(item => {
+    const rows = [];
+    const name = item.sku?.name || 'Unknown SKU';
+    if (item.weeklyPacksAvailable > 0) rows.push({ id: item.id + '-w', name, packType: 'Weekly pack', qty: item.weeklyPacksAvailable });
+    if (item.monthlyPacksAvailable > 0) rows.push({ id: item.id + '-m', name, packType: 'Monthly pack', qty: item.monthlyPacksAvailable });
+    if (item.singleUnitsAvailable > 0) rows.push({ id: item.id + '-s', name, packType: 'Unit', qty: item.singleUnitsAvailable });
+    if (rows.length === 0) rows.push({ id: item.id + '-z', name, packType: '—', qty: 0 });
+    return rows;
+  }).filter(r => r.name.toLowerCase().includes(searchTerm.toLowerCase()));
+
+  const totalFinishedUnits = finishedRows.reduce((s, r) => s + r.qty, 0);
 
   const filtered = ingredients.filter(ing =>
     ing.name.toLowerCase().includes(searchTerm.toLowerCase())
@@ -146,30 +169,98 @@ export default function IngredientInventory() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Ingredient Inventory</h1>
-          <p className="text-gray-500 mt-1 text-sm">Track Raw Materials & Batches (FIFO)</p>
+          <h1 className="text-2xl font-bold text-gray-900">Inventory</h1>
+          <p className="text-gray-500 mt-1 text-sm">Raw materials you buy, and finished stock you make</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={loadIngredients} className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 text-sm">
+          <button onClick={() => { loadIngredients(); loadFinished(); }} className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 text-sm">
             <RefreshCw className="w-4 h-4" /> Refresh
           </button>
-          <button onClick={() => setShowAddBatchModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 text-sm font-medium">
-            <Plus className="w-4 h-4" /> Receive Stock (New Batch)
-          </button>
+          {activeTab === 'raw' && (
+            <button onClick={() => setShowAddBatchModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 text-sm font-medium">
+              <Plus className="w-4 h-4" /> Receive Stock (New Batch)
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 bg-white rounded-xl p-1 shadow-sm border border-gray-100 max-w-md">
+        <button onClick={() => setActiveTab('raw')}
+          className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium flex-1 transition-all ${activeTab === 'raw' ? 'bg-amber-500 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}>
+          <Warehouse className="w-4 h-4" /> Raw Materials
+        </button>
+        <button onClick={() => setActiveTab('finished')}
+          className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium flex-1 transition-all ${activeTab === 'finished' ? 'bg-teal-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}>
+          <Boxes className="w-4 h-4" /> Finished Goods
+        </button>
+      </div>
+
+      {/* Summary tiles */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+          <p className="text-sm text-gray-500">Raw ingredients</p>
+          <p className="text-2xl font-bold">{ingredients.length}</p>
+        </div>
+        <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+          <p className="text-sm text-gray-500">Low-stock raw</p>
+          <p className="text-2xl font-bold text-red-600">{ingredients.filter(i => parseFloat(i.current_stock_total || 0) <= parseFloat(i.safety_stock_level || 0)).length}</p>
+        </div>
+        <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+          <p className="text-sm text-gray-500">SKUs in stock</p>
+          <p className="text-2xl font-bold text-teal-600">{finishedGoods.filter(f => f.weeklyPacksAvailable > 0 || f.monthlyPacksAvailable > 0 || f.singleUnitsAvailable > 0).length}</p>
+        </div>
+        <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+          <p className="text-sm text-gray-500">Finished units</p>
+          <p className="text-2xl font-bold text-teal-600">{totalFinishedUnits}</p>
         </div>
       </div>
 
       {/* Search */}
       <div className="relative max-w-md">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-        <input type="text" placeholder="Search ingredients..."
+        <input type="text" placeholder={activeTab === 'raw' ? 'Search ingredients...' : 'Search finished goods...'}
           value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
           className="w-full pl-10 pr-4 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-teal-500" />
       </div>
 
-      {/* Ingredient List */}
-      {loading ? (
+      {/* Finished Goods tab */}
+      {activeTab === 'finished' && (
+        loadingFinished ? (
+          <div className="text-center py-16 text-gray-400">Loading finished goods...</div>
+        ) : finishedRows.length === 0 ? (
+          <div className="text-center py-16 bg-white rounded-xl border">
+            <Boxes className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+            <p className="text-gray-500 font-medium">No finished goods in stock yet</p>
+            <p className="text-gray-400 text-sm mt-1">Stock appears here when you mark a production run as Produced.</p>
+          </div>
+        ) : (
+          <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs text-gray-500 border-b bg-gray-50">
+                  <th className="text-left px-4 py-3 font-medium">SKU</th>
+                  <th className="text-left px-4 py-3 font-medium">Pack type</th>
+                  <th className="text-right px-4 py-3 font-medium">In stock</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {finishedRows.map(r => (
+                  <tr key={r.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 font-medium text-gray-900">{r.name}</td>
+                    <td className="px-4 py-3 text-gray-500">{r.packType}</td>
+                    <td className="px-4 py-3 text-right font-bold text-teal-700">{r.qty}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      )}
+
+      {/* Raw Materials tab */}
+      {activeTab === 'raw' && (loading ? (
         <div className="text-center py-16 text-gray-400">Loading ingredients...</div>
       ) : filtered.length === 0 ? (
         <div className="text-center py-16 bg-white rounded-xl border">
@@ -391,7 +482,7 @@ export default function IngredientInventory() {
             );
           })}
         </div>
-      )}
+      ))}
 
       {/* Add Batch Modal */}
       {showAddBatchModal && (
