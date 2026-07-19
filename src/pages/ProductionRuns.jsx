@@ -26,10 +26,10 @@ const SC_PHASES = [
 ];
 
 const STATUSES = [
-  { value: 'planned', label: 'Planned', color: 'bg-gray-100 text-gray-700', icon: Clock },
-  { value: 'in_progress', label: 'In Progress', color: 'bg-blue-100 text-blue-700', icon: Play },
-  { value: 'quality_check', label: 'Quality Check', color: 'bg-yellow-100 text-yellow-700', icon: AlertTriangle },
-  { value: 'completed', label: 'Completed', color: 'bg-green-100 text-green-700', icon: CheckCircle2 },
+  { value: 'planned', label: 'To Make', color: 'bg-gray-100 text-gray-700', icon: Clock },
+  { value: 'in_progress', label: 'Making', color: 'bg-blue-100 text-blue-700', icon: Play },
+  { value: 'quality_check', label: 'Making', color: 'bg-blue-100 text-blue-700', icon: Play },
+  { value: 'completed', label: 'Produced', color: 'bg-green-100 text-green-700', icon: CheckCircle2 },
   { value: 'cancelled', label: 'Cancelled', color: 'bg-red-100 text-red-700', icon: X },
 ];
 
@@ -167,12 +167,14 @@ export default function ProductionRuns() {
     showToast(`Status updated to ${getStatusInfo(newStatus).label}`);
   };
 
-  // Generate batch label info
+  // Generate batch label info — batch-level number: SKUCODE-DDMMYY (no per-box serials)
   const getBatchLabel = (run) => {
     const mfd = run.batch_date;
     const useByDate = new Date(mfd);
     useByDate.setDate(useByDate.getDate() + (run.shelf_life_days || 30));
-    const batchNo = run.instance_start || run.run_number;
+    const d = new Date(mfd);
+    const ddmmyy = `${String(d.getDate()).padStart(2, '0')}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getFullYear()).slice(-2)}`;
+    const batchNo = (run.sku_code ? `${run.sku_code}-${ddmmyy}` : run.run_number);
     return {
       batchNo,
       mfd: new Date(mfd).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
@@ -285,6 +287,9 @@ export default function ProductionRuns() {
             const statusInfo = getStatusInfo(run.status);
             const StatusIcon = statusInfo.icon;
             const label = getBatchLabel(run);
+            const runSku = (state.skus || []).find(s => (s.skuCode || s.sku_code) === run.sku_code);
+            const labelMrp = runSku?.sellingPrice || runSku?.weeklyPack?.sellingPrice || 0;
+            const labelNetWeight = runSku?.unitWeight ? `${(runSku.unitWeight * 1000).toFixed(0)}g` : (runSku?.targetWeightPerSachet ? `${runSku.targetWeightPerSachet}g/sachet` : null);
             return (
               <div key={run.id} className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
                 <div className="flex items-center gap-3 p-4 cursor-pointer hover:bg-gray-50"
@@ -327,30 +332,25 @@ export default function ProductionRuns() {
 
                 {expandedId === run.id && (
                   <div className="border-t bg-gray-50 p-4 space-y-4">
-                    {/* Batch Label Info */}
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                    {/* Batch Label — what Priya stamps on the pack */}
+                    <div className="bg-white border-2 border-gray-300 rounded-lg p-3">
                       <div className="flex items-center justify-between mb-2">
-                        <p className="text-xs font-medium text-blue-700">Batch Label Info</p>
-                        <button onClick={(e) => { e.stopPropagation(); handlePrintBatchLabel(run); }}
-                          className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium">
-                          <Printer className="w-3 h-3" /> Print Label
-                        </button>
+                        <p className="text-xs font-semibold text-gray-700">Batch Label — stamp these on the pack</p>
+                        <span className="text-[10px] text-gray-400">auto-generated</span>
                       </div>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                        <div><span className="text-blue-500">Batch No:</span> <span className="font-mono font-bold text-blue-900">{label.batchNo}</span></div>
-                        <div><span className="text-blue-500">MFD:</span> <span className="font-bold text-blue-900">{label.mfd}</span></div>
-                        <div><span className="text-blue-500">Use By:</span> <span className="font-bold text-blue-900">{label.useBy}</span></div>
-                        <div><span className="text-blue-500">Qty:</span> <span className="font-bold text-blue-900">{label.quantity} boxes</span></div>
+                      <div className="space-y-1.5 text-sm max-w-xs">
+                        {labelNetWeight && (
+                          <div className="flex justify-between"><span className="text-gray-500">Net Qty</span><span className="font-semibold">{labelNetWeight}</span></div>
+                        )}
+                        <div className="flex justify-between"><span className="text-gray-500">Batch No</span><span className="font-mono font-bold">{label.batchNo}</span></div>
+                        <div className="flex justify-between"><span className="text-gray-500">MFD</span><span className="font-semibold">{label.mfd}</span></div>
+                        <div className="flex justify-between"><span className="text-gray-500">Use By</span><span className="font-semibold">{label.useBy}</span></div>
+                        {labelMrp > 0 && (
+                          <div className="flex justify-between"><span className="text-gray-500">MRP ₹ (incl. taxes)</span><span className="font-semibold">₹{labelMrp}</span></div>
+                        )}
                       </div>
+                      <p className="text-[10px] text-gray-400 mt-2">Batch No = SKU code + date. Nutrition, address &amp; branding are pre-printed on the pack.</p>
                     </div>
-
-                    {/* Instance Numbers */}
-                    {run.instance_start && (
-                      <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
-                        <p className="text-xs font-medium text-emerald-700 mb-1">SKU Instance Range</p>
-                        <p className="font-mono text-sm text-emerald-900">{run.instance_start} &rarr; {run.instance_end}</p>
-                      </div>
-                    )}
 
                     {/* Details Grid */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
@@ -434,29 +434,12 @@ export default function ProductionRuns() {
                           <Play className="w-3.5 h-3.5" /> Start Production
                         </button>
                       )}
-                      {run.status === 'in_progress' && (
-                        <button onClick={(e) => { e.stopPropagation(); handleStatusChange(run, 'quality_check'); }}
-                          className="flex items-center gap-1 px-3 py-1.5 text-sm bg-yellow-600 text-white rounded-lg hover:bg-yellow-700">
-                          <AlertTriangle className="w-3.5 h-3.5" /> Send to QC
-                        </button>
-                      )}
-                      {run.status === 'quality_check' && (
+                      {(run.status === 'in_progress' || run.status === 'quality_check') && (
                         <button onClick={(e) => { e.stopPropagation(); handleStatusChange(run, 'completed'); }}
                           className="flex items-center gap-1 px-3 py-1.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700">
-                          <CheckCircle2 className="w-3.5 h-3.5" /> Mark as Produced
+                          <CheckCircle2 className="w-3.5 h-3.5" /> Mark Produced
                         </button>
                       )}
-                      {/* Also allow direct "Produced" from in_progress */}
-                      {run.status === 'in_progress' && (
-                        <button onClick={(e) => { e.stopPropagation(); handleStatusChange(run, 'completed'); }}
-                          className="flex items-center gap-1 px-3 py-1.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700">
-                          <CheckCircle2 className="w-3.5 h-3.5" /> Mark as Produced
-                        </button>
-                      )}
-                      <button onClick={(e) => { e.stopPropagation(); handlePrintBatchLabel(run); }}
-                        className="flex items-center gap-1 px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded-lg">
-                        <Printer className="w-3.5 h-3.5" /> Print Label
-                      </button>
                       <button onClick={(e) => { e.stopPropagation(); setEditingRun(run); setShowForm(true); }}
                         className="flex items-center gap-1 px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded-lg">
                         <Edit2 className="w-3.5 h-3.5" /> Edit
@@ -731,6 +714,13 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
   }));
   const removeSession = (idx) => setForm(f => ({
     ...f, labourSessions: f.labourSessions.filter((_, i) => i !== idx),
+  }));
+  const nowHM = () => { const d = new Date(); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+  const startSessionTimer = (idx) => setForm(f => ({
+    ...f, labourSessions: f.labourSessions.map((s, i) => i === idx ? { ...s, start: nowHM(), date: s.date || new Date().toISOString().split('T')[0] } : s),
+  }));
+  const stopSessionTimer = (idx) => setForm(f => ({
+    ...f, labourSessions: f.labourSessions.map((s, i) => i === idx ? { ...s, end: nowHM() } : s),
   }));
 
   const totalCost = (parseFloat(form.ingredientCost) || 0) + (parseFloat(form.packagingCost) || 0) + labourCost;
@@ -1035,7 +1025,13 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
                   <div key={idx} className="bg-white border border-teal-200 rounded-lg p-3 space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-semibold text-teal-700">Session {idx + 1}</span>
-                      <button type="button" onClick={() => removeSession(idx)} className="p-0.5 text-red-400 hover:text-red-600"><X className="w-4 h-4" /></button>
+                      <div className="flex items-center gap-1">
+                        <button type="button" onClick={() => startSessionTimer(idx)}
+                          className="text-[11px] px-2 py-0.5 rounded bg-teal-100 text-teal-700 font-medium hover:bg-teal-200">▶ Start now</button>
+                        <button type="button" onClick={() => stopSessionTimer(idx)}
+                          className="text-[11px] px-2 py-0.5 rounded bg-teal-100 text-teal-700 font-medium hover:bg-teal-200">⏹ Stop now</button>
+                        <button type="button" onClick={() => removeSession(idx)} className="p-0.5 text-red-400 hover:text-red-600"><X className="w-4 h-4" /></button>
+                      </div>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       <div>
