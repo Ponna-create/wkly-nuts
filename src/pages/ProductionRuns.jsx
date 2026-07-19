@@ -677,10 +677,11 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
     ingredientCost: run?.ingredient_cost || '',
     packagingCost: run?.packaging_cost || '',
     laborCost: run?.labor_cost || '',
-    labourStart: run?.labour_start || '',
-    labourEnd: run?.labour_end || '',
-    labourPeople: run?.labour_people || '',
-    labourRate: run?.labour_rate_per_hour || '',
+    labourSessions: (run?.labour_sessions?.length
+      ? run.labour_sessions
+      : run?.labour_start
+        ? [{ date: run.batch_date, process: '', start: run.labour_start, end: run.labour_end, people: run.labour_people || '', rate: run.labour_rate_per_hour || '' }]
+        : []),
     notes: run?.notes || '',
     shelfLifeDays: run?.shelf_life_days || 30,
     ingredientsUsed: run?.ingredients_used || [],
@@ -707,15 +708,30 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
     loadDropdowns();
   }, []);
 
-  // Time-based labour: hours(start→end) × people × ₹/hour per person
+  // Time-based labour across one or more sessions (different days / processes).
+  // Each session: hours(start→end) × people × ₹/hour per person. MFD is separate.
   const parseHM = (t) => { if (!t) return null; const [h, m] = String(t).split(':').map(Number); return (h || 0) * 60 + (m || 0); };
-  const startMin = parseHM(form.labourStart);
-  const endMin = parseHM(form.labourEnd);
-  const labourHours = (startMin != null && endMin != null && endMin > startMin) ? (endMin - startMin) / 60 : 0;
-  const labourRate = parseFloat(form.labourRate) || 0; // per person, per hour
-  const labourPeople = parseInt(form.labourPeople) || 1;
-  const labourHourlyCost = labourPeople * labourRate; // e.g. 3 × 40 = ₹120/hr
-  const labourCost = labourHours * labourHourlyCost;
+  const sessionMetrics = (s) => {
+    const sm = parseHM(s.start), em = parseHM(s.end);
+    const hrs = (sm != null && em != null && em > sm) ? (em - sm) / 60 : 0;
+    const ppl = parseInt(s.people) || 1;
+    const rate = parseFloat(s.rate) || 0;
+    return { hrs, ppl, rate, hourly: ppl * rate, cost: hrs * ppl * rate };
+  };
+  const labourSessions = form.labourSessions || [];
+  const labourHours = labourSessions.reduce((sum, s) => sum + sessionMetrics(s).hrs, 0);
+  const labourCost = labourSessions.reduce((sum, s) => sum + sessionMetrics(s).cost, 0);
+
+  const addSession = () => setForm(f => ({
+    ...f,
+    labourSessions: [...(f.labourSessions || []), { date: f.batchDate, process: '', start: '', end: '', people: '', rate: (f.labourSessions?.[f.labourSessions.length - 1]?.rate) || '' }],
+  }));
+  const updateSession = (idx, field, val) => setForm(f => ({
+    ...f, labourSessions: f.labourSessions.map((s, i) => i === idx ? { ...s, [field]: val } : s),
+  }));
+  const removeSession = (idx) => setForm(f => ({
+    ...f, labourSessions: f.labourSessions.filter((_, i) => i !== idx),
+  }));
 
   const totalCost = (parseFloat(form.ingredientCost) || 0) + (parseFloat(form.packagingCost) || 0) + labourCost;
   const runQty = parseInt(form.actualQuantity) || parseInt(form.plannedQuantity) || 0;
@@ -839,10 +855,7 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
       ingredient_cost: parseFloat(form.ingredientCost) || 0,
       packaging_cost: parseFloat(form.packagingCost) || 0,
       labor_cost: labourCost,
-      labour_start: form.labourStart || null,
-      labour_end: form.labourEnd || null,
-      labour_people: parseInt(form.labourPeople) || null,
-      labour_rate_per_hour: parseFloat(form.labourRate) || null,
+      labour_sessions: form.labourSessions || [],
       total_cost: totalCost,
       cost_per_unit: costPerUnit,
       shelf_life_days: parseInt(form.shelfLifeDays) || 30,
@@ -860,10 +873,7 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
       ingredientCost: parseFloat(form.ingredientCost) || 0,
       packagingCost: parseFloat(form.packagingCost) || 0,
       laborCost: labourCost,
-      labourStart: form.labourStart || null,
-      labourEnd: form.labourEnd || null,
-      labourPeople: parseInt(form.labourPeople) || null,
-      labourRate: parseFloat(form.labourRate) || null,
+      labourSessions: form.labourSessions || [],
       totalCost: totalCost,
       costPerUnit: costPerUnit,
       ingredientsUsed: form.ingredientsUsed.filter(i => i.ingredient_name),
@@ -1004,40 +1014,72 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
             </div>
           )}
 
-          {/* Labour — time-based */}
+          {/* Labour — one or more sessions (different days / processes) */}
           <div>
-            <label className="text-sm font-medium text-gray-700 flex items-center gap-1 mb-2">
-              <Clock className="w-4 h-4 text-teal-600" /> Labour (time worked)
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm font-medium text-gray-700 flex items-center gap-1">
+                <Clock className="w-4 h-4 text-teal-600" /> Labour (time worked)
+              </label>
+              <button type="button" onClick={addSession}
+                className="text-xs text-teal-600 hover:text-teal-800 font-medium">+ Add work session</button>
+            </div>
             <div className="bg-teal-50 border border-teal-200 rounded-lg p-3 space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">Start time</label>
-                  <TimeInput12 value={form.labourStart} onChange={v => setForm(f => ({ ...f, labourStart: v }))} />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">End time</label>
-                  <TimeInput12 value={form.labourEnd} onChange={v => setForm(f => ({ ...f, labourEnd: v }))} />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">People worked</label>
-                  <input type="number" min="0" value={form.labourPeople} onChange={e => setForm(f => ({ ...f, labourPeople: e.target.value }))}
-                    className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="e.g. 3" />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">₹/hour per person</label>
-                  <input type="number" min="0" step="0.01" value={form.labourRate} onChange={e => setForm(f => ({ ...f, labourRate: e.target.value }))}
-                    className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="e.g. 40" />
-                </div>
-              </div>
-              {labourRate > 0 && (
-                <div className="text-xs text-gray-500">
-                  Hourly cost: {labourPeople} {labourPeople === 1 ? 'person' : 'people'} × ₹{labourRate.toLocaleString('en-IN')} = <span className="font-semibold text-teal-700">₹{labourHourlyCost.toLocaleString('en-IN')}/hr</span>
-                </div>
+              {labourSessions.length === 0 && (
+                <p className="text-xs text-teal-600 italic">
+                  Add a session per day/step — e.g. Day 1 “Sachet filling”, Day 2 “Boxing”. The MFD above stays the same.
+                </p>
               )}
+              {labourSessions.map((s, idx) => {
+                const m = sessionMetrics(s);
+                return (
+                  <div key={idx} className="bg-white border border-teal-200 rounded-lg p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-teal-700">Session {idx + 1}</span>
+                      <button type="button" onClick={() => removeSession(idx)} className="p-0.5 text-red-400 hover:text-red-600"><X className="w-4 h-4" /></button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[11px] text-gray-500 mb-1">Date</label>
+                        <input type="date" value={s.date || ''} onChange={e => updateSession(idx, 'date', e.target.value)}
+                          className="w-full border rounded-lg px-2 py-1.5 text-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-gray-500 mb-1">Process</label>
+                        <input type="text" value={s.process || ''} onChange={e => updateSession(idx, 'process', e.target.value)}
+                          list="process-list" placeholder="e.g. Sachet filling"
+                          className="w-full border rounded-lg px-2 py-1.5 text-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-gray-500 mb-1">Start time</label>
+                        <TimeInput12 value={s.start} onChange={v => updateSession(idx, 'start', v)} />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-gray-500 mb-1">End time</label>
+                        <TimeInput12 value={s.end} onChange={v => updateSession(idx, 'end', v)} />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-gray-500 mb-1">People</label>
+                        <input type="number" min="0" value={s.people} onChange={e => updateSession(idx, 'people', e.target.value)}
+                          className="w-full border rounded-lg px-2 py-1.5 text-sm" placeholder="3" />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-gray-500 mb-1">₹/hour per person</label>
+                        <input type="number" min="0" step="0.01" value={s.rate} onChange={e => updateSession(idx, 'rate', e.target.value)}
+                          className="w-full border rounded-lg px-2 py-1.5 text-sm" placeholder="40" />
+                      </div>
+                    </div>
+                    {m.cost > 0 && (
+                      <div className="text-[11px] text-gray-500 flex justify-between border-t border-gray-100 pt-1.5">
+                        <span>{m.hrs.toFixed(2)} hr × {m.ppl} × ₹{m.rate.toLocaleString('en-IN')} (₹{m.hourly.toLocaleString('en-IN')}/hr)</span>
+                        <span className="font-semibold text-teal-700">₹{m.cost.toFixed(2)}</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
               {labourCost > 0 && (
                 <div className="border-t border-teal-300 pt-2 flex items-center justify-between text-sm">
-                  <span className="text-gray-600">{labourHours.toFixed(2)} hr × ₹{labourHourlyCost.toLocaleString('en-IN')}/hr</span>
+                  <span className="text-gray-600 font-medium">Total labour · {labourHours.toFixed(2)} hr</span>
                   <span className="font-bold text-teal-800">
                     ₹{labourCost.toFixed(2)}
                     {runQty > 0 && <span className="font-normal text-teal-600"> · ₹{(labourCost / runQty).toFixed(2)}/unit</span>}
@@ -1045,6 +1087,15 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
                 </div>
               )}
             </div>
+            <datalist id="process-list">
+              <option value="Sachet filling" />
+              <option value="Boxing / Packing" />
+              <option value="Roasting" />
+              <option value="Grinding / Powdering" />
+              <option value="Sorting" />
+              <option value="Labelling" />
+              <option value="Sealing" />
+            </datalist>
           </div>
 
           {/* Notes */}
