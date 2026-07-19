@@ -40,6 +40,43 @@ const QUALITY_STATUSES = [
   { value: 'partial', label: 'Partial', color: 'text-yellow-600' },
 ];
 
+// 12-hour AM/PM time entry. Stores/returns a 24-hour "HH:MM" string so the
+// labour math (parseHM) and DB stay unchanged.
+function TimeInput12({ value, onChange }) {
+  const parse = (v) => {
+    if (!v || !String(v).includes(':')) return { h12: '', min: '', ampm: 'AM' };
+    const [H, M] = String(v).split(':').map(Number);
+    const ampm = H >= 12 ? 'PM' : 'AM';
+    let h12 = H % 12; if (h12 === 0) h12 = 12;
+    return { h12: String(h12), min: String(M).padStart(2, '0'), ampm };
+  };
+  const { h12, min, ampm } = parse(value);
+  const emit = (nh12, nmin, nampm) => {
+    const hh = parseInt(nh12);
+    const mm = parseInt(nmin);
+    if (!hh || isNaN(mm)) { onChange(''); return; }
+    let H = hh % 12;
+    if (nampm === 'PM') H += 12;
+    onChange(`${String(H).padStart(2, '0')}:${String(Math.min(59, Math.max(0, mm))).padStart(2, '0')}`);
+  };
+  return (
+    <div className="flex items-center gap-1">
+      <input type="number" min="1" max="12" value={h12} placeholder="10"
+        onChange={e => emit(e.target.value, min || '00', ampm)}
+        className="w-12 border rounded-lg px-2 py-2 text-sm text-center" />
+      <span className="text-gray-400">:</span>
+      <input type="number" min="0" max="59" value={min} placeholder="30"
+        onChange={e => emit(h12 || '12', e.target.value, ampm)}
+        className="w-12 border rounded-lg px-2 py-2 text-sm text-center" />
+      <button type="button"
+        onClick={() => emit(h12 || '12', min || '00', ampm === 'AM' ? 'PM' : 'AM')}
+        className="px-2.5 py-2 border rounded-lg text-sm font-semibold text-teal-700 bg-white hover:bg-teal-50">
+        {ampm}
+      </button>
+    </div>
+  );
+}
+
 export default function ProductionRuns() {
   const { state, showToast } = useApp();
   const [runs, setRuns] = useState([]);
@@ -670,13 +707,15 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
     loadDropdowns();
   }, []);
 
-  // Time-based labour: hours between start & end × total ₹/hour for all staff
+  // Time-based labour: hours(start→end) × people × ₹/hour per person
   const parseHM = (t) => { if (!t) return null; const [h, m] = String(t).split(':').map(Number); return (h || 0) * 60 + (m || 0); };
   const startMin = parseHM(form.labourStart);
   const endMin = parseHM(form.labourEnd);
   const labourHours = (startMin != null && endMin != null && endMin > startMin) ? (endMin - startMin) / 60 : 0;
-  const labourRate = parseFloat(form.labourRate) || 0;
-  const labourCost = labourHours * labourRate;
+  const labourRate = parseFloat(form.labourRate) || 0; // per person, per hour
+  const labourPeople = parseInt(form.labourPeople) || 1;
+  const labourHourlyCost = labourPeople * labourRate; // e.g. 3 × 40 = ₹120/hr
+  const labourCost = labourHours * labourHourlyCost;
 
   const totalCost = (parseFloat(form.ingredientCost) || 0) + (parseFloat(form.packagingCost) || 0) + labourCost;
   const runQty = parseInt(form.actualQuantity) || parseInt(form.plannedQuantity) || 0;
@@ -974,28 +1013,31 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">Start time</label>
-                  <input type="time" value={form.labourStart} onChange={e => setForm(f => ({ ...f, labourStart: e.target.value }))}
-                    className="w-full border rounded-lg px-3 py-2 text-sm" />
+                  <TimeInput12 value={form.labourStart} onChange={v => setForm(f => ({ ...f, labourStart: v }))} />
                 </div>
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">End time</label>
-                  <input type="time" value={form.labourEnd} onChange={e => setForm(f => ({ ...f, labourEnd: e.target.value }))}
-                    className="w-full border rounded-lg px-3 py-2 text-sm" />
+                  <TimeInput12 value={form.labourEnd} onChange={v => setForm(f => ({ ...f, labourEnd: v }))} />
                 </div>
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">People worked</label>
                   <input type="number" min="0" value={form.labourPeople} onChange={e => setForm(f => ({ ...f, labourPeople: e.target.value }))}
-                    className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="e.g. 2" />
+                    className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="e.g. 3" />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">₹/hour (all staff)</label>
+                  <label className="block text-xs text-gray-500 mb-1">₹/hour per person</label>
                   <input type="number" min="0" step="0.01" value={form.labourRate} onChange={e => setForm(f => ({ ...f, labourRate: e.target.value }))}
                     className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="e.g. 40" />
                 </div>
               </div>
+              {labourRate > 0 && (
+                <div className="text-xs text-gray-500">
+                  Hourly cost: {labourPeople} {labourPeople === 1 ? 'person' : 'people'} × ₹{labourRate.toLocaleString('en-IN')} = <span className="font-semibold text-teal-700">₹{labourHourlyCost.toLocaleString('en-IN')}/hr</span>
+                </div>
+              )}
               {labourCost > 0 && (
                 <div className="border-t border-teal-300 pt-2 flex items-center justify-between text-sm">
-                  <span className="text-gray-600">{labourHours.toFixed(2)} hr × ₹{labourRate.toLocaleString('en-IN')}/hr</span>
+                  <span className="text-gray-600">{labourHours.toFixed(2)} hr × ₹{labourHourlyCost.toLocaleString('en-IN')}/hr</span>
                   <span className="font-bold text-teal-800">
                     ₹{labourCost.toFixed(2)}
                     {runQty > 0 && <span className="font-normal text-teal-600"> · ₹{(labourCost / runQty).toFixed(2)}/unit</span>}
