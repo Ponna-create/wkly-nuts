@@ -28,6 +28,8 @@ export default function SalesOrders() {
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [filterStatus, setFilterStatus] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
 
   // Status tabs
   const statusTabs = [
@@ -63,7 +65,9 @@ export default function SalesOrders() {
       (order.customer_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (order.shipping_address || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (order.tracking_number || '').toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesStatus && matchesSearch;
+    const od = order.order_date || '';
+    const matchesDate = (!dateFrom || od >= dateFrom) && (!dateTo || od <= dateTo);
+    return matchesStatus && matchesSearch && matchesDate;
   });
 
   const getStatusBadge = (status) => {
@@ -232,6 +236,29 @@ export default function SalesOrders() {
             className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
           />
         </div>
+      </div>
+
+      {/* Date filter */}
+      <div className="flex flex-wrap items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2">
+        <span className="text-sm text-gray-500 font-medium">Order date:</span>
+        <input type="date" value={dateFrom} max={dateTo || undefined}
+          onChange={(e) => setDateFrom(e.target.value)}
+          className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-teal-500" />
+        <span className="text-gray-400 text-sm">to</span>
+        <input type="date" value={dateTo} min={dateFrom || undefined}
+          onChange={(e) => setDateTo(e.target.value)}
+          className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-teal-500" />
+        <button
+          onClick={() => { const t = new Date().toISOString().split('T')[0]; setDateFrom(t); setDateTo(t); }}
+          className="px-2.5 py-1.5 text-xs font-medium text-teal-700 bg-teal-50 border border-teal-200 rounded-lg hover:bg-teal-100">Today</button>
+        <button
+          onClick={() => { const y = new Date(Date.now() - 864e5).toISOString().split('T')[0]; setDateFrom(y); setDateTo(y); }}
+          className="px-2.5 py-1.5 text-xs font-medium text-gray-600 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100">Yesterday</button>
+        {(dateFrom || dateTo) && (
+          <button onClick={() => { setDateFrom(''); setDateTo(''); }}
+            className="px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 rounded-lg">Clear</button>
+        )}
+        <span className="ml-auto text-xs text-gray-400">{filteredOrders.length} order{filteredOrders.length !== 1 ? 's' : ''} shown</span>
       </div>
 
       {/* Orders List */}
