@@ -7,7 +7,7 @@ import {
   Plus, Search, X, Edit2, Trash2, Factory, Play, CheckCircle2,
   Clock, AlertTriangle, ChevronDown, ChevronUp, Package, Hash,
   IndianRupee, Calendar, Filter, Leaf, Box, Printer, ArrowRight,
-  Recycle, TrendingDown
+  Recycle, TrendingDown, ClipboardList
 } from 'lucide-react';
 import { escapeHtml } from '../utils/sanitize';
 
@@ -393,6 +393,27 @@ export default function ProductionRuns() {
                           <span className="text-gray-500 text-xs">Cost / Unit</span>
                           <p className="font-medium text-amber-700">{parseFloat(run.cost_per_unit || 0).toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}</p>
                         </div>
+                      </div>
+                    )}
+
+                    {/* Process Steps — from the SKU, so whoever opens the run knows what to do */}
+                    {(runSku?.processingNotes || (runSku?.processingIngredients || []).length > 0) && (
+                      <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+                        <p className="text-xs font-medium text-orange-700 mb-1 flex items-center gap-1">
+                          <ClipboardList className="w-3 h-3" /> Process Steps
+                        </p>
+                        {runSku.processingNotes && (
+                          <p className="text-sm text-gray-800 whitespace-pre-line">{runSku.processingNotes}</p>
+                        )}
+                        {(runSku.processingIngredients || []).length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            {runSku.processingIngredients.map((pi, i) => (
+                              <span key={i} className="px-2 py-1 bg-white border rounded text-xs">
+                                {pi.ingredientName || pi.name}: {pi.quantity || pi.gramsPerUnit}{pi.unit || 'g'}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -1007,6 +1028,34 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
               <p className="text-xs text-gray-400 italic">Select an SKU and set quantity — ingredients auto-populate from the recipe.</p>
             )}
           </div>
+
+          {/* Process Steps — from the SKU's Processing Notes, so staff know what to do */}
+          {(fullSku?.processingNotes || (fullSku?.processingIngredients || []).length > 0) && (
+            <div>
+              <label className="text-sm font-medium text-gray-700 flex items-center gap-1 mb-2">
+                <ClipboardList className="w-4 h-4 text-orange-600" /> Process Steps (from SKU)
+              </label>
+              <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 space-y-2">
+                {fullSku.processingNotes && (
+                  <p className="text-sm text-gray-800 whitespace-pre-line">{fullSku.processingNotes}</p>
+                )}
+                {(fullSku.processingIngredients || []).length > 0 && (
+                  <div className="pt-1.5 border-t border-orange-200 space-y-1">
+                    <p className="text-xs font-medium text-orange-700">Used during prep (not in sachet weight)</p>
+                    {fullSku.processingIngredients.map((pi, i) => (
+                      <div key={i} className="flex items-center justify-between text-sm">
+                        <span className="text-gray-700">{pi.ingredientName || pi.name}</span>
+                        <span className="text-orange-700 font-medium">{pi.quantity || pi.gramsPerUnit}{pi.unit || 'g'}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <p className="text-[11px] text-gray-400 mt-1">
+                Use these step names (e.g. "Roasting", "Grinding") when adding a labour session below.
+              </p>
+            </div>
+          )}
 
           {/* Packaging — auto-populated from SKU */}
           {form.packagingUsed.length > 0 && (
