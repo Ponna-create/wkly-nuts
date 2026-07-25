@@ -57,31 +57,33 @@ export default function IngredientInventory() {
 
   useEffect(() => { loadIngredients(); loadFinished(); }, [loadIngredients, loadFinished]);
 
-  // One row per SKU (every SKU shows, even with zero stock, so opening balances can be set)
+  // One row per SKU, one stock number each — a "box" (1 week) for Recipe Pack
+  // SKUs, or a "unit" for everything else. Monthly is just 4 boxes at sale/
+  // production time, not a separate stock pool.
   const skuStockRows = (state.skus || []).map(sku => {
     const inv = finishedGoods.find(f => f.skuId === sku.id);
+    const isRecipe = (sku.skuType || 'weekly') === 'weekly';
     return {
       skuId: sku.id,
       name: sku.name,
-      skuType: sku.skuType || 'weekly',
-      weekly: inv?.weeklyPacksAvailable || 0,
-      monthly: inv?.monthlyPacksAvailable || 0,
-      single: inv?.singleUnitsAvailable || 0,
+      isRecipe,
+      qty: isRecipe ? (inv?.weeklyPacksAvailable || 0) : (inv?.singleUnitsAvailable || 0),
     };
   }).filter(r => r.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
-  const totalFinishedUnits = skuStockRows.reduce((s, r) => s + r.weekly + r.monthly + r.single, 0);
-  const skusInStockCount = skuStockRows.filter(r => r.weekly > 0 || r.monthly > 0 || r.single > 0).length;
+  const totalFinishedUnits = skuStockRows.reduce((s, r) => s + r.qty, 0);
+  const skusInStockCount = skuStockRows.filter(r => r.qty > 0).length;
 
-  const startEditStock = (row) => setEditingStock({ skuId: row.skuId, weekly: row.weekly, monthly: row.monthly, single: row.single });
+  const startEditStock = (row) => setEditingStock({ skuId: row.skuId, isRecipe: row.isRecipe, qty: row.qty });
 
   const saveStock = async () => {
     if (!editingStock) return;
     setSavingStock(true);
+    const newQty = parseFloat(editingStock.qty) || 0;
     const { error } = await dbService.setFinishedGoodsStock(editingStock.skuId, {
-      weeklyPacksAvailable: parseFloat(editingStock.weekly) || 0,
-      monthlyPacksAvailable: parseFloat(editingStock.monthly) || 0,
-      singleUnitsAvailable: parseFloat(editingStock.single) || 0,
+      weeklyPacksAvailable: editingStock.isRecipe ? newQty : 0,
+      monthlyPacksAvailable: 0, // retired — monthly is now just 4 boxes, not its own pool
+      singleUnitsAvailable: editingStock.isRecipe ? 0 : newQty,
     }, 'Manual stock entry');
     setSavingStock(false);
     if (error) { showToast('Failed to update stock', 'error'); return; }
@@ -266,35 +268,24 @@ export default function IngredientInventory() {
               <thead>
                 <tr className="text-xs text-gray-500 border-b bg-gray-50">
                   <th className="text-left px-4 py-3 font-medium">SKU</th>
-                  <th className="text-right px-4 py-3 font-medium">Weekly packs</th>
-                  <th className="text-right px-4 py-3 font-medium">Monthly packs</th>
-                  <th className="text-right px-4 py-3 font-medium">Units</th>
+                  <th className="text-left px-4 py-3 font-medium">Unit</th>
+                  <th className="text-right px-4 py-3 font-medium">In stock</th>
                   <th className="px-4 py-3 w-16"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {skuStockRows.map(r => {
                   const isEditingThis = editingStock?.skuId === r.skuId;
-                  const isRecipe = r.skuType === 'weekly';
                   return (
                     <tr key={r.skuId} className="hover:bg-gray-50">
                       <td className="px-4 py-3 font-medium text-gray-900">{r.name}</td>
+                      <td className="px-4 py-3 text-gray-400 text-xs">{r.isRecipe ? 'box (1 week)' : 'unit'}</td>
                       {isEditingThis ? (
                         <>
                           <td className="px-4 py-2 text-right">
-                            <input type="number" min="0" value={editingStock.weekly} disabled={!isRecipe}
-                              onChange={e => setEditingStock(prev => ({ ...prev, weekly: e.target.value }))}
-                              className="w-20 border rounded px-2 py-1 text-sm text-right disabled:bg-gray-100 disabled:text-gray-300" />
-                          </td>
-                          <td className="px-4 py-2 text-right">
-                            <input type="number" min="0" value={editingStock.monthly} disabled={!isRecipe}
-                              onChange={e => setEditingStock(prev => ({ ...prev, monthly: e.target.value }))}
-                              className="w-20 border rounded px-2 py-1 text-sm text-right disabled:bg-gray-100 disabled:text-gray-300" />
-                          </td>
-                          <td className="px-4 py-2 text-right">
-                            <input type="number" min="0" value={editingStock.single} disabled={isRecipe}
-                              onChange={e => setEditingStock(prev => ({ ...prev, single: e.target.value }))}
-                              className="w-20 border rounded px-2 py-1 text-sm text-right disabled:bg-gray-100 disabled:text-gray-300" />
+                            <input type="number" min="0" autoFocus value={editingStock.qty}
+                              onChange={e => setEditingStock(prev => ({ ...prev, qty: e.target.value }))}
+                              className="w-20 border rounded px-2 py-1 text-sm text-right" />
                           </td>
                           <td className="px-4 py-2 text-right whitespace-nowrap">
                             <button onClick={saveStock} disabled={savingStock} className="p-1 text-green-600 hover:bg-green-50 rounded-lg" title="Save">
@@ -307,9 +298,7 @@ export default function IngredientInventory() {
                         </>
                       ) : (
                         <>
-                          <td className="px-4 py-3 text-right font-semibold text-teal-700">{isRecipe ? r.weekly : <span className="text-gray-300">—</span>}</td>
-                          <td className="px-4 py-3 text-right font-semibold text-teal-700">{isRecipe ? r.monthly : <span className="text-gray-300">—</span>}</td>
-                          <td className="px-4 py-3 text-right font-semibold text-teal-700">{!isRecipe ? r.single : <span className="text-gray-300">—</span>}</td>
+                          <td className="px-4 py-3 text-right font-semibold text-teal-700">{r.qty}</td>
                           <td className="px-4 py-3 text-right">
                             <button onClick={() => startEditStock(r)} className="p-1 text-gray-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg" title="Edit stock">
                               <Edit2 className="w-4 h-4" />
@@ -322,6 +311,9 @@ export default function IngredientInventory() {
                 })}
               </tbody>
             </table>
+            <p className="px-4 py-2.5 text-[11px] text-gray-400 border-t">
+              A Monthly order or production batch is just 4 boxes of the same product — it draws from this same box count, not a separate one.
+            </p>
           </div>
         )
       )}

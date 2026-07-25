@@ -18,6 +18,16 @@ export const isSupabaseAvailable = () => {
   return supabase !== null;
 };
 
+// A "box" is the one physical production unit (e.g. a Day Pack's 7-sachet box).
+// "Monthly" is not a separately-stocked item — it's just 4 of the same box sold
+// at once. This converts any weekly/monthly quantity into an equivalent box
+// count so both draw from and update the SAME stock number (weeklyPacksAvailable).
+const BOXES_PER_MONTHLY_PACK = 4;
+const packQuantityToBoxes = (packType, quantity) => {
+  const qty = parseFloat(quantity) || 0;
+  return packType === 'monthly' ? qty * BOXES_PER_MONTHLY_PACK : qty;
+};
+
 // Database helper functions
 const _realDbService = {
   // Vendors
@@ -1645,6 +1655,10 @@ const _realDbService = {
     }
   },
 
+  // quantity must already be in BOXES (callers convert monthly qty x4 via
+  // packQuantityToBoxes before calling). Weekly and monthly both read/write
+  // weeklyPacksAvailable — there is only one physical box stock, not two pools.
+  // monthlyPacksAvailable is frozen/unused going forward.
   async updateInventoryStock(skuId, packType, quantity, operation = 'subtract', reason = null) {
     // operation: 'add' or 'subtract'
     if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
@@ -1661,8 +1675,8 @@ const _realDbService = {
         // Create new inventory record if doesn't exist
         const newRecord = {
           skuId,
-          weeklyPacksAvailable: packType === 'weekly' ? (operation === 'add' ? quantity : 0) : 0,
-          monthlyPacksAvailable: packType === 'monthly' ? (operation === 'add' ? quantity : 0) : 0,
+          weeklyPacksAvailable: isSingleUnit ? 0 : (operation === 'add' ? quantity : 0),
+          monthlyPacksAvailable: 0,
           singleUnitsAvailable: isSingleUnit ? (operation === 'add' ? quantity : 0) : 0,
         };
         const result = await this.createInventory(newRecord);
@@ -1671,14 +1685,7 @@ const _realDbService = {
         return result;
       }
 
-      let currentValue;
-      if (isSingleUnit) {
-        currentValue = current.singleUnitsAvailable || 0;
-      } else if (packType === 'weekly') {
-        currentValue = current.weeklyPacksAvailable;
-      } else {
-        currentValue = current.monthlyPacksAvailable;
-      }
+      const currentValue = isSingleUnit ? (current.singleUnitsAvailable || 0) : (current.weeklyPacksAvailable || 0);
 
       const newValue = operation === 'add'
         ? currentValue + quantity
@@ -1686,8 +1693,8 @@ const _realDbService = {
 
       const updateData = {
         id: current.id,
-        weeklyPacksAvailable: packType === 'weekly' ? newValue : current.weeklyPacksAvailable,
-        monthlyPacksAvailable: packType === 'monthly' ? newValue : current.monthlyPacksAvailable,
+        weeklyPacksAvailable: isSingleUnit ? current.weeklyPacksAvailable : newValue,
+        monthlyPacksAvailable: current.monthlyPacksAvailable,
         singleUnitsAvailable: isSingleUnit ? newValue : (current.singleUnitsAvailable || 0),
         notes: current.notes,
       };
@@ -3265,14 +3272,15 @@ const _realDbService = {
       }
     }
 
-    // 3. Add finished goods to inventory
+    // 3. Add finished goods to inventory (monthly runs make 4x the boxes)
     try {
       const skuId = run.sku_id;
       const qty = parseInt(run.actual_quantity) || 0;
       const packType = run.pack_type || 'weekly';
-      if (skuId && qty > 0) {
+      const boxesMade = packQuantityToBoxes(packType, qty);
+      if (skuId && boxesMade > 0) {
         const reason = `Production ${run.run_number || run.id}`;
-        await this.updateInventoryStock(skuId, packType, qty, 'add', reason);
+        await this.updateInventoryStock(skuId, packType, boxesMade, 'add', reason);
         results.finishedGoodsAdded = true;
       }
     } catch (err) {
@@ -3296,23 +3304,20 @@ const _realDbService = {
         if (!skuId) continue;
 
         const isSingleUnit = packType === 'single' || packType === '0.5kg' || packType === '1kg';
+        // A monthly order line is 4 boxes of the SAME product, not a separate item
+        const boxQty = isSingleUnit ? quantity : packQuantityToBoxes(packType, quantity);
 
-        // Check current stock
+        // Check current stock (weekly & monthly share one box pool)
         const currentRes = await this.getInventoryBySkuId(skuId);
         const current = currentRes.data;
-        let available = 0;
-        if (current) {
-          if (isSingleUnit) available = current.singleUnitsAvailable || 0;
-          else if (packType === 'weekly') available = current.weeklyPacksAvailable || 0;
-          else available = current.monthlyPacksAvailable || 0;
-        }
+        const available = current ? (isSingleUnit ? (current.singleUnitsAvailable || 0) : (current.weeklyPacksAvailable || 0)) : 0;
 
-        if (available < quantity) {
-          results.warnings.push(`${item.sku_name || item.skuName || 'SKU'} ${packType}: need ${quantity}, have ${available}`);
+        if (available < boxQty) {
+          results.warnings.push(`${item.sku_name || item.skuName || 'SKU'} ${packType}: need ${boxQty}${packType === 'monthly' ? ' boxes' : ''}, have ${available}`);
         }
 
         const reason = `Order ${order.order_number || order.id}`;
-        await this.updateInventoryStock(skuId, packType, quantity, 'subtract', reason);
+        await this.updateInventoryStock(skuId, packType, boxQty, 'subtract', reason);
         results.deducted++;
       } catch (err) {
         results.warnings.push(`${item.sku_name || item.skuName}: ${err.message}`);
@@ -3333,8 +3338,10 @@ const _realDbService = {
         const packType = item.pack_type || item.packType || 'weekly';
         const quantity = parseInt(item.quantity) || 1;
         if (!skuId) continue;
+        const isSingleUnit = packType === 'single' || packType === '0.5kg' || packType === '1kg';
+        const boxQty = isSingleUnit ? quantity : packQuantityToBoxes(packType, quantity);
         const reason = `RTO return — Order ${order.order_number || order.id}`;
-        await this.updateInventoryStock(skuId, packType, quantity, 'add', reason);
+        await this.updateInventoryStock(skuId, packType, boxQty, 'add', reason);
         results.restocked++;
       } catch (err) {
         results.warnings.push(`${item.sku_name || item.skuName}: ${err.message}`);
