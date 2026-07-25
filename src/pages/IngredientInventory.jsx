@@ -18,7 +18,7 @@ const getBatchStatus = (batch) => {
 };
 
 export default function IngredientInventory() {
-  const { showToast } = useApp();
+  const { state, showToast } = useApp();
   const [ingredients, setIngredients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState(null);
@@ -38,6 +38,8 @@ export default function IngredientInventory() {
   const [activeTab, setActiveTab] = useState('raw'); // 'raw' | 'finished'
   const [finishedGoods, setFinishedGoods] = useState([]);
   const [loadingFinished, setLoadingFinished] = useState(true);
+  const [editingStock, setEditingStock] = useState(null); // { skuId, weekly, monthly, single }
+  const [savingStock, setSavingStock] = useState(false);
 
   const loadIngredients = useCallback(async () => {
     setLoading(true);
@@ -55,18 +57,38 @@ export default function IngredientInventory() {
 
   useEffect(() => { loadIngredients(); loadFinished(); }, [loadIngredients, loadFinished]);
 
-  // Finished-goods rows flattened to one line per pack type in stock
-  const finishedRows = finishedGoods.flatMap(item => {
-    const rows = [];
-    const name = item.sku?.name || 'Unknown SKU';
-    if (item.weeklyPacksAvailable > 0) rows.push({ id: item.id + '-w', name, packType: 'Weekly pack', qty: item.weeklyPacksAvailable });
-    if (item.monthlyPacksAvailable > 0) rows.push({ id: item.id + '-m', name, packType: 'Monthly pack', qty: item.monthlyPacksAvailable });
-    if (item.singleUnitsAvailable > 0) rows.push({ id: item.id + '-s', name, packType: 'Unit', qty: item.singleUnitsAvailable });
-    if (rows.length === 0) rows.push({ id: item.id + '-z', name, packType: '—', qty: 0 });
-    return rows;
+  // One row per SKU (every SKU shows, even with zero stock, so opening balances can be set)
+  const skuStockRows = (state.skus || []).map(sku => {
+    const inv = finishedGoods.find(f => f.skuId === sku.id);
+    return {
+      skuId: sku.id,
+      name: sku.name,
+      skuType: sku.skuType || 'weekly',
+      weekly: inv?.weeklyPacksAvailable || 0,
+      monthly: inv?.monthlyPacksAvailable || 0,
+      single: inv?.singleUnitsAvailable || 0,
+    };
   }).filter(r => r.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
-  const totalFinishedUnits = finishedRows.reduce((s, r) => s + r.qty, 0);
+  const totalFinishedUnits = skuStockRows.reduce((s, r) => s + r.weekly + r.monthly + r.single, 0);
+  const skusInStockCount = skuStockRows.filter(r => r.weekly > 0 || r.monthly > 0 || r.single > 0).length;
+
+  const startEditStock = (row) => setEditingStock({ skuId: row.skuId, weekly: row.weekly, monthly: row.monthly, single: row.single });
+
+  const saveStock = async () => {
+    if (!editingStock) return;
+    setSavingStock(true);
+    const { error } = await dbService.setFinishedGoodsStock(editingStock.skuId, {
+      weeklyPacksAvailable: parseFloat(editingStock.weekly) || 0,
+      monthlyPacksAvailable: parseFloat(editingStock.monthly) || 0,
+      singleUnitsAvailable: parseFloat(editingStock.single) || 0,
+    }, 'Manual stock entry');
+    setSavingStock(false);
+    if (error) { showToast('Failed to update stock', 'error'); return; }
+    showToast('Stock updated', 'success');
+    setEditingStock(null);
+    loadFinished();
+  };
 
   const filtered = ingredients.filter(ing =>
     ing.name.toLowerCase().includes(searchTerm.toLowerCase())
@@ -209,7 +231,7 @@ export default function IngredientInventory() {
         </div>
         <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
           <p className="text-sm text-gray-500">SKUs in stock</p>
-          <p className="text-2xl font-bold text-teal-600">{finishedGoods.filter(f => f.weeklyPacksAvailable > 0 || f.monthlyPacksAvailable > 0 || f.singleUnitsAvailable > 0).length}</p>
+          <p className="text-2xl font-bold text-teal-600">{skusInStockCount}</p>
         </div>
         <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
           <p className="text-sm text-gray-500">Finished units</p>
@@ -229,30 +251,75 @@ export default function IngredientInventory() {
       {activeTab === 'finished' && (
         loadingFinished ? (
           <div className="text-center py-16 text-gray-400">Loading finished goods...</div>
-        ) : finishedRows.length === 0 ? (
+        ) : skuStockRows.length === 0 ? (
           <div className="text-center py-16 bg-white rounded-xl border">
             <Boxes className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-            <p className="text-gray-500 font-medium">No finished goods in stock yet</p>
-            <p className="text-gray-400 text-sm mt-1">Stock appears here when you mark a production run as Produced.</p>
+            <p className="text-gray-500 font-medium">No SKUs yet</p>
+            <p className="text-gray-400 text-sm mt-1">Create a SKU first, then set its opening stock here.</p>
           </div>
         ) : (
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="px-4 py-2.5 bg-amber-50 border-b border-amber-100 text-xs text-amber-700">
+              Click <Edit2 className="w-3 h-3 inline" /> to set or correct how many you currently have — useful for entering what's on the rack today.
+            </div>
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-xs text-gray-500 border-b bg-gray-50">
                   <th className="text-left px-4 py-3 font-medium">SKU</th>
-                  <th className="text-left px-4 py-3 font-medium">Pack type</th>
-                  <th className="text-right px-4 py-3 font-medium">In stock</th>
+                  <th className="text-right px-4 py-3 font-medium">Weekly packs</th>
+                  <th className="text-right px-4 py-3 font-medium">Monthly packs</th>
+                  <th className="text-right px-4 py-3 font-medium">Units</th>
+                  <th className="px-4 py-3 w-16"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {finishedRows.map(r => (
-                  <tr key={r.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 font-medium text-gray-900">{r.name}</td>
-                    <td className="px-4 py-3 text-gray-500">{r.packType}</td>
-                    <td className="px-4 py-3 text-right font-bold text-teal-700">{r.qty}</td>
-                  </tr>
-                ))}
+                {skuStockRows.map(r => {
+                  const isEditingThis = editingStock?.skuId === r.skuId;
+                  const isRecipe = r.skuType === 'weekly';
+                  return (
+                    <tr key={r.skuId} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 font-medium text-gray-900">{r.name}</td>
+                      {isEditingThis ? (
+                        <>
+                          <td className="px-2 py-2">
+                            <input type="number" min="0" value={editingStock.weekly} disabled={!isRecipe}
+                              onChange={e => setEditingStock(prev => ({ ...prev, weekly: e.target.value }))}
+                              className="w-20 border rounded px-2 py-1 text-sm text-right disabled:bg-gray-100 disabled:text-gray-300" />
+                          </td>
+                          <td className="px-2 py-2">
+                            <input type="number" min="0" value={editingStock.monthly} disabled={!isRecipe}
+                              onChange={e => setEditingStock(prev => ({ ...prev, monthly: e.target.value }))}
+                              className="w-20 border rounded px-2 py-1 text-sm text-right disabled:bg-gray-100 disabled:text-gray-300" />
+                          </td>
+                          <td className="px-2 py-2">
+                            <input type="number" min="0" value={editingStock.single} disabled={isRecipe}
+                              onChange={e => setEditingStock(prev => ({ ...prev, single: e.target.value }))}
+                              className="w-20 border rounded px-2 py-1 text-sm text-right disabled:bg-gray-100 disabled:text-gray-300" />
+                          </td>
+                          <td className="px-2 py-2 text-right whitespace-nowrap">
+                            <button onClick={saveStock} disabled={savingStock} className="p-1 text-green-600 hover:bg-green-50 rounded-lg" title="Save">
+                              <Check className="w-4 h-4" />
+                            </button>
+                            <button onClick={() => setEditingStock(null)} className="p-1 text-gray-400 hover:bg-gray-100 rounded-lg" title="Cancel">
+                              <X className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="px-4 py-3 text-right font-semibold text-teal-700">{isRecipe ? r.weekly : <span className="text-gray-300">—</span>}</td>
+                          <td className="px-4 py-3 text-right font-semibold text-teal-700">{isRecipe ? r.monthly : <span className="text-gray-300">—</span>}</td>
+                          <td className="px-4 py-3 text-right font-semibold text-teal-700">{!isRecipe ? r.single : <span className="text-gray-300">—</span>}</td>
+                          <td className="px-4 py-3 text-right">
+                            <button onClick={() => startEditStock(r)} className="p-1 text-gray-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg" title="Edit stock">
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

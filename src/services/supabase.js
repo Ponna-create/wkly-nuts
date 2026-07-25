@@ -1702,6 +1702,35 @@ const _realDbService = {
     }
   },
 
+  // Directly set finished-goods stock for a SKU (opening balance / manual correction),
+  // rather than adding/subtracting. Creates the inventory row if it doesn't exist yet.
+  async setFinishedGoodsStock(skuId, values, reason = 'Manual stock entry') {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    try {
+      const currentRes = await this.getInventoryBySkuId(skuId);
+      if (currentRes.error) throw currentRes.error;
+      const current = currentRes.data;
+
+      const payload = {
+        weeklyPacksAvailable: values.weeklyPacksAvailable ?? current?.weeklyPacksAvailable ?? 0,
+        monthlyPacksAvailable: values.monthlyPacksAvailable ?? current?.monthlyPacksAvailable ?? 0,
+        singleUnitsAvailable: values.singleUnitsAvailable ?? current?.singleUnitsAvailable ?? 0,
+        notes: reason,
+      };
+
+      const result = current
+        ? await this.updateInventory({ id: current.id, ...payload })
+        : await this.createInventory({ skuId, ...payload });
+
+      const total = payload.weeklyPacksAvailable + payload.monthlyPacksAvailable + payload.singleUnitsAvailable;
+      await this.logInventoryTransaction({ skuId, packType: 'opening_stock', quantity: total, operation: 'set', reason });
+      return result;
+    } catch (error) {
+      console.error('Error setting finished goods stock:', error);
+      return { data: null, error };
+    }
+  },
+
   async deleteInventory(inventoryId) {
     if (!isSupabaseAvailable()) return { error: new Error('Supabase not configured') };
 
