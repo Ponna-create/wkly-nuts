@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Edit, Trash2, Calculator, X, Package, ChevronLeft, ChevronRight, Check, Printer, FlaskConical, IndianRupee } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { dbService } from '../services/supabase';
 import logo from '../assets/wkly-nuts-logo.png';
 
 const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
@@ -161,6 +162,19 @@ export default function SKUManagement() {
 
   const [productionRequirements, setProductionRequirements] = useState(null);
   const [skuCodeEdited, setSkuCodeEdited] = useState(false);
+  const [availablePackagingMaterials, setAvailablePackagingMaterials] = useState([]);
+
+  // Load the packaging master list once, so packaging cost can auto-fill (still editable)
+  useEffect(() => {
+    dbService.getPackagingMaterials().then(({ data }) => setAvailablePackagingMaterials(data || []));
+  }, []);
+
+  // Total packaging cost for a product: sum of qty x price-per-unit across its materials
+  const getPackagingCost = (materials) => (materials || []).reduce((sum, pkg) => {
+    const qty = parseFloat(pkg.quantity_per_pack) || 0;
+    const price = parseFloat(pkg.price_per_unit) || 0;
+    return sum + qty * price;
+  }, 0);
 
   // Auto-build the SKU code from name + size, until the user edits it by hand
   useEffect(() => {
@@ -1288,51 +1302,71 @@ export default function SKUManagement() {
                     materialCost = parseFloat(formData.buyPrice) || 0;
                     detail = 'Purchase price per finished unit';
                   }
+                  const packagingCost = getPackagingCost(formData.packagingMaterials);
+                  const totalCost = materialCost + packagingCost;
                   const sp = parseFloat(formData.sellingPrice) || 0;
-                  const margin = sp > 0 ? ((sp - materialCost) / sp * 100) : 0;
+                  const margin = sp > 0 ? ((sp - totalCost) / sp * 100) : 0;
                   return (
                     <div className="space-y-6">
                       {/* Cost preview */}
                       <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-5">
                         <h3 className="text-lg font-bold text-gray-900 mb-1">{formData.name || 'New product'}</h3>
                         <p className="text-xs text-gray-500 mb-3">{detail}</p>
-                        <div className="grid grid-cols-3 gap-3 text-center">
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
                           <div>
-                            <p className="text-xs text-gray-500">Cost / unit</p>
-                            <p className="text-xl font-bold text-amber-700">₹{materialCost.toFixed(2)}</p>
+                            <p className="text-xs text-gray-500">Raw material</p>
+                            <p className="text-lg font-bold text-gray-700">₹{materialCost.toFixed(2)}</p>
                           </div>
                           <div>
-                            <p className="text-xs text-gray-500">Selling price</p>
-                            <p className="text-xl font-bold text-gray-900">₹{sp.toFixed(2)}</p>
+                            <p className="text-xs text-gray-500">+ Packaging</p>
+                            <p className="text-lg font-bold text-gray-700">₹{packagingCost.toFixed(2)}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500">= Cost / unit</p>
+                            <p className="text-xl font-bold text-amber-700">₹{totalCost.toFixed(2)}</p>
                           </div>
                           <div>
                             <p className="text-xs text-gray-500">Margin</p>
                             <p className={`text-xl font-bold ${margin > 30 ? 'text-green-600' : margin > 15 ? 'text-amber-600' : 'text-red-600'}`}>{margin.toFixed(1)}%</p>
                           </div>
                         </div>
-                        <p className="text-[11px] text-gray-400 mt-2">Packaging &amp; labour add on top; final COGS is refined from live raw prices.</p>
+                        <p className="text-[11px] text-gray-400 mt-2">Selling price: ₹{sp.toFixed(2)}. Labour adds on top; final COGS is refined from live raw prices.</p>
                       </div>
 
                       {/* Packaging materials */}
                       <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
                         <div className="flex items-center justify-between mb-2">
                           <label className="text-sm font-semibold text-indigo-800">Packaging Materials (per unit)</label>
-                          <button type="button" onClick={() => setFormData(f => ({ ...f, packagingMaterials: [...f.packagingMaterials, { name: '', quantity_per_pack: '', unit: 'pcs' }] }))}
+                          <button type="button" onClick={() => setFormData(f => ({ ...f, packagingMaterials: [...f.packagingMaterials, { name: '', quantity_per_pack: '1', unit: 'pcs', price_per_unit: '' }] }))}
                             className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">+ Add Material</button>
                         </div>
                         {formData.packagingMaterials.map((pkg, idx) => (
                           <div key={idx} className="flex items-center gap-2 mb-2">
-                            <input type="text" value={pkg.name} onChange={e => { const u = [...formData.packagingMaterials]; u[idx] = { ...u[idx], name: e.target.value }; setFormData(f => ({ ...f, packagingMaterials: u })); }}
+                            <input type="text" value={pkg.name} list="sku-packaging-list" onChange={e => {
+                              const u = [...formData.packagingMaterials];
+                              const match = availablePackagingMaterials.find(m => m.name === e.target.value);
+                              u[idx] = { ...u[idx], name: e.target.value, price_per_unit: match ? match.cost_per_unit : u[idx].price_per_unit };
+                              setFormData(f => ({ ...f, packagingMaterials: u }));
+                            }}
                               className="flex-1 border rounded-lg px-3 py-1.5 text-sm" placeholder="e.g. Pouch 250g, Label" />
                             <input type="number" value={pkg.quantity_per_pack} onChange={e => { const u = [...formData.packagingMaterials]; u[idx] = { ...u[idx], quantity_per_pack: e.target.value }; setFormData(f => ({ ...f, packagingMaterials: u })); }}
-                              className="w-20 border rounded-lg px-3 py-1.5 text-sm" placeholder="Qty" min="0" />
+                              className="w-16 border rounded-lg px-2 py-1.5 text-sm" placeholder="Qty" min="0" title="Quantity" />
+                            <input type="number" value={pkg.price_per_unit} onChange={e => { const u = [...formData.packagingMaterials]; u[idx] = { ...u[idx], price_per_unit: e.target.value }; setFormData(f => ({ ...f, packagingMaterials: u })); }}
+                              className="w-20 border rounded-lg px-2 py-1.5 text-sm" placeholder="₹/unit" min="0" step="0.01" title="Price per unit" />
                             <button type="button" onClick={() => setFormData(f => ({ ...f, packagingMaterials: f.packagingMaterials.filter((_, i) => i !== idx) }))}
                               className="p-1 text-red-400 hover:text-red-600"><X className="w-4 h-4" /></button>
                           </div>
                         ))}
-                        {formData.packagingMaterials.length === 0 && (
+                        {formData.packagingMaterials.length === 0 ? (
                           <p className="text-xs text-indigo-500 italic">e.g. 1 pouch, 1 label</p>
+                        ) : (
+                          <p className="text-xs font-semibold text-indigo-700 text-right mt-1">
+                            Packaging total: ₹{getPackagingCost(formData.packagingMaterials).toFixed(2)}
+                          </p>
                         )}
+                        <datalist id="sku-packaging-list">
+                          {availablePackagingMaterials.map(m => <option key={m.id} value={m.name} />)}
+                        </datalist>
                       </div>
 
                       {/* Shelf life + selling price */}
@@ -1608,21 +1642,27 @@ export default function SKUManagement() {
                 <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
                   <div className="flex items-center justify-between mb-2">
                     <label className="text-sm font-semibold text-indigo-800">Packaging Materials (per pack)</label>
-                    <button type="button" onClick={() => setFormData(f => ({ ...f, packagingMaterials: [...f.packagingMaterials, { name: '', quantity_per_pack: '', unit: 'pcs' }] }))}
+                    <button type="button" onClick={() => setFormData(f => ({ ...f, packagingMaterials: [...f.packagingMaterials, { name: '', quantity_per_pack: '1', unit: 'pcs', price_per_unit: '' }] }))}
                       className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">+ Add Material</button>
                   </div>
                   {formData.packagingMaterials.map((pkg, idx) => (
                     <div key={idx} className="flex items-center gap-2 mb-2">
-                      <input type="text" value={pkg.name} onChange={e => {
+                      <input type="text" value={pkg.name} list="sku-packaging-list" onChange={e => {
                         const updated = [...formData.packagingMaterials];
-                        updated[idx] = { ...updated[idx], name: e.target.value };
+                        const match = availablePackagingMaterials.find(m => m.name === e.target.value);
+                        updated[idx] = { ...updated[idx], name: e.target.value, price_per_unit: match ? match.cost_per_unit : updated[idx].price_per_unit };
                         setFormData(f => ({ ...f, packagingMaterials: updated }));
                       }} className="flex-1 border rounded-lg px-3 py-1.5 text-sm" placeholder="e.g. Weekly Box, Sachet 100g" />
                       <input type="number" value={pkg.quantity_per_pack} onChange={e => {
                         const updated = [...formData.packagingMaterials];
                         updated[idx] = { ...updated[idx], quantity_per_pack: e.target.value };
                         setFormData(f => ({ ...f, packagingMaterials: updated }));
-                      }} className="w-20 border rounded-lg px-3 py-1.5 text-sm" placeholder="Qty" min="0" />
+                      }} className="w-16 border rounded-lg px-2 py-1.5 text-sm" placeholder="Qty" min="0" title="Quantity" />
+                      <input type="number" value={pkg.price_per_unit} onChange={e => {
+                        const updated = [...formData.packagingMaterials];
+                        updated[idx] = { ...updated[idx], price_per_unit: e.target.value };
+                        setFormData(f => ({ ...f, packagingMaterials: updated }));
+                      }} className="w-20 border rounded-lg px-2 py-1.5 text-sm" placeholder="₹/unit" min="0" step="0.01" title="Price per unit" />
                       <select value={pkg.unit} onChange={e => {
                         const updated = [...formData.packagingMaterials];
                         updated[idx] = { ...updated[idx], unit: e.target.value };
@@ -1636,9 +1676,16 @@ export default function SKUManagement() {
                         className="p-1 text-red-400 hover:text-red-600"><X className="w-4 h-4" /></button>
                     </div>
                   ))}
-                  {formData.packagingMaterials.length === 0 && (
+                  {formData.packagingMaterials.length === 0 ? (
                     <p className="text-xs text-indigo-500 italic">e.g. 1 weekly box, 7 sachets, 1 label sheet</p>
+                  ) : (
+                    <p className="text-xs font-semibold text-indigo-700 text-right mt-1">
+                      Packaging total: ₹{getPackagingCost(formData.packagingMaterials).toFixed(2)}
+                    </p>
                   )}
+                  <datalist id="sku-packaging-list">
+                    {availablePackagingMaterials.map(m => <option key={m.id} value={m.name} />)}
+                  </datalist>
                 </div>
 
                 {/* Processing Ingredients */}
@@ -1703,16 +1750,18 @@ export default function SKUManagement() {
 
               {/* Live Cost Preview */}
               {(() => {
-                let totalCost = 0;
+                let materialCost = 0;
                 let totalGrams = 0;
                 DAYS.forEach(day => {
                   (formData.recipes[day] || []).forEach(item => {
                     const grams = parseFloat(item.gramsPerSachet) || 0;
                     const rate = parseFloat(item.pricePerGram) || 0;
                     totalGrams += grams;
-                    totalCost += grams * rate;
+                    materialCost += grams * rate;
                   });
                 });
+                const packagingCost = getPackagingCost(formData.packagingMaterials);
+                const totalCost = materialCost + packagingCost;
                 const sp = parseFloat(formData.sellingPrice) || 0;
                 const margin = sp > 0 ? ((sp - totalCost) / sp * 100) : 0;
                 const daysWithRecipes = DAYS.filter(d => (formData.recipes[d] || []).length > 0).length;
@@ -1724,16 +1773,21 @@ export default function SKUManagement() {
                       <span className="text-sm font-semibold text-amber-800">Live Cost Preview</span>
                       <span className="text-xs text-amber-500 ml-auto">{daysWithRecipes}/7 days filled</span>
                     </div>
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       <div className="bg-white rounded-lg p-2 text-center">
                         <p className="text-[10px] text-gray-500">Raw Material / Pack</p>
-                        <p className="text-lg font-bold text-amber-700">₹{totalCost.toFixed(2)}</p>
+                        <p className="text-lg font-bold text-gray-700">₹{materialCost.toFixed(2)}</p>
                         <p className="text-[10px] text-gray-400">{(totalGrams / 1000).toFixed(3)} kg</p>
                       </div>
                       <div className="bg-white rounded-lg p-2 text-center">
-                        <p className="text-[10px] text-gray-500">Per Sachet</p>
-                        <p className="text-lg font-bold text-blue-700">₹{daysWithRecipes > 0 ? (totalCost / daysWithRecipes).toFixed(2) : '0'}</p>
-                        <p className="text-[10px] text-gray-400">avg cost</p>
+                        <p className="text-[10px] text-gray-500">+ Packaging / Pack</p>
+                        <p className="text-lg font-bold text-gray-700">₹{packagingCost.toFixed(2)}</p>
+                        <p className="text-[10px] text-gray-400">per sachet: ₹{daysWithRecipes > 0 ? (materialCost / daysWithRecipes).toFixed(2) : '0'} material</p>
+                      </div>
+                      <div className="bg-white rounded-lg p-2 text-center">
+                        <p className="text-[10px] text-gray-500">= Cost / Pack</p>
+                        <p className="text-lg font-bold text-amber-700">₹{totalCost.toFixed(2)}</p>
+                        <p className="text-[10px] text-gray-400">selling ₹{sp.toFixed(2)}</p>
                       </div>
                       <div className={`rounded-lg p-2 text-center ${sp > 0 ? (margin > 0 ? 'bg-green-50' : 'bg-red-50') : 'bg-white'}`}>
                         <p className="text-[10px] text-gray-500">Margin</p>
