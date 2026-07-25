@@ -132,13 +132,22 @@ export default function Marketing() {
           <h1 className="text-3xl font-bold text-gray-900">Marketing</h1>
           <p className="text-gray-600 mt-1">Track influencers, campaigns & ROI</p>
         </div>
-        <button
-          onClick={() => { setEditingItem(null); setContactForm(emptyContact); setCampaignForm(emptyCampaign); setShowForm(true); }}
-          className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 font-medium text-sm"
-        >
-          <Plus className="w-4 h-4" />
-          {tab === 'influencers' ? 'Add Influencer' : 'Add Campaign'}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => { setTab('influencers'); setEditingItem(null); setContactForm(emptyContact); setShowForm(true); }}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-teal-600 text-teal-700 rounded-lg hover:bg-teal-50 font-medium text-sm"
+          >
+            <Plus className="w-4 h-4" />
+            Add Influencer
+          </button>
+          <button
+            onClick={() => { setTab('campaigns'); setEditingItem(null); setCampaignForm(emptyCampaign); setShowForm(true); }}
+            className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 font-medium text-sm"
+          >
+            <Plus className="w-4 h-4" />
+            Add Ad Campaign
+          </button>
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -191,7 +200,7 @@ export default function Marketing() {
             tab === 'campaigns' ? 'border-teal-500 text-teal-700' : 'border-transparent text-gray-500 hover:text-gray-700'
           }`}
         >
-          Ad Campaigns ({campaigns.length})
+          Ad Campaigns · Meta/Amazon/Google ({campaigns.length})
         </button>
         <button
           onClick={() => setTab('channels')}
