@@ -1,15 +1,40 @@
-import React from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { Users, Package, TrendingUp, Truck, AlertCircle, Clock, Send } from 'lucide-react';
+import { Users, Package, TrendingUp, Truck, AlertCircle, Clock, Send, Wallet, PieChart, ChevronRight } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { dbService } from '../services/supabase';
 import StockAlerts from '../components/StockAlerts';
 import LapsedCustomers from '../components/LapsedCustomers';
 import ProfitLossWidget from '../components/ProfitLossWidget';
+
+const SOURCE_LABELS = {
+  whatsapp: 'WhatsApp', website: 'Website', instagram: 'Instagram', inst: 'Instagram',
+  meta_ad: 'Meta Ads', amazon: 'Amazon', zoho: 'Zoho', direct: 'Direct',
+  collab: 'Collab', promotion: 'Promotion', referral: 'Referral', other: 'Other',
+};
+
+// Channels that pay out on a settlement cycle, not at order time
+const DELAYED_PAYMENT_CHANNELS = ['amazon', 'zoho'];
+
+const CHANNEL_COLORS = {
+  whatsapp: 'bg-green-500', direct: 'bg-teal-500', website: 'bg-blue-500', zoho: 'bg-indigo-500',
+  amazon: 'bg-orange-500', instagram: 'bg-pink-500', inst: 'bg-pink-500', meta_ad: 'bg-purple-500',
+  collab: 'bg-yellow-500', promotion: 'bg-cyan-500', referral: 'bg-lime-500', other: 'bg-gray-400',
+};
 
 export default function Dashboard() {
   const { state } = useApp();
   const { salesOrders } = state;
   const orders = salesOrders || [];
+  const [lowStockCount, setLowStockCount] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    dbService.getLowStockAlerts()
+      .then(data => { if (!cancelled) setLowStockCount((data || []).length); })
+      .catch(() => { if (!cancelled) setLowStockCount(null); });
+    return () => { cancelled = true; };
+  }, []);
 
   // Order pipeline stats
   const orderPipeline = [
@@ -28,6 +53,34 @@ export default function Dashboard() {
   // Needs Attention today — cheap, real numbers, no separate fetch
   const followUpCount = orders.filter(o => o.status === 'follow_up').length;
   const needsTrackingCount = orders.filter(o => ['dispatched', 'in_transit'].includes(o.status) && !o.tracking_number).length;
+
+  // Sales by channel — top channels by revenue
+  const channelPerformance = useMemo(() => {
+    const bySource = {};
+    orders.forEach(o => {
+      const src = o.order_source || 'other';
+      if (!bySource[src]) bySource[src] = { orders: 0, revenue: 0 };
+      bySource[src].orders += 1;
+      bySource[src].revenue += parseFloat(o.total_amount) || 0;
+    });
+    return Object.entries(bySource)
+      .map(([source, v]) => ({ source, label: SOURCE_LABELS[source] || source, ...v }))
+      .sort((a, b) => b.revenue - a.revenue);
+  }, [orders]);
+
+  // Payments pending — Amazon/Zoho orders not yet marked received
+  const paymentsPending = useMemo(() => {
+    const pending = orders.filter(o =>
+      DELAYED_PAYMENT_CHANNELS.includes(o.order_source) && o.payment_status !== 'received'
+    );
+    const bySource = {};
+    pending.forEach(o => {
+      const src = o.order_source;
+      bySource[src] = (bySource[src] || 0) + (parseFloat(o.total_amount) || 0);
+    });
+    const total = pending.reduce((sum, o) => sum + (parseFloat(o.total_amount) || 0), 0);
+    return { count: pending.length, total, bySource };
+  }, [orders]);
 
   // Backup reminder — days since the last export on this device
   const lastBackupRaw = typeof localStorage !== 'undefined' ? localStorage.getItem('wklyNutsLastBackup') : null;
@@ -73,10 +126,10 @@ export default function Dashboard() {
           <p className="text-2xl font-bold text-gray-900">{needsTrackingCount}</p>
           <p className="text-xs text-gray-400">dispatched, no number</p>
         </Link>
-        <Link to="/ingredients" className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:border-red-200 transition sm:col-span-1 col-span-2">
-          <div className="flex items-center gap-2 text-red-500 text-xs font-medium mb-1"><AlertCircle className="w-3.5 h-3.5" /> Stock &amp; Customers</div>
-          <p className="text-sm font-semibold text-gray-700">See sections below ↓</p>
-          <p className="text-xs text-gray-400">low stock, lapsed customers</p>
+        <Link to="/ingredients" className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:border-red-200 transition">
+          <div className="flex items-center gap-2 text-red-500 text-xs font-medium mb-1"><AlertCircle className="w-3.5 h-3.5" /> Low Stock</div>
+          <p className="text-2xl font-bold text-gray-900">{lowStockCount === null ? '—' : lowStockCount}</p>
+          <p className="text-xs text-gray-400">items below reorder</p>
         </Link>
         <Link to="/reports" className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:border-teal-200 transition">
           <div className="flex items-center gap-2 text-teal-500 text-xs font-medium mb-1"><TrendingUp className="w-3.5 h-3.5" /> Today's Revenue</div>
@@ -106,6 +159,73 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      {/* Payments Pending + Sales by Channel */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="bg-amber-50 rounded-lg shadow-sm border border-amber-200 p-4">
+          <div className="flex items-center gap-2 text-amber-700 text-sm font-bold mb-3">
+            <Wallet className="w-4 h-4" /> Payments Pending — Amazon &amp; Zoho
+          </div>
+          {paymentsPending.count === 0 ? (
+            <p className="text-sm text-amber-700/70">Nothing awaiting settlement right now.</p>
+          ) : (
+            <>
+              <p className="text-2xl font-bold text-amber-900">₹{paymentsPending.total.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
+              <p className="text-xs text-amber-700 mb-2">{paymentsPending.count} order{paymentsPending.count === 1 ? '' : 's'} sold but not yet paid out</p>
+              <div className="space-y-1 text-xs text-amber-800">
+                {Object.entries(paymentsPending.bySource).map(([src, amt]) => (
+                  <div key={src} className="flex justify-between">
+                    <span>{SOURCE_LABELS[src] || src}</span>
+                    <span className="font-semibold">₹{amt.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2 text-gray-700 text-sm font-bold">
+              <PieChart className="w-4 h-4 text-teal-600" /> Sales by Channel
+            </div>
+            <Link to="/marketing" className="text-xs text-teal-600 hover:text-teal-700 font-medium flex items-center">
+              Full breakdown <ChevronRight className="w-3 h-3" />
+            </Link>
+          </div>
+          {channelPerformance.length === 0 ? (
+            <p className="text-sm text-gray-400">No orders yet to analyze.</p>
+          ) : (
+            <>
+              <p className="text-xl font-bold text-gray-900 mb-1">
+                ₹{channelPerformance.reduce((s, c) => s + c.revenue, 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                <span className="text-xs font-normal text-gray-400 ml-1">total sales</span>
+              </p>
+              <div className="flex w-full h-2 rounded-full overflow-hidden mb-3 bg-gray-100">
+                {channelPerformance.map(c => (
+                  <div
+                    key={c.source}
+                    className={CHANNEL_COLORS[c.source] || 'bg-gray-400'}
+                    style={{ width: `${(c.revenue / channelPerformance.reduce((s, x) => s + x.revenue, 0)) * 100}%` }}
+                    title={`${c.label}: ₹${c.revenue.toLocaleString('en-IN')}`}
+                  />
+                ))}
+              </div>
+              <div className="space-y-1.5">
+                {channelPerformance.slice(0, 4).map(c => (
+                  <div key={c.source} className="flex items-center justify-between text-sm">
+                    <span className="flex items-center gap-1.5 text-gray-600">
+                      <span className={`w-2 h-2 rounded-full ${CHANNEL_COLORS[c.source] || 'bg-gray-400'}`} />
+                      {c.label}
+                    </span>
+                    <span className="font-semibold text-gray-900">₹{c.revenue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
 
       {/* P&L Widget */}
       <ProfitLossWidget />
