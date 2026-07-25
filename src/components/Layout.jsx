@@ -3,7 +3,8 @@ import { Link, useLocation } from 'react-router-dom';
 import {
   Home, Package, Warehouse, ShoppingCart, FileText,
   Menu, X, LogOut, Users, Truck, Factory,
-  ChevronDown, ChevronRight, Database, Settings, BarChart3, Boxes, Tag, ClipboardList
+  ChevronDown, ChevronRight, Database, Settings, BarChart3, Boxes, Tag, ClipboardList,
+  Heart, Megaphone
 } from 'lucide-react';
 import { logout } from './Auth';
 import { isTestMode, setTestMode, resetTestData } from '../services/supabase';
@@ -17,16 +18,38 @@ const navGroups = [
     ],
   },
   {
-    label: null,
+    label: 'Sales',
     items: [
       { name: 'Orders', href: '/orders', icon: Truck },
       { name: 'Customers', href: '/customers', icon: Users },
+      { name: 'CRM', href: '/crm', icon: Heart },
+    ],
+  },
+  {
+    label: 'Products',
+    items: [
       { name: 'SKUs', href: '/skus', icon: Tag },
       { name: 'Production', href: '/production', icon: Factory },
       { name: 'Work Log', href: '/work-log', icon: ClipboardList },
+    ],
+  },
+  {
+    label: 'Inventory',
+    items: [
       { name: 'Inventory', href: '/ingredients', icon: Warehouse },
       { name: 'Purchases', href: '/purchase-orders', icon: ShoppingCart },
       { name: 'Packaging', href: '/packaging', icon: Boxes },
+    ],
+  },
+  {
+    label: 'Growth',
+    items: [
+      { name: 'Marketing', href: '/marketing', icon: Megaphone },
+    ],
+  },
+  {
+    label: 'Finance',
+    items: [
       { name: 'GST Filing', href: '/invoices', icon: FileText },
       { name: 'Reports', href: '/reports', icon: BarChart3 },
     ],

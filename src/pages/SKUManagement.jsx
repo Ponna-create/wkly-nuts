@@ -125,6 +125,7 @@ export default function SKUManagement() {
     bulkPrice: '', // Repack: total price paid for the bulk
     packSize: '', // Repack: sellable pack size (in unitOfMeasure)
     buyPrice: '', // Resale: purchase price per unit
+    reorderCycleDays: '', // Days one box/unit lasts — blank = not tracked for reorder reminders (CRM)
     selectedVendorId: '',
     recipes: {
       MON: [],
@@ -253,6 +254,7 @@ export default function SKUManagement() {
       bulkPrice: '',
       packSize: '',
       buyPrice: '',
+      reorderCycleDays: '',
       selectedVendorId: '',
       recipes: {
         MON: [],
@@ -517,6 +519,7 @@ export default function SKUManagement() {
       bulkPrice: formData.bulkPrice !== '' ? parseFloat(formData.bulkPrice) : null,
       packSize: formData.packSize !== '' ? parseFloat(formData.packSize) : null,
       buyPrice: formData.buyPrice !== '' ? parseFloat(formData.buyPrice) : null,
+      reorderCycleDays: formData.reorderCycleDays !== '' ? parseInt(formData.reorderCycleDays) : null,
       packagingMaterials: formData.packagingMaterials || [],
       processingIngredients: formData.processingIngredients || [],
       processingNotes: formData.processingNotes || '',
@@ -557,6 +560,7 @@ export default function SKUManagement() {
       bulkPrice: sku.bulkPrice ?? '',
       packSize: sku.packSize ?? '',
       buyPrice: sku.buyPrice ?? '',
+      reorderCycleDays: sku.reorderCycleDays ?? '',
       selectedVendorId: sku.selectedVendorId || '',
       recipes: sku.recipes || {
         MON: [], TUE: [], WED: [], THU: [], FRI: [], SAT: [], SUN: [],
@@ -1369,8 +1373,8 @@ export default function SKUManagement() {
                         </datalist>
                       </div>
 
-                      {/* Shelf life + selling price */}
-                      <div className="grid grid-cols-2 gap-4">
+                      {/* Shelf life + selling price + reorder cycle */}
+                      <div className="grid grid-cols-3 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Shelf Life (days)</label>
                           <input type="number" value={formData.shelfLifeDays} onChange={e => setFormData(f => ({ ...f, shelfLifeDays: e.target.value }))}
@@ -1380,6 +1384,11 @@ export default function SKUManagement() {
                           <label className="block text-sm font-medium text-gray-700 mb-1">Selling Price / Unit (MRP)</label>
                           <input type="number" value={formData.sellingPrice} onChange={e => setFormData(f => ({ ...f, sellingPrice: e.target.value }))}
                             className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="e.g. 149" />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Reorder Cycle (days)</label>
+                          <input type="number" value={formData.reorderCycleDays} onChange={e => setFormData(f => ({ ...f, reorderCycleDays: e.target.value }))}
+                            className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Blank = not tracked" />
                         </div>
                       </div>
 
@@ -1494,6 +1503,25 @@ export default function SKUManagement() {
                       <Plus className="w-5 h-5" />
                       Add Ingredient
                     </button>
+                  </div>
+
+                  {/* Shelf Life, Selling Price & Reorder Cycle */}
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Shelf Life (days)</label>
+                      <input type="number" value={formData.shelfLifeDays} onChange={e => setFormData(f => ({ ...f, shelfLifeDays: e.target.value }))}
+                        className="w-full border rounded-lg px-3 py-2 text-sm" min="1" placeholder="e.g. 180" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Selling Price / Unit (MRP)</label>
+                      <input type="number" value={formData.sellingPrice} onChange={e => setFormData(f => ({ ...f, sellingPrice: e.target.value }))}
+                        className="w-full border rounded-lg px-3 py-2 text-sm" min="0" placeholder="e.g. 199" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Reorder Cycle (days)</label>
+                      <input type="number" value={formData.reorderCycleDays} onChange={e => setFormData(f => ({ ...f, reorderCycleDays: e.target.value }))}
+                        className="w-full border rounded-lg px-3 py-2 text-sm" min="1" placeholder="e.g. 28" />
+                    </div>
                   </div>
 
                   {/* Save Button */}
@@ -1733,8 +1761,8 @@ export default function SKUManagement() {
                     placeholder="e.g. Roast flax & pumpkin seeds at 150°C for 10 min → Mix with honey → Form balls → Pack" />
                 </div>
 
-                {/* Shelf Life & Selling Price */}
-                <div className="grid grid-cols-2 gap-4">
+                {/* Shelf Life, Selling Price & Reorder Cycle */}
+                <div className="grid grid-cols-3 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Shelf Life (days)</label>
                     <input type="number" value={formData.shelfLifeDays} onChange={e => setFormData(f => ({ ...f, shelfLifeDays: e.target.value }))}
@@ -1744,6 +1772,12 @@ export default function SKUManagement() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">Selling Price / Pack (MRP)</label>
                     <input type="number" value={formData.sellingPrice} onChange={e => setFormData(f => ({ ...f, sellingPrice: e.target.value }))}
                       className="w-full border rounded-lg px-3 py-2 text-sm" min="0" placeholder="e.g. 399" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Days per Box (reorder)</label>
+                    <input type="number" value={formData.reorderCycleDays} onChange={e => setFormData(f => ({ ...f, reorderCycleDays: e.target.value }))}
+                      className="w-full border rounded-lg px-3 py-2 text-sm" min="1" placeholder="e.g. 7" />
+                    <p className="text-[11px] text-gray-400 mt-1">Monthly orders auto-multiply by 4.</p>
                   </div>
                 </div>
               </div>

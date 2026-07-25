@@ -21,6 +21,7 @@ import PurchaseOrders from './pages/PurchaseOrders';
 import Documents from './pages/Documents';
 import ProductionRuns from './pages/ProductionRuns';
 import WorkLog from './pages/WorkLog';
+import CRM from './pages/CRM';
 import PackagingMaterials from './pages/PackagingMaterials';
 import Reports from './pages/Reports';
 import HelpGuide from './pages/HelpGuide';
@@ -42,6 +43,7 @@ function App() {
               <Route path="/documents" element={<ErrorBoundary><Documents /></ErrorBoundary>} />
               <Route path="/production" element={<ErrorBoundary><ProductionRuns /></ErrorBoundary>} />
               <Route path="/work-log" element={<ErrorBoundary><WorkLog /></ErrorBoundary>} />
+              <Route path="/crm" element={<ErrorBoundary><CRM /></ErrorBoundary>} />
               <Route path="/packaging" element={<ErrorBoundary><PackagingMaterials /></ErrorBoundary>} />
               <Route path="/vendors" element={<ErrorBoundary><VendorManagement /></ErrorBoundary>} />
               <Route path="/ingredients" element={<ErrorBoundary><IngredientInventory /></ErrorBoundary>} />

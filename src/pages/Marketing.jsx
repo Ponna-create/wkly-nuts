@@ -1,8 +1,15 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, X, Users, TrendingUp, DollarSign, Instagram, Youtube, Globe, Search, Megaphone } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Plus, Edit2, Trash2, X, Users, TrendingUp, DollarSign, Instagram, Youtube, Globe, Search, Megaphone, BarChart3, Gift } from 'lucide-react';
 import { dbService } from '../services/supabase';
+import { useApp } from '../context/AppContext';
+
+const SOURCE_LABELS = {
+  whatsapp: 'WhatsApp', website: 'Website', instagram: 'Instagram',
+  meta_ad: 'Meta Ads', amazon: 'Amazon', referral: 'Referral', other: 'Other',
+};
 
 export default function Marketing() {
+  const { state } = useApp();
   const [tab, setTab] = useState('influencers');
   const [contacts, setContacts] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
@@ -12,7 +19,7 @@ export default function Marketing() {
   const [searchTerm, setSearchTerm] = useState('');
 
   // Contact form
-  const emptyContact = { name: '', platform: 'instagram', handle: '', followers: 0, contactDate: new Date().toISOString().split('T')[0], status: 'contacted', fee: 0, commissionPercent: 0, ordersGenerated: 0, revenueGenerated: 0, notes: '' };
+  const emptyContact = { name: '', platform: 'instagram', handle: '', followers: 0, contactDate: new Date().toISOString().split('T')[0], status: 'contacted', fee: 0, commissionPercent: 0, ordersGenerated: 0, revenueGenerated: 0, compensationType: 'cash', barterDetails: '', notes: '' };
   const emptyCampaign = { campaignName: '', platform: 'meta', budget: 0, spend: 0, startDate: new Date().toISOString().split('T')[0], endDate: '', status: 'active', impressions: 0, clicks: 0, ordersAttributed: 0, revenueAttributed: 0, notes: '' };
 
   const [contactForm, setContactForm] = useState(emptyContact);
@@ -38,6 +45,22 @@ export default function Marketing() {
   const totalOrders = contacts.reduce((s, c) => s + (c.ordersGenerated || 0), 0) + campaigns.reduce((s, c) => s + (c.ordersAttributed || 0), 0);
   const totalRevenue = contacts.reduce((s, c) => s + (c.revenueGenerated || 0), 0) + campaigns.reduce((s, c) => s + (c.revenueAttributed || 0), 0);
   const roi = totalMarketingSpend > 0 ? ((totalRevenue - totalMarketingSpend) / totalMarketingSpend * 100) : 0;
+  const barterDeals = contacts.filter(c => c.compensationType === 'barter' || c.compensationType === 'mixed');
+
+  // Channel performance — computed straight from real order sources, not manual entry
+  const channelPerformance = useMemo(() => {
+    const orders = state.salesOrders || [];
+    const bySource = {};
+    orders.forEach(o => {
+      const src = o.order_source || 'other';
+      if (!bySource[src]) bySource[src] = { orders: 0, revenue: 0 };
+      bySource[src].orders += 1;
+      bySource[src].revenue += parseFloat(o.total_amount) || 0;
+    });
+    return Object.entries(bySource)
+      .map(([source, v]) => ({ source, label: SOURCE_LABELS[source] || source, ...v, avg: v.orders > 0 ? v.revenue / v.orders : 0 }))
+      .sort((a, b) => b.revenue - a.revenue);
+  }, [state.salesOrders]);
 
   const platformIcon = (platform) => {
     const icons = { instagram: Instagram, youtube: Youtube };
@@ -170,22 +193,76 @@ export default function Marketing() {
         >
           Ad Campaigns ({campaigns.length})
         </button>
+        <button
+          onClick={() => setTab('channels')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition flex items-center gap-1.5 ${
+            tab === 'channels' ? 'border-teal-500 text-teal-700' : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <BarChart3 className="w-3.5 h-3.5" /> Channel Performance
+        </button>
       </div>
 
       {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-        <input
-          type="text"
-          placeholder={tab === 'influencers' ? 'Search influencers...' : 'Search campaigns...'}
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm"
-        />
-      </div>
+      {tab !== 'channels' && (
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            type="text"
+            placeholder={tab === 'influencers' ? 'Search influencers...' : 'Search campaigns...'}
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm"
+          />
+        </div>
+      )}
 
       {/* Content */}
-      {loading ? (
+      {tab === 'channels' ? (
+        <div className="space-y-4">
+          <p className="text-sm text-gray-500">Computed from actual order sources — not manual entry, so this reflects reality.</p>
+          {channelPerformance.length === 0 ? (
+            <p className="text-center text-gray-400 py-10">No orders yet to analyze.</p>
+          ) : (
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-xs text-gray-500 border-b bg-gray-50">
+                    <th className="text-left px-4 py-3 font-medium">Channel</th>
+                    <th className="text-right px-4 py-3 font-medium">Orders</th>
+                    <th className="text-right px-4 py-3 font-medium">Revenue</th>
+                    <th className="text-right px-4 py-3 font-medium">Avg order value</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {channelPerformance.map(c => (
+                    <tr key={c.source} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 font-medium text-gray-900">{c.label}</td>
+                      <td className="px-4 py-3 text-right">{c.orders}</td>
+                      <td className="px-4 py-3 text-right font-semibold text-teal-700">₹{c.revenue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
+                      <td className="px-4 py-3 text-right text-gray-600">₹{c.avg.toFixed(0)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {barterDeals.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+              <p className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-1.5"><Gift className="w-4 h-4 text-purple-500" /> Barter deals ({barterDeals.length})</p>
+              <div className="space-y-1.5">
+                {barterDeals.map(c => (
+                  <div key={c.id} className="flex items-center justify-between text-sm bg-purple-50 rounded-lg px-3 py-2">
+                    <span className="font-medium text-gray-800">{c.name}</span>
+                    <span className="text-gray-500">{c.barterDetails || 'No details added'}</span>
+                    <span className="text-purple-700 font-medium">{c.ordersGenerated || 0} orders · ₹{(c.revenueGenerated || 0).toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      ) : loading ? (
         <p className="text-center text-gray-500 py-10">Loading...</p>
       ) : tab === 'influencers' ? (
         <div className="space-y-3">
@@ -327,9 +404,27 @@ export default function Marketing() {
                     <input type="date" value={contactForm.contactDate} onChange={e => setContactForm(p => ({...p, contactDate: e.target.value}))}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Compensation</label>
+                    <div className="flex gap-2">
+                      {['cash', 'barter', 'mixed'].map(ct => (
+                        <button key={ct} type="button" onClick={() => setContactForm(p => ({ ...p, compensationType: ct }))}
+                          className={`flex-1 px-3 py-1.5 rounded-lg text-sm font-medium border capitalize ${contactForm.compensationType === ct ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-gray-600 border-gray-300'}`}>
+                          {ct}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {(contactForm.compensationType === 'barter' || contactForm.compensationType === 'mixed') && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Barter given (products/value)</label>
+                      <input type="text" value={contactForm.barterDetails} onChange={e => setContactForm(p => ({...p, barterDetails: e.target.value}))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. 2 Day Packs + 1 Seed Cycle (~₹600)" />
+                    </div>
+                  )}
                   <div className="grid grid-cols-3 gap-3">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Fee (₹)</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Fee (₹ cash)</label>
                       <input type="number" value={contactForm.fee} onChange={e => setContactForm(p => ({...p, fee: parseFloat(e.target.value) || 0}))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
                     </div>
@@ -366,6 +461,7 @@ export default function Marketing() {
                       <select value={campaignForm.platform} onChange={e => setCampaignForm(p => ({...p, platform: e.target.value}))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
                         <option value="meta">Meta (FB/IG)</option>
+                        <option value="amazon">Amazon Ads</option>
                         <option value="google">Google Ads</option>
                         <option value="instagram">Instagram</option>
                         <option value="youtube">YouTube</option>

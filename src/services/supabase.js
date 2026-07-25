@@ -314,6 +314,9 @@ const _realDbService = {
         bulkPrice: sku.weekly_pack?.bulkPrice ?? '',
         packSize: sku.weekly_pack?.packSize ?? '',
         buyPrice: sku.weekly_pack?.buyPrice ?? '',
+        // Reorder cycle: for Recipe Pack, days one box lasts (monthly order = x4 automatically);
+        // for other types, the direct reorder cycle in days. Blank = not tracked for reorders.
+        reorderCycleDays: sku.weekly_pack?.reorderCycleDays ?? '',
         created_at: sku.created_at,
       }));
 
@@ -341,6 +344,7 @@ const _realDbService = {
         bulkPrice: sku.bulkPrice ?? null,
         packSize: sku.packSize ?? null,
         buyPrice: sku.buyPrice ?? null,
+        reorderCycleDays: sku.reorderCycleDays ?? null,
       };
       const weeklyPack = {
         ...(sku.weeklyPack || {}),
@@ -411,6 +415,7 @@ const _realDbService = {
         bulkPrice: sku.bulkPrice ?? sku.weeklyPack?.bulkPrice ?? null,
         packSize: sku.packSize ?? sku.weeklyPack?.packSize ?? null,
         buyPrice: sku.buyPrice ?? sku.weeklyPack?.buyPrice ?? null,
+        reorderCycleDays: sku.reorderCycleDays ?? sku.weeklyPack?.reorderCycleDays ?? null,
       };
       const weeklyPackUpdate = {
         ...(sku.weeklyPack || {}),
@@ -2977,6 +2982,7 @@ const _realDbService = {
         followers: c.followers, contactDate: c.contact_date, status: c.status,
         fee: c.fee, commissionPercent: c.commission_percent,
         ordersGenerated: c.orders_generated, revenueGenerated: c.revenue_generated,
+        compensationType: c.compensation_type || 'cash', barterDetails: c.barter_details || '',
         notes: c.notes, createdAt: c.created_at,
       })), error: null };
     } catch (error) {
@@ -2996,7 +3002,10 @@ const _realDbService = {
           status: contact.status || 'contacted', fee: contact.fee || 0,
           commission_percent: contact.commissionPercent || 0,
           orders_generated: contact.ordersGenerated || 0,
-          revenue_generated: contact.revenueGenerated || 0, notes: contact.notes,
+          revenue_generated: contact.revenueGenerated || 0,
+          compensation_type: contact.compensationType || 'cash',
+          barter_details: contact.barterDetails || null,
+          notes: contact.notes,
         }])
         .select().single();
       if (error) throw error;
@@ -3018,7 +3027,10 @@ const _realDbService = {
           status: contact.status, fee: contact.fee,
           commission_percent: contact.commissionPercent,
           orders_generated: contact.ordersGenerated,
-          revenue_generated: contact.revenueGenerated, notes: contact.notes,
+          revenue_generated: contact.revenueGenerated,
+          compensation_type: contact.compensationType || 'cash',
+          barter_details: contact.barterDetails || null,
+          notes: contact.notes,
           updated_at: new Date().toISOString(),
         })
         .eq('id', contact.id);
