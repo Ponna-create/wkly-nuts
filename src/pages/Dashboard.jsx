@@ -16,11 +16,19 @@ const CHANNEL_COLORS = {
   collab: 'bg-yellow-500', promotion: 'bg-cyan-500', referral: 'bg-lime-500', other: 'bg-gray-400',
 };
 
-const monthStart = () => { const d = new Date(); d.setDate(1); return d.toISOString().split('T')[0]; };
 const todayStr = () => new Date().toISOString().split('T')[0];
+const currentMonthKey = () => todayStr().slice(0, 7);
 const fmt = (n) => `₹${(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 const itemName = (it) => it.sku_name || it.skuName || 'Item';
 const itemQty = (it) => parseFloat(it.quantity || it.qty || 0);
+const daysInMonth = (monthKey) => {
+  const [y, m] = monthKey.split('-').map(Number);
+  return new Date(y, m, 0).getDate();
+};
+const monthLabel = (monthKey) => {
+  const [y, m] = monthKey.split('-').map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+};
 
 export default function Dashboard() {
   const { state } = useApp();
@@ -30,12 +38,25 @@ export default function Dashboard() {
   const expenses = state.expenses || [];
   const purchaseOrders = state.purchaseOrders || [];
 
-  const monthOrders = useMemo(() => orders.filter(o => o.order_date >= monthStart() && o.order_date <= todayStr()), [orders]);
+  const availableMonths = useMemo(() => {
+    const set = new Set([currentMonthKey()]);
+    orders.forEach(o => { if (o.order_date) set.add(o.order_date.slice(0, 7)); });
+    return Array.from(set).sort().reverse();
+  }, [orders]);
+  const [selectedMonth, setSelectedMonth] = useState(currentMonthKey());
+  const isCurrentMonth = selectedMonth === currentMonthKey();
+  const lastDayToShow = isCurrentMonth ? Number(todayStr().slice(8, 10)) : daysInMonth(selectedMonth);
+
+  const monthOrders = useMemo(() => orders.filter(o => o.order_date?.slice(0, 7) === selectedMonth), [orders, selectedMonth]);
 
   // ---- Sales Summary (merged, toggle) ----
   const [salesView, setSalesView] = useState('value'); // 'value' | 'orders'
   const salesSeries = useMemo(() => {
     const byDay = {};
+    for (let d = 1; d <= lastDayToShow; d++) {
+      const key = String(d).padStart(2, '0');
+      byDay[key] = { day: key, value: 0, orders: 0 };
+    }
     monthOrders.forEach(o => {
       const day = o.order_date?.slice(8, 10) || '?';
       if (!byDay[day]) byDay[day] = { day, value: 0, orders: 0 };
@@ -43,7 +64,7 @@ export default function Dashboard() {
       byDay[day].orders += 1;
     });
     return Object.values(byDay).sort((a, b) => a.day.localeCompare(b.day));
-  }, [monthOrders]);
+  }, [monthOrders, lastDayToShow]);
   const salesTotal = monthOrders.reduce((s, o) => s + (parseFloat(o.total_amount) || 0), 0);
 
   // ---- Out of Stock ----
@@ -85,10 +106,14 @@ export default function Dashboard() {
 
   // ---- Cash Flow ----
   const cashFlow = useMemo(() => {
-    const monthExpenses = expenses.filter(e => (e.payment_date || e.bill_date || '').slice(0, 7) === todayStr().slice(0, 7));
+    const monthExpenses = expenses.filter(e => (e.payment_date || e.bill_date || '').slice(0, 7) === selectedMonth);
     const incoming = monthOrders.reduce((s, o) => s + (parseFloat(o.amount_paid) || (o.payment_status === 'received' ? parseFloat(o.total_amount) || 0 : 0)), 0);
     const outgoing = monthExpenses.reduce((s, e) => s + (parseFloat(e.total_amount) || 0), 0);
     const byDay = {};
+    for (let d = 1; d <= lastDayToShow; d++) {
+      const key = String(d).padStart(2, '0');
+      byDay[key] = { day: key, net: 0 };
+    }
     monthOrders.forEach(o => {
       const day = o.order_date?.slice(8, 10) || '?';
       const paid = parseFloat(o.amount_paid) || (o.payment_status === 'received' ? parseFloat(o.total_amount) || 0 : 0);
@@ -106,7 +131,7 @@ export default function Dashboard() {
       return { day: d.day, balance: running };
     });
     return { incoming, outgoing, series };
-  }, [monthOrders, expenses]);
+  }, [monthOrders, expenses, selectedMonth, lastDayToShow]);
 
   // ---- Receivables / Payables ----
   const receivables = useMemo(() => {
@@ -170,20 +195,29 @@ export default function Dashboard() {
 
       {/* Sales Summary — merged, toggle */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-sm font-bold text-gray-900">Sales Summary — This Month</h3>
-          <div className="flex bg-gray-100 rounded-full p-0.5 text-xs font-medium">
-            <button onClick={() => setSalesView('value')} className={`px-3 py-1 rounded-full transition ${salesView === 'value' ? 'bg-white shadow text-teal-700' : 'text-gray-500'}`}>By Value</button>
-            <button onClick={() => setSalesView('orders')} className={`px-3 py-1 rounded-full transition ${salesView === 'orders' ? 'bg-white shadow text-teal-700' : 'text-gray-500'}`}>By Orders</button>
+        <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+          <h3 className="text-sm font-bold text-gray-900">Sales Summary</h3>
+          <div className="flex items-center gap-2">
+            <select
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="text-xs font-medium text-gray-600 bg-gray-50 border border-gray-200 rounded-full px-3 py-1 focus:outline-none focus:ring-1 focus:ring-teal-500"
+            >
+              {availableMonths.map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}
+            </select>
+            <div className="flex bg-gray-100 rounded-full p-0.5 text-xs font-medium">
+              <button onClick={() => setSalesView('value')} className={`px-3 py-1 rounded-full transition ${salesView === 'value' ? 'bg-white shadow text-teal-700' : 'text-gray-500'}`}>By Value</button>
+              <button onClick={() => setSalesView('orders')} className={`px-3 py-1 rounded-full transition ${salesView === 'orders' ? 'bg-white shadow text-teal-700' : 'text-gray-500'}`}>By Orders</button>
+            </div>
           </div>
         </div>
         <p className="text-2xl font-bold text-gray-900 mb-2">
           {salesView === 'value' ? fmt(salesTotal) : `${monthOrders.length} orders`}
         </p>
-        {salesSeries.length === 0 ? (
-          <p className="text-sm text-gray-400 py-6 text-center">No orders yet this month.</p>
+        {monthOrders.length === 0 ? (
+          <p className="text-sm text-gray-400 py-6 text-center">No orders in {monthLabel(selectedMonth)}.</p>
         ) : (
-          <ResponsiveContainer width="100%" height={140}>
+          <ResponsiveContainer width="100%" height={160}>
             <AreaChart data={salesSeries}>
               <defs>
                 <linearGradient id="salesGrad" x1="0" y1="0" x2="0" y2="1">
@@ -192,10 +226,10 @@ export default function Dashboard() {
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-              <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+              <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} interval={Math.max(0, Math.floor(salesSeries.length / 10) - 1)} />
               <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={36} />
               <Tooltip formatter={(v) => salesView === 'value' ? fmt(v) : `${v} orders`} labelFormatter={(l) => `Day ${l}`} />
-              <Area type="monotone" dataKey={salesView} stroke="#0d9488" strokeWidth={2} fill="url(#salesGrad)" />
+              <Area type="monotone" dataKey={salesView} stroke="#0d9488" strokeWidth={2} fill="url(#salesGrad)" dot={{ r: 2.5, fill: '#0d9488', strokeWidth: 0 }} activeDot={{ r: 4 }} />
             </AreaChart>
           </ResponsiveContainer>
         )}
@@ -259,9 +293,9 @@ export default function Dashboard() {
       {/* Top Selling + Cash Flow */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-          <h3 className="text-sm font-bold text-gray-900 mb-3">Top Selling — This Month</h3>
+          <h3 className="text-sm font-bold text-gray-900 mb-3">Top Selling — {monthLabel(selectedMonth)}</h3>
           {topSelling.length === 0 ? (
-            <p className="text-sm text-gray-400">No sales yet this month.</p>
+            <p className="text-sm text-gray-400">No sales in {monthLabel(selectedMonth)}.</p>
           ) : (
             <div className="space-y-2">
               {topSelling.map((t, i) => (
@@ -275,21 +309,21 @@ export default function Dashboard() {
         </div>
 
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-          <h3 className="text-sm font-bold text-gray-900 mb-2">Cash Flow — This Month</h3>
+          <h3 className="text-sm font-bold text-gray-900 mb-2">Cash Flow — {monthLabel(selectedMonth)}</h3>
           <div className="flex gap-4 mb-2 text-sm">
             <span className="flex items-center gap-1 text-green-600 font-semibold"><TrendingUp className="w-3.5 h-3.5" /> {fmt(cashFlow.incoming)}</span>
             <span className="flex items-center gap-1 text-red-500 font-semibold"><TrendingDown className="w-3.5 h-3.5" /> {fmt(cashFlow.outgoing)}</span>
           </div>
-          {cashFlow.series.length === 0 ? (
-            <p className="text-sm text-gray-400 py-6 text-center">No cash movement recorded yet.</p>
+          {monthOrders.length === 0 && cashFlow.outgoing === 0 ? (
+            <p className="text-sm text-gray-400 py-6 text-center">No cash movement in {monthLabel(selectedMonth)}.</p>
           ) : (
             <ResponsiveContainer width="100%" height={120}>
               <LineChart data={cashFlow.series}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} interval={Math.max(0, Math.floor(cashFlow.series.length / 8) - 1)} />
                 <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={36} />
                 <Tooltip formatter={(v) => fmt(v)} labelFormatter={(l) => `Day ${l}`} />
-                <Line type="monotone" dataKey="balance" stroke="#0d9488" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="balance" stroke="#0d9488" strokeWidth={2} dot={{ r: 2.5, fill: '#0d9488', strokeWidth: 0 }} activeDot={{ r: 4 }} />
               </LineChart>
             </ResponsiveContainer>
           )}
