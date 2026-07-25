@@ -1,60 +1,125 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { Users, Package, TrendingUp, Truck, AlertCircle, Clock, Send, Wallet, PieChart, ChevronRight } from 'lucide-react';
+import { AlertCircle, Package, Truck, Users, ChevronRight, PieChart, TrendingUp, TrendingDown } from 'lucide-react';
+import { AreaChart, Area, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { useApp } from '../context/AppContext';
-import { dbService } from '../services/supabase';
-import StockAlerts from '../components/StockAlerts';
-import LapsedCustomers from '../components/LapsedCustomers';
-import ProfitLossWidget from '../components/ProfitLossWidget';
 
 const SOURCE_LABELS = {
   whatsapp: 'WhatsApp', website: 'Website', instagram: 'Instagram', inst: 'Instagram',
   meta_ad: 'Meta Ads', amazon: 'Amazon', zoho: 'Zoho', direct: 'Direct',
   collab: 'Collab', promotion: 'Promotion', referral: 'Referral', other: 'Other',
 };
-
-// Channels that pay out on a settlement cycle, not at order time
 const DELAYED_PAYMENT_CHANNELS = ['amazon', 'zoho'];
-
 const CHANNEL_COLORS = {
   whatsapp: 'bg-green-500', direct: 'bg-teal-500', website: 'bg-blue-500', zoho: 'bg-indigo-500',
   amazon: 'bg-orange-500', instagram: 'bg-pink-500', inst: 'bg-pink-500', meta_ad: 'bg-purple-500',
   collab: 'bg-yellow-500', promotion: 'bg-cyan-500', referral: 'bg-lime-500', other: 'bg-gray-400',
 };
 
+const monthStart = () => { const d = new Date(); d.setDate(1); return d.toISOString().split('T')[0]; };
+const todayStr = () => new Date().toISOString().split('T')[0];
+const fmt = (n) => `₹${(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+const itemName = (it) => it.sku_name || it.skuName || 'Item';
+const itemQty = (it) => parseFloat(it.quantity || it.qty || 0);
+
 export default function Dashboard() {
   const { state } = useApp();
-  const { salesOrders } = state;
-  const orders = salesOrders || [];
-  const [lowStockCount, setLowStockCount] = useState(null);
+  const orders = state.salesOrders || [];
+  const skus = state.skus || [];
+  const inventory = state.inventory || [];
+  const expenses = state.expenses || [];
+  const purchaseOrders = state.purchaseOrders || [];
 
-  useEffect(() => {
-    let cancelled = false;
-    dbService.getLowStockAlerts()
-      .then(data => { if (!cancelled) setLowStockCount((data || []).length); })
-      .catch(() => { if (!cancelled) setLowStockCount(null); });
-    return () => { cancelled = true; };
-  }, []);
+  const monthOrders = useMemo(() => orders.filter(o => o.order_date >= monthStart() && o.order_date <= todayStr()), [orders]);
 
-  // Order pipeline stats
-  const orderPipeline = [
-    { label: 'Follow-up', count: orders.filter(o => o.status === 'follow_up').length, color: 'bg-blue-500', href: '/orders' },
-    { label: 'Packing', count: orders.filter(o => o.status === 'packing').length, color: 'bg-yellow-500', href: '/orders' },
-    { label: 'Packed', count: orders.filter(o => o.status === 'packed').length, color: 'bg-orange-500', href: '/orders' },
-    { label: 'Dispatched', count: orders.filter(o => o.status === 'dispatched').length, color: 'bg-purple-500', href: '/orders' },
-    { label: 'In Transit', count: orders.filter(o => o.status === 'in_transit').length, color: 'bg-indigo-500', href: '/orders' },
-    { label: 'Delivered', count: orders.filter(o => o.status === 'delivered').length, color: 'bg-green-500', href: '/orders' },
-  ];
-  const totalOrders = orders.length;
-  const todayRevenue = orders
-    .filter(o => o.order_date === new Date().toISOString().split('T')[0])
-    .reduce((sum, o) => sum + (o.total_amount || 0), 0);
+  // ---- Sales Summary (merged, toggle) ----
+  const [salesView, setSalesView] = useState('value'); // 'value' | 'orders'
+  const salesSeries = useMemo(() => {
+    const byDay = {};
+    monthOrders.forEach(o => {
+      const day = o.order_date?.slice(8, 10) || '?';
+      if (!byDay[day]) byDay[day] = { day, value: 0, orders: 0 };
+      byDay[day].value += parseFloat(o.total_amount) || 0;
+      byDay[day].orders += 1;
+    });
+    return Object.values(byDay).sort((a, b) => a.day.localeCompare(b.day));
+  }, [monthOrders]);
+  const salesTotal = monthOrders.reduce((s, o) => s + (parseFloat(o.total_amount) || 0), 0);
 
-  // Needs Attention today — cheap, real numbers, no separate fetch
+  // ---- Out of Stock ----
+  const outOfStock = useMemo(() => {
+    return skus.filter(sku => {
+      const inv = inventory.find(i => i.sku_id === sku.id || i.skuId === sku.id);
+      const units = (inv?.weekly_packs_available || inv?.weeklyPacksAvailable || 0) + (inv?.single_units_available || inv?.singleUnitsAvailable || 0);
+      return units <= 0;
+    });
+  }, [skus, inventory]);
+
+  // ---- Pending Actions ----
   const followUpCount = orders.filter(o => o.status === 'follow_up').length;
-  const needsTrackingCount = orders.filter(o => ['dispatched', 'in_transit'].includes(o.status) && !o.tracking_number).length;
+  const toBePacked = orders.filter(o => o.status === 'packing').length;
+  const toBeShipped = orders.filter(o => o.status === 'packed').length;
+  const toBeDelivered = orders.filter(o => ['dispatched', 'in_transit'].includes(o.status)).length;
+  const needTracking = orders.filter(o => ['dispatched', 'in_transit'].includes(o.status) && !o.tracking_number).length;
+  const toBeInvoiced = orders.filter(o => !o.invoice_id && o.status !== 'delivered').length;
+  const poPending = purchaseOrders.filter(p => p.status !== 'received' && p.status !== 'completed').length;
+  const belowReorder = outOfStock.length > 0 ? outOfStock.length : 0;
 
-  // Sales by channel — top channels by revenue
+  const recentActivity = useMemo(() =>
+    [...orders].sort((a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0)).slice(0, 6),
+    [orders]
+  );
+  const [actionsTab, setActionsTab] = useState('pending');
+
+  // ---- Top Selling ----
+  const topSelling = useMemo(() => {
+    const byItem = {};
+    monthOrders.forEach(o => {
+      (o.items || []).forEach(it => {
+        const name = itemName(it);
+        byItem[name] = (byItem[name] || 0) + itemQty(it);
+      });
+    });
+    return Object.entries(byItem).map(([name, qty]) => ({ name, qty })).sort((a, b) => b.qty - a.qty).slice(0, 5);
+  }, [monthOrders]);
+
+  // ---- Cash Flow ----
+  const cashFlow = useMemo(() => {
+    const monthExpenses = expenses.filter(e => (e.payment_date || e.bill_date || '').slice(0, 7) === todayStr().slice(0, 7));
+    const incoming = monthOrders.reduce((s, o) => s + (parseFloat(o.amount_paid) || (o.payment_status === 'received' ? parseFloat(o.total_amount) || 0 : 0)), 0);
+    const outgoing = monthExpenses.reduce((s, e) => s + (parseFloat(e.total_amount) || 0), 0);
+    const byDay = {};
+    monthOrders.forEach(o => {
+      const day = o.order_date?.slice(8, 10) || '?';
+      const paid = parseFloat(o.amount_paid) || (o.payment_status === 'received' ? parseFloat(o.total_amount) || 0 : 0);
+      byDay[day] = byDay[day] || { day, net: 0 };
+      byDay[day].net += paid;
+    });
+    monthExpenses.forEach(e => {
+      const day = (e.payment_date || e.bill_date || '').slice(8, 10) || '?';
+      byDay[day] = byDay[day] || { day, net: 0 };
+      byDay[day].net -= parseFloat(e.total_amount) || 0;
+    });
+    let running = 0;
+    const series = Object.values(byDay).sort((a, b) => a.day.localeCompare(b.day)).map(d => {
+      running += d.net;
+      return { day: d.day, balance: running };
+    });
+    return { incoming, outgoing, series };
+  }, [monthOrders, expenses]);
+
+  // ---- Receivables / Payables ----
+  const receivables = useMemo(() => {
+    const pending = orders.filter(o => DELAYED_PAYMENT_CHANNELS.includes(o.order_source) && o.payment_status !== 'received');
+    return pending.reduce((s, o) => s + (parseFloat(o.total_amount) || 0), 0);
+  }, [orders]);
+  const payables = useMemo(() => {
+    const unpaidExpenses = expenses.filter(e => e.payment_status && e.payment_status !== 'paid').reduce((s, e) => s + (parseFloat(e.total_amount) || 0), 0);
+    const unpaidPOs = purchaseOrders.filter(p => p.payment_status && p.payment_status !== 'paid').reduce((s, p) => s + (parseFloat(p.total_amount) || 0), 0);
+    return unpaidExpenses + unpaidPOs;
+  }, [expenses, purchaseOrders]);
+
+  // ---- Channel performance ----
   const channelPerformance = useMemo(() => {
     const bySource = {};
     orders.forEach(o => {
@@ -63,36 +128,15 @@ export default function Dashboard() {
       bySource[src].orders += 1;
       bySource[src].revenue += parseFloat(o.total_amount) || 0;
     });
-    return Object.entries(bySource)
-      .map(([source, v]) => ({ source, label: SOURCE_LABELS[source] || source, ...v }))
-      .sort((a, b) => b.revenue - a.revenue);
+    return Object.entries(bySource).map(([source, v]) => ({ source, label: SOURCE_LABELS[source] || source, ...v })).sort((a, b) => b.revenue - a.revenue);
   }, [orders]);
 
-  // Payments pending — Amazon/Zoho orders not yet marked received
-  const paymentsPending = useMemo(() => {
-    const pending = orders.filter(o =>
-      DELAYED_PAYMENT_CHANNELS.includes(o.order_source) && o.payment_status !== 'received'
-    );
-    const bySource = {};
-    pending.forEach(o => {
-      const src = o.order_source;
-      bySource[src] = (bySource[src] || 0) + (parseFloat(o.total_amount) || 0);
-    });
-    const total = pending.reduce((sum, o) => sum + (parseFloat(o.total_amount) || 0), 0);
-    return { count: pending.length, total, bySource };
-  }, [orders]);
-
-  // Backup reminder — days since the last export on this device
+  // Backup reminder
   const lastBackupRaw = typeof localStorage !== 'undefined' ? localStorage.getItem('wklyNutsLastBackup') : null;
   const backupDays = lastBackupRaw ? Math.floor((Date.now() - new Date(lastBackupRaw).getTime()) / 86400000) : null;
   const backupTone = backupDays === null ? 'red' : backupDays >= 7 ? 'amber' : backupDays >= 3 ? 'amber' : 'green';
-  const backupStyles = {
-    green: 'bg-green-50 border-green-200 text-green-800',
-    amber: 'bg-amber-50 border-amber-200 text-amber-800',
-    red: 'bg-red-50 border-red-200 text-red-800',
-  }[backupTone];
-  const backupText = backupDays === null
-    ? 'No backup yet on this device — export one now to be safe.'
+  const backupStyles = { green: 'bg-green-50 border-green-200 text-green-800', amber: 'bg-amber-50 border-amber-200 text-amber-800', red: 'bg-red-50 border-red-200 text-red-800' }[backupTone];
+  const backupText = backupDays === null ? 'No backup yet on this device — export one now to be safe.'
     : backupDays === 0 ? 'Backed up today. ✓'
     : `Last backup was ${backupDays} day${backupDays === 1 ? '' : 's'} ago${backupDays >= 7 ? ' — time to back up!' : '.'}`;
 
@@ -105,153 +149,188 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      {/* Backup reminder */}
       <Link to="/settings" className={`flex items-center justify-between gap-3 border rounded-xl px-4 py-2.5 text-sm hover:opacity-90 transition ${backupStyles}`}>
-        <span className="flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 flex-shrink-0" />
-          <span className="font-medium">{backupText}</span>
-        </span>
+        <span className="flex items-center gap-2"><AlertCircle className="w-4 h-4 flex-shrink-0" /><span className="font-medium">{backupText}</span></span>
         <span className="text-xs font-semibold underline whitespace-nowrap">Back up now →</span>
       </Link>
 
-      {/* Needs Attention Today */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <Link to="/orders" className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:border-blue-200 transition">
-          <div className="flex items-center gap-2 text-blue-500 text-xs font-medium mb-1"><Clock className="w-3.5 h-3.5" /> Follow-ups</div>
-          <p className="text-2xl font-bold text-gray-900">{followUpCount}</p>
-          <p className="text-xs text-gray-400">need confirmation</p>
-        </Link>
-        <Link to="/orders" className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:border-purple-200 transition">
-          <div className="flex items-center gap-2 text-purple-500 text-xs font-medium mb-1"><Send className="w-3.5 h-3.5" /> Need Tracking</div>
-          <p className="text-2xl font-bold text-gray-900">{needsTrackingCount}</p>
-          <p className="text-xs text-gray-400">dispatched, no number</p>
-        </Link>
-        <Link to="/ingredients" className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:border-red-200 transition">
-          <div className="flex items-center gap-2 text-red-500 text-xs font-medium mb-1"><AlertCircle className="w-3.5 h-3.5" /> Low Stock</div>
-          <p className="text-2xl font-bold text-gray-900">{lowStockCount === null ? '—' : lowStockCount}</p>
-          <p className="text-xs text-gray-400">items below reorder</p>
-        </Link>
-        <Link to="/reports" className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:border-teal-200 transition">
-          <div className="flex items-center gap-2 text-teal-500 text-xs font-medium mb-1"><TrendingUp className="w-3.5 h-3.5" /> Today's Revenue</div>
-          <p className="text-2xl font-bold text-gray-900">₹{todayRevenue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
-          <p className="text-xs text-gray-400">{totalOrders} orders total</p>
-        </Link>
-      </div>
-
-      {/* Order Pipeline */}
-      {totalOrders > 0 && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-bold text-gray-900">Order Pipeline</h3>
-            <Link to="/orders" className="text-xs text-teal-600 hover:text-teal-700 font-medium">
-              View All ({totalOrders})
-            </Link>
-          </div>
-          <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
-            {orderPipeline.map((step) => (
-              <Link key={step.label} to={step.href} className="text-center group">
-                <div className={`${step.color} text-white text-xl font-bold rounded-lg p-3 group-hover:opacity-90 transition`}>
-                  {step.count}
-                </div>
-                <p className="text-xs text-gray-600 mt-1 font-medium">{step.label}</p>
-              </Link>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Payments Pending + Sales by Channel */}
+      {/* Total Receivables / Payables */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-amber-50 rounded-lg shadow-sm border border-amber-200 p-4">
-          <div className="flex items-center gap-2 text-amber-700 text-sm font-bold mb-3">
-            <Wallet className="w-4 h-4" /> Payments Pending — Amazon &amp; Zoho
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+          <p className="text-sm font-bold text-gray-900 mb-1">Total Receivables</p>
+          <p className="text-xs text-gray-400 mb-2">Amazon &amp; Zoho — sold, awaiting settlement</p>
+          <p className="text-2xl font-bold text-amber-600">{fmt(receivables)}</p>
+        </div>
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+          <p className="text-sm font-bold text-gray-900 mb-1">Total Payables</p>
+          <p className="text-xs text-gray-400 mb-2">Unpaid bills, vendor dues, recurring costs</p>
+          <p className="text-2xl font-bold text-red-600">{fmt(payables)}</p>
+        </div>
+      </div>
+
+      {/* Sales Summary — merged, toggle */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-bold text-gray-900">Sales Summary — This Month</h3>
+          <div className="flex bg-gray-100 rounded-full p-0.5 text-xs font-medium">
+            <button onClick={() => setSalesView('value')} className={`px-3 py-1 rounded-full transition ${salesView === 'value' ? 'bg-white shadow text-teal-700' : 'text-gray-500'}`}>By Value</button>
+            <button onClick={() => setSalesView('orders')} className={`px-3 py-1 rounded-full transition ${salesView === 'orders' ? 'bg-white shadow text-teal-700' : 'text-gray-500'}`}>By Orders</button>
           </div>
-          {paymentsPending.count === 0 ? (
-            <p className="text-sm text-amber-700/70">Nothing awaiting settlement right now.</p>
-          ) : (
-            <>
-              <p className="text-2xl font-bold text-amber-900">₹{paymentsPending.total.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
-              <p className="text-xs text-amber-700 mb-2">{paymentsPending.count} order{paymentsPending.count === 1 ? '' : 's'} sold but not yet paid out</p>
-              <div className="space-y-1 text-xs text-amber-800">
-                {Object.entries(paymentsPending.bySource).map(([src, amt]) => (
-                  <div key={src} className="flex justify-between">
-                    <span>{SOURCE_LABELS[src] || src}</span>
-                    <span className="font-semibold">₹{amt.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
-                  </div>
-                ))}
-              </div>
-            </>
+        </div>
+        <p className="text-2xl font-bold text-gray-900 mb-2">
+          {salesView === 'value' ? fmt(salesTotal) : `${monthOrders.length} orders`}
+        </p>
+        {salesSeries.length === 0 ? (
+          <p className="text-sm text-gray-400 py-6 text-center">No orders yet this month.</p>
+        ) : (
+          <ResponsiveContainer width="100%" height={140}>
+            <AreaChart data={salesSeries}>
+              <defs>
+                <linearGradient id="salesGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#0d9488" stopOpacity={0.35} />
+                  <stop offset="100%" stopColor="#0d9488" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+              <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={36} />
+              <Tooltip formatter={(v) => salesView === 'value' ? fmt(v) : `${v} orders`} labelFormatter={(l) => `Day ${l}`} />
+              <Area type="monotone" dataKey={salesView} stroke="#0d9488" strokeWidth={2} fill="url(#salesGrad)" />
+            </AreaChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+
+      {/* Out of Stock + Pending Actions/Recent Activity */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+          <h3 className="text-sm font-bold text-gray-900 mb-3">Out of Stock Items</h3>
+          <p className="text-3xl font-bold text-red-600 mb-1">{outOfStock.length}</p>
+          <p className="text-xs text-gray-400 mb-3">SKUs at zero stock</p>
+          {outOfStock.length > 0 && (
+            <div className="space-y-1">
+              {outOfStock.slice(0, 5).map(s => (
+                <Link key={s.id} to="/ingredients" className="block text-sm text-gray-700 hover:text-red-600">{s.name}</Link>
+              ))}
+            </div>
           )}
         </div>
 
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2 text-gray-700 text-sm font-bold">
-              <PieChart className="w-4 h-4 text-teal-600" /> Sales by Channel
-            </div>
-            <Link to="/marketing" className="text-xs text-teal-600 hover:text-teal-700 font-medium flex items-center">
-              Full breakdown <ChevronRight className="w-3 h-3" />
-            </Link>
+          <div className="flex items-center gap-4 mb-3 border-b border-gray-100">
+            <button onClick={() => setActionsTab('pending')} className={`text-sm font-bold pb-2 border-b-2 -mb-px ${actionsTab === 'pending' ? 'border-teal-600 text-teal-700' : 'border-transparent text-gray-400'}`}>Pending Actions</button>
+            <button onClick={() => setActionsTab('activity')} className={`text-sm font-bold pb-2 border-b-2 -mb-px ${actionsTab === 'activity' ? 'border-teal-600 text-teal-700' : 'border-transparent text-gray-400'}`}>Recent Activity</button>
           </div>
-          {channelPerformance.length === 0 ? (
-            <p className="text-sm text-gray-400">No orders yet to analyze.</p>
+          {actionsTab === 'pending' ? (
+            <div className="space-y-3 text-sm">
+              <div>
+                <p className="text-xs font-semibold text-gray-400 uppercase mb-1">Sales</p>
+                <div className="space-y-1">
+                  <Link to="/orders" className="flex justify-between text-gray-700 hover:text-teal-600"><span>Follow-up needed</span><span className="font-semibold">{followUpCount}</span></Link>
+                  <Link to="/orders" className="flex justify-between text-gray-700 hover:text-teal-600"><span>To Be Packed</span><span className="font-semibold">{toBePacked}</span></Link>
+                  <Link to="/orders" className="flex justify-between text-gray-700 hover:text-teal-600"><span>To Be Shipped</span><span className="font-semibold">{toBeShipped}</span></Link>
+                  <Link to="/orders" className="flex justify-between text-gray-700 hover:text-teal-600"><span>To Be Delivered</span><span className="font-semibold">{toBeDelivered}</span></Link>
+                  <Link to="/orders" className="flex justify-between text-gray-700 hover:text-teal-600"><span>Needs Tracking Number</span><span className="font-semibold">{needTracking}</span></Link>
+                  <Link to="/invoices" className="flex justify-between text-gray-700 hover:text-teal-600"><span>To Be Invoiced</span><span className="font-semibold">{toBeInvoiced}</span></Link>
+                </div>
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-gray-400 uppercase mb-1">Purchases</p>
+                <Link to="/purchase-orders" className="flex justify-between text-gray-700 hover:text-teal-600"><span>To Be Received</span><span className="font-semibold">{poPending}</span></Link>
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-gray-400 uppercase mb-1">Inventory</p>
+                <Link to="/ingredients" className="flex justify-between text-gray-700 hover:text-teal-600"><span>Below Reorder Level</span><span className="font-semibold">{belowReorder}</span></Link>
+              </div>
+            </div>
           ) : (
-            <>
-              <p className="text-xl font-bold text-gray-900 mb-1">
-                ₹{channelPerformance.reduce((s, c) => s + c.revenue, 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-                <span className="text-xs font-normal text-gray-400 ml-1">total sales</span>
-              </p>
-              <div className="flex w-full h-2 rounded-full overflow-hidden mb-3 bg-gray-100">
-                {channelPerformance.map(c => (
-                  <div
-                    key={c.source}
-                    className={CHANNEL_COLORS[c.source] || 'bg-gray-400'}
-                    style={{ width: `${(c.revenue / channelPerformance.reduce((s, x) => s + x.revenue, 0)) * 100}%` }}
-                    title={`${c.label}: ₹${c.revenue.toLocaleString('en-IN')}`}
-                  />
-                ))}
-              </div>
-              <div className="space-y-1.5">
-                {channelPerformance.slice(0, 4).map(c => (
-                  <div key={c.source} className="flex items-center justify-between text-sm">
-                    <span className="flex items-center gap-1.5 text-gray-600">
-                      <span className={`w-2 h-2 rounded-full ${CHANNEL_COLORS[c.source] || 'bg-gray-400'}`} />
-                      {c.label}
-                    </span>
-                    <span className="font-semibold text-gray-900">₹{c.revenue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
-                  </div>
-                ))}
-              </div>
-            </>
+            <div className="space-y-2 text-sm">
+              {recentActivity.length === 0 ? <p className="text-gray-400">No recent orders.</p> : recentActivity.map(o => (
+                <Link key={o.id} to="/orders" className="flex justify-between text-gray-700 hover:text-teal-600">
+                  <span className="truncate">{o.customer_name || 'Customer'} — {o.status}</span>
+                  <span className="text-gray-400 flex-shrink-0 ml-2">{o.order_date}</span>
+                </Link>
+              ))}
+            </div>
           )}
         </div>
       </div>
 
-      {/* P&L Widget */}
-      <ProfitLossWidget />
+      {/* Top Selling + Cash Flow */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+          <h3 className="text-sm font-bold text-gray-900 mb-3">Top Selling — This Month</h3>
+          {topSelling.length === 0 ? (
+            <p className="text-sm text-gray-400">No sales yet this month.</p>
+          ) : (
+            <div className="space-y-2">
+              {topSelling.map((t, i) => (
+                <div key={t.name} className="flex items-center justify-between text-sm">
+                  <span className="flex items-center gap-2 text-gray-700"><span className="text-xs text-gray-400 w-4">{i + 1}.</span>{t.name}</span>
+                  <span className="font-semibold text-gray-900">{t.qty} units</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
-      {/* Stock Alerts */}
-      <StockAlerts compact={false} showTitle={true} />
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+          <h3 className="text-sm font-bold text-gray-900 mb-2">Cash Flow — This Month</h3>
+          <div className="flex gap-4 mb-2 text-sm">
+            <span className="flex items-center gap-1 text-green-600 font-semibold"><TrendingUp className="w-3.5 h-3.5" /> {fmt(cashFlow.incoming)}</span>
+            <span className="flex items-center gap-1 text-red-500 font-semibold"><TrendingDown className="w-3.5 h-3.5" /> {fmt(cashFlow.outgoing)}</span>
+          </div>
+          {cashFlow.series.length === 0 ? (
+            <p className="text-sm text-gray-400 py-6 text-center">No cash movement recorded yet.</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={120}>
+              <LineChart data={cashFlow.series}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={36} />
+                <Tooltip formatter={(v) => fmt(v)} labelFormatter={(l) => `Day ${l}`} />
+                <Line type="monotone" dataKey="balance" stroke="#0d9488" strokeWidth={2} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </div>
 
-      {/* Lapsed Customers */}
-      <LapsedCustomers />
+      {/* Sales by Channel */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2 text-gray-700 text-sm font-bold"><PieChart className="w-4 h-4 text-teal-600" /> Sales by Channel</div>
+          <Link to="/marketing" className="text-xs text-teal-600 hover:text-teal-700 font-medium flex items-center">Full breakdown <ChevronRight className="w-3 h-3" /></Link>
+        </div>
+        {channelPerformance.length === 0 ? (
+          <p className="text-sm text-gray-400">No orders yet to analyze.</p>
+        ) : (
+          <>
+            <div className="flex w-full h-2 rounded-full overflow-hidden mb-3 bg-gray-100">
+              {channelPerformance.map(c => (
+                <div key={c.source} className={CHANNEL_COLORS[c.source] || 'bg-gray-400'} style={{ width: `${(c.revenue / channelPerformance.reduce((s, x) => s + x.revenue, 0)) * 100}%` }} title={`${c.label}: ${fmt(c.revenue)}`} />
+              ))}
+            </div>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-1.5">
+              {channelPerformance.slice(0, 6).map(c => (
+                <div key={c.source} className="flex items-center justify-between text-sm">
+                  <span className="flex items-center gap-1.5 text-gray-600"><span className={`w-2 h-2 rounded-full ${CHANNEL_COLORS[c.source] || 'bg-gray-400'}`} />{c.label}</span>
+                  <span className="font-semibold text-gray-900">{fmt(c.revenue)}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
 
       {/* Quick Actions */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
         <h3 className="text-sm font-bold text-gray-900 mb-3">Quick Actions</h3>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {quickActions.map((action, index) => (
-            <Link
-              key={index}
-              to={action.href}
-              className="flex items-center gap-2 p-3 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors group"
-            >
-              <div className={`${action.color} p-1.5 rounded-lg text-white flex-shrink-0`}>
-                <action.icon className="w-4 h-4" />
-              </div>
-              <span className="text-sm font-medium text-gray-700 group-hover:text-gray-900">
-                {action.title}
-              </span>
+            <Link key={index} to={action.href} className="flex items-center gap-2 p-3 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors group">
+              <div className={`${action.color} p-1.5 rounded-lg text-white flex-shrink-0`}><action.icon className="w-4 h-4" /></div>
+              <span className="text-sm font-medium text-gray-700 group-hover:text-gray-900">{action.title}</span>
             </Link>
           ))}
         </div>
