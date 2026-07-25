@@ -281,22 +281,22 @@ export default function IngredientInventory() {
                       <td className="px-4 py-3 font-medium text-gray-900">{r.name}</td>
                       {isEditingThis ? (
                         <>
-                          <td className="px-2 py-2">
+                          <td className="px-4 py-2 text-right">
                             <input type="number" min="0" value={editingStock.weekly} disabled={!isRecipe}
                               onChange={e => setEditingStock(prev => ({ ...prev, weekly: e.target.value }))}
                               className="w-20 border rounded px-2 py-1 text-sm text-right disabled:bg-gray-100 disabled:text-gray-300" />
                           </td>
-                          <td className="px-2 py-2">
+                          <td className="px-4 py-2 text-right">
                             <input type="number" min="0" value={editingStock.monthly} disabled={!isRecipe}
                               onChange={e => setEditingStock(prev => ({ ...prev, monthly: e.target.value }))}
                               className="w-20 border rounded px-2 py-1 text-sm text-right disabled:bg-gray-100 disabled:text-gray-300" />
                           </td>
-                          <td className="px-2 py-2">
+                          <td className="px-4 py-2 text-right">
                             <input type="number" min="0" value={editingStock.single} disabled={isRecipe}
                               onChange={e => setEditingStock(prev => ({ ...prev, single: e.target.value }))}
                               className="w-20 border rounded px-2 py-1 text-sm text-right disabled:bg-gray-100 disabled:text-gray-300" />
                           </td>
-                          <td className="px-2 py-2 text-right whitespace-nowrap">
+                          <td className="px-4 py-2 text-right whitespace-nowrap">
                             <button onClick={saveStock} disabled={savingStock} className="p-1 text-green-600 hover:bg-green-50 rounded-lg" title="Save">
                               <Check className="w-4 h-4" />
                             </button>
