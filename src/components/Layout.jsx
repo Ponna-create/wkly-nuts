@@ -4,7 +4,7 @@ import {
   Home, Package, Warehouse, ShoppingCart, FileText,
   Menu, X, LogOut, Users, Truck, Factory,
   ChevronDown, ChevronRight, Database, Settings, BarChart3, Boxes, Tag, ClipboardList,
-  Heart, Megaphone
+  Heart, Megaphone, Layers
 } from 'lucide-react';
 import { logout } from './Auth';
 import { isTestMode, setTestMode, resetTestData } from '../services/supabase';
@@ -45,6 +45,7 @@ const navGroups = [
     label: 'Growth',
     items: [
       { name: 'Marketing', href: '/marketing', icon: Megaphone },
+      { name: 'Omni Channels', href: '/omni-channels', icon: Layers },
     ],
   },
   {

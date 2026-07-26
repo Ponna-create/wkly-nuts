@@ -27,6 +27,7 @@ import Reports from './pages/Reports';
 import HelpGuide from './pages/HelpGuide';
 import BackupSettings from './pages/BackupSettings';
 import Marketing from './pages/Marketing';
+import OmniChannels from './pages/OmniChannels';
 import GSTFiling from './pages/GSTFiling';
 
 function App() {
@@ -56,6 +57,7 @@ function App() {
               <Route path="/invoices" element={<ErrorBoundary><InvoiceManagement /></ErrorBoundary>} />
               <Route path="/reports" element={<ErrorBoundary><Reports /></ErrorBoundary>} />
               <Route path="/marketing" element={<ErrorBoundary><Marketing /></ErrorBoundary>} />
+              <Route path="/omni-channels" element={<ErrorBoundary><OmniChannels /></ErrorBoundary>} />
               <Route path="/gst" element={<ErrorBoundary><GSTFiling /></ErrorBoundary>} />
               <Route path="/help" element={<ErrorBoundary><HelpGuide /></ErrorBoundary>} />
               <Route path="/settings" element={<ErrorBoundary><BackupSettings /></ErrorBoundary>} />

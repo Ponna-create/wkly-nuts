@@ -3071,6 +3071,81 @@ const _realDbService = {
   // ==========================================
   // MARKETING CAMPAIGNS
   // ==========================================
+  // Channel Expenses — open-ended list of fixed/recurring costs per sales channel
+  // (domain, platform subscription, etc.). Small, manual-entry data — no CSV import.
+  async getChannelExpenses() {
+    if (!isSupabaseAvailable()) return { data: [], error: null };
+    try {
+      const { data, error } = await supabase
+        .from('channel_expenses')
+        .select('*')
+        .order('channel', { ascending: true });
+      if (error) throw error;
+      return { data: data || [], error: null };
+    } catch (error) {
+      console.error('Error fetching channel expenses:', error);
+      return { data: [], error };
+    }
+  },
+
+  async createChannelExpense(expense) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    try {
+      const { data, error } = await supabase
+        .from('channel_expenses')
+        .insert([{
+          channel: expense.channel,
+          name: expense.name,
+          amount: expense.amount || 0,
+          frequency: expense.frequency || 'monthly',
+          notes: expense.notes || null,
+        }])
+        .select()
+        .single();
+      if (error) throw error;
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error creating channel expense:', error);
+      return { data: null, error };
+    }
+  },
+
+  async updateChannelExpense(expense) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    try {
+      const { data, error } = await supabase
+        .from('channel_expenses')
+        .update({
+          channel: expense.channel,
+          name: expense.name,
+          amount: expense.amount,
+          frequency: expense.frequency,
+          notes: expense.notes,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', expense.id)
+        .select()
+        .single();
+      if (error) throw error;
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error updating channel expense:', error);
+      return { data: null, error };
+    }
+  },
+
+  async deleteChannelExpense(id) {
+    if (!isSupabaseAvailable()) return { error: new Error('Supabase not configured') };
+    try {
+      const { error } = await supabase.from('channel_expenses').delete().eq('id', id);
+      if (error) throw error;
+      return { error: null };
+    } catch (error) {
+      console.error('Error deleting channel expense:', error);
+      return { error };
+    }
+  },
+
   async getMarketingCampaigns() {
     if (!isSupabaseAvailable()) return { data: [], error: null };
     try {
