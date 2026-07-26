@@ -2265,6 +2265,8 @@ const _realDbService = {
         ['feedback_date', 'feedbackDate', 'feedback_date'],
         ['notes', 'notes', 'notes'],
         ['internal_notes', 'internalNotes', 'internal_notes'],
+        ['boxes_small', 'boxesSmall', 'boxes_small'],
+        ['boxes_big', 'boxesBig', 'boxes_big'],
       ];
 
       fields.forEach(([dbCol, camel, snake]) => {

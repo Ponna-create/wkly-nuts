@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
-import { X, Camera, CheckCircle, AlertCircle, Ban, Package } from 'lucide-react';
+import { X, Camera, CheckCircle, AlertCircle, Ban, Package, Clock, Minus, Plus } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { dbService } from '../../services/supabase';
 
@@ -21,7 +21,17 @@ export default function QRScanner({ onClose, onScanComplete }) {
   const processingRef = useRef(false);
   const lastScanTimeRef = useRef(0);
 
+  // ── Fulfilment timer: session starts the moment this scanner opens, stops
+  // when "Done" is clicked — that elapsed time can be logged as Work Log time.
+  const sessionStartRef = useRef(Date.now());
+  const [staff, setStaff] = useState([]);
+  const [showTimeLog, setShowTimeLog] = useState(false);
+  const [logStaff, setLogStaff] = useState([]);
+  const [logHours, setLogHours] = useState(0);
+  const [loggingTime, setLoggingTime] = useState(false);
+
   useEffect(() => {
+    dbService.getStaff().then(({ data }) => setStaff(data || []));
     return () => { stopScanner(); };
   }, []);
 
@@ -138,7 +148,7 @@ export default function QRScanner({ onClose, onScanComplete }) {
 
       // Success!
       setLastScan({ ...data, status: 'success', previousStatus: dbOrder.status });
-      setScannedOrders(prev => [...prev, { ...data, scannedAt: new Date(), previousStatus: dbOrder.status }]);
+      setScannedOrders(prev => [...prev, { ...data, scannedAt: new Date(), previousStatus: dbOrder.status, boxesSmall: 0, boxesBig: 0 }]);
       showToast(`✓ ${data.orderNumber} → Dispatched!`, 'success');
 
       // Deduct inventory (non-blocking, don't fail the scan)
@@ -163,10 +173,60 @@ export default function QRScanner({ onClose, onScanComplete }) {
     }
   };
 
+  // Boxes used for a scanned order — saved immediately, doesn't block scanning
+  const updateBoxes = (idx, field, delta) => {
+    setScannedOrders(prev => {
+      const updated = prev.map((o, i) => i === idx ? { ...o, [field]: Math.max(0, (o[field] || 0) + delta) } : o);
+      const order = updated[idx];
+      dbService.updateSalesOrder({ id: order.id, boxesSmall: order.boxesSmall, boxesBig: order.boxesBig })
+        .catch(err => console.warn('Box count save failed:', err));
+      return updated;
+    });
+  };
+
+  const toggleLogStaff = (member) => setLogStaff(prev => {
+    const exists = prev.some(x => x.id === member.id);
+    return exists ? prev.filter(x => x.id !== member.id) : [...prev, { id: member.id, name: member.name, rate: member.rate_per_hour }];
+  });
+
   const handleFinish = () => {
     stopScanner();
+    if (scannedOrders.length > 0 && !showTimeLog) {
+      // Offer to log this scanning session's real elapsed time as fulfilment work
+      const elapsedHours = (Date.now() - sessionStartRef.current) / 3600000;
+      setLogHours(Math.round(elapsedHours * 100) / 100);
+      setShowTimeLog(true);
+      return;
+    }
+    finishAndClose();
+  };
+
+  const finishAndClose = () => {
     if (onScanComplete) onScanComplete(scannedOrders);
     onClose();
+  };
+
+  const handleLogTime = async () => {
+    if (logStaff.length === 0) { showToast('Pick who did the packing/dispatch', 'error'); return; }
+    setLoggingTime(true);
+    const hourly = logStaff.reduce((s, st) => s + (parseFloat(st.rate) || 0), 0);
+    const startDate = new Date(sessionStartRef.current);
+    const endDate = new Date();
+    const hm = (d) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    const { error } = await dbService.createWorkLogEntry({
+      workDate: endDate.toISOString().split('T')[0],
+      activity: 'Delivery packing / fulfilment',
+      startTime: hm(startDate),
+      endTime: hm(endDate),
+      staff: logStaff,
+      hours: logHours,
+      cost: logHours * hourly,
+      notes: `Auto-logged from scan session — ${scannedOrders.length} order${scannedOrders.length !== 1 ? 's' : ''} dispatched`,
+    });
+    setLoggingTime(false);
+    if (error) { showToast('Failed to log time', 'error'); return; }
+    showToast('Fulfilment time logged', 'success');
+    finishAndClose();
   };
 
   return (
@@ -175,16 +235,54 @@ export default function QRScanner({ onClose, onScanComplete }) {
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
           <div>
-            <h2 className="text-xl font-bold text-gray-900">Scan for Dispatch</h2>
+            <h2 className="text-xl font-bold text-gray-900">{showTimeLog ? 'Log Fulfilment Time?' : 'Scan for Dispatch'}</h2>
             <p className="text-sm text-gray-500 mt-1">
               {scannedOrders.length} order{scannedOrders.length !== 1 ? 's' : ''} dispatched
             </p>
           </div>
-          <button onClick={handleFinish} className="text-gray-500 hover:text-gray-700">
+          <button onClick={showTimeLog ? finishAndClose : handleFinish} className="text-gray-500 hover:text-gray-700">
             <X className="w-6 h-6" />
           </button>
         </div>
 
+        {showTimeLog ? (
+          <div className="p-4 space-y-4">
+            <div className="flex items-center gap-2 p-3 bg-teal-50 border border-teal-200 rounded-lg text-sm text-teal-800">
+              <Clock className="w-4 h-4 flex-shrink-0" />
+              This scanning session took <strong className="mx-1">{logHours.toFixed(2)} hr</strong> — log it as fulfilment work?
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Who packed/dispatched this batch?</label>
+              {staff.length === 0 ? (
+                <p className="text-xs text-amber-600">No staff added yet — add your team in Work Log to log this.</p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {staff.map(member => {
+                    const picked = logStaff.some(x => x.id === member.id);
+                    return (
+                      <button type="button" key={member.id} onClick={() => toggleLogStaff(member)}
+                        className={`px-2.5 py-1 rounded-full text-xs font-medium border transition ${picked ? 'bg-teal-600 text-white border-teal-600' : 'bg-white text-gray-600 border-gray-300 hover:border-teal-400'}`}>
+                        {picked ? '✓ ' : ''}{member.name} <span className="opacity-70">₹{member.rate_per_hour}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Hours (edit if needed)</label>
+              <input type="number" value={logHours} onChange={e => setLogHours(parseFloat(e.target.value) || 0)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" min="0" step="0.1" />
+            </div>
+            <div className="flex gap-3 justify-end pt-2 border-t border-gray-200">
+              <button onClick={finishAndClose} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg font-medium">Skip</button>
+              <button onClick={handleLogTime} disabled={loggingTime}
+                className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 font-medium text-sm disabled:opacity-50">
+                {loggingTime ? 'Logging...' : 'Log & Close'}
+              </button>
+            </div>
+          </div>
+        ) : (
         <div className="p-4 space-y-4">
           {/* Camera View */}
           <div className="relative bg-black rounded-lg overflow-hidden" style={{ minHeight: '280px' }}>
@@ -242,14 +340,30 @@ export default function QRScanner({ onClose, onScanComplete }) {
                 <Package className="w-4 h-4 text-green-600" />
                 Dispatched Orders ({scannedOrders.length})
               </h3>
-              <div className="space-y-1 max-h-40 overflow-y-auto">
+              <div className="space-y-1.5 max-h-56 overflow-y-auto">
                 {scannedOrders.map((order, idx) => (
-                  <div key={idx} className="flex items-center justify-between p-2 bg-green-50 rounded">
-                    <div>
-                      <span className="font-medium text-sm">{order.orderNumber}</span>
-                      <span className="text-xs text-gray-500 ml-2">{order.customer}</span>
+                  <div key={idx} className="p-2 bg-green-50 rounded space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="font-medium text-sm">{order.orderNumber}</span>
+                        <span className="text-xs text-gray-500 ml-2">{order.customer}</span>
+                      </div>
+                      <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
                     </div>
-                    <CheckCircle className="w-4 h-4 text-green-600" />
+                    <div className="flex items-center gap-4 text-xs text-gray-600">
+                      <div className="flex items-center gap-1">
+                        <span>Small box:</span>
+                        <button onClick={() => updateBoxes(idx, 'boxesSmall', -1)} className="p-0.5 rounded bg-white border hover:bg-gray-100"><Minus className="w-3 h-3" /></button>
+                        <span className="w-4 text-center font-semibold">{order.boxesSmall}</span>
+                        <button onClick={() => updateBoxes(idx, 'boxesSmall', 1)} className="p-0.5 rounded bg-white border hover:bg-gray-100"><Plus className="w-3 h-3" /></button>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span>Big box:</span>
+                        <button onClick={() => updateBoxes(idx, 'boxesBig', -1)} className="p-0.5 rounded bg-white border hover:bg-gray-100"><Minus className="w-3 h-3" /></button>
+                        <span className="w-4 text-center font-semibold">{order.boxesBig}</span>
+                        <button onClick={() => updateBoxes(idx, 'boxesBig', 1)} className="p-0.5 rounded bg-white border hover:bg-gray-100"><Plus className="w-3 h-3" /></button>
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -270,6 +384,7 @@ export default function QRScanner({ onClose, onScanComplete }) {
             </button>
           </div>
         </div>
+        )}
       </div>
     </div>
   );
