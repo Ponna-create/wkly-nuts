@@ -652,6 +652,7 @@ function CompletionDialog({ dialog, onConfirm, onClose }) {
 // PRODUCTION RUN FORM (with enhanced dropdowns)
 // ============================================
 function ProductionRunForm({ run, skus, onClose, onSave }) {
+  const { showToast } = useApp();
   const isEditing = !!run;
 
   // Build SKU codes list from database SKUs, fallback to hardcoded if none exist
@@ -666,6 +667,7 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
     : FALLBACK_SKU_CODES;
 
   const defaultSku = skuCodes[0] || { code: 'DP', name: 'Day Pack' };
+  const defaultFullSku = (skus || []).find(s => (s.skuCode || s.sku_code) === defaultSku.code);
 
   const [form, setForm] = useState({
     skuCode: run?.sku_code || defaultSku.code,
@@ -688,7 +690,7 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
         ? [{ date: run.batch_date, process: '', start: run.labour_start, end: run.labour_end, people: run.labour_people || '', rate: run.labour_rate_per_hour || '' }]
         : []),
     notes: run?.notes || '',
-    shelfLifeDays: run?.shelf_life_days || 30,
+    shelfLifeDays: run?.shelf_life_days || defaultFullSku?.shelfLifeDays || 30,
     ingredientsUsed: run?.ingredients_used || [],
     packagingUsed: run?.packaging_used || [],
   });
@@ -838,6 +840,9 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
       skuName: sku?.name || code,
       seedCyclePhase: sku?.hasPhases ? (f.seedCyclePhase || 'phase1') : '',
       packType: (sku?.skuType || 'weekly') === 'weekly' ? f.packType : 'single',
+      // Use By = MFD + shelf life — pull the real value from the SKU instead of
+      // the hardcoded 30-day default, so labels don't understate real shelf life.
+      shelfLifeDays: fullSku?.shelfLifeDays || f.shelfLifeDays,
       ingredientsUsed: recipeIngredients.length > 0 ? recipeIngredients : f.ingredientsUsed,
       packagingUsed: recipePackaging.length > 0 ? recipePackaging : f.packagingUsed,
     }));
@@ -900,6 +905,10 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.plannedQuantity || parseInt(form.plannedQuantity) <= 0) return;
+    if (form.status === 'completed' && (!form.actualQuantity || parseInt(form.actualQuantity) <= 0)) {
+      showToast('Enter Actual Qty Produced before marking this run Produced — finished-goods stock is added from this number.', 'error');
+      return;
+    }
     setSaving(true);
 
     // Build display name with phase suffix for Seed Cycle
@@ -1040,8 +1049,11 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
                 <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
                   className="w-full border rounded-lg px-3 py-2 text-sm">
-                  {STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                  {STATUSES.filter(s => s.value !== 'completed').map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
                 </select>
+                <p className="text-xs text-gray-400 mt-1">
+                  To mark this Produced, use the status badge on the run card instead — it also deducts raw materials/packaging and adds finished goods to inventory. Changing status here never touches stock.
+                </p>
               </div>
             </div>
           )}

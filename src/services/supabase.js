@@ -2881,6 +2881,8 @@ const _realDbService = {
           min_stock: material.min_stock || 0,
           cost_per_unit: material.cost_per_unit || 0,
           vendor_name: material.vendor_name,
+          vendor_phone: material.vendor_phone,
+          vendor_address: material.vendor_address,
           notes: material.notes,
           size: material.size,
           last_purchase_date: material.last_purchase_date,
@@ -2906,6 +2908,8 @@ const _realDbService = {
       if (material.min_stock !== undefined) updateData.min_stock = material.min_stock;
       if (material.cost_per_unit !== undefined) updateData.cost_per_unit = material.cost_per_unit;
       if (material.vendor_name !== undefined) updateData.vendor_name = material.vendor_name;
+      if (material.vendor_phone !== undefined) updateData.vendor_phone = material.vendor_phone;
+      if (material.vendor_address !== undefined) updateData.vendor_address = material.vendor_address;
       if (material.notes !== undefined) updateData.notes = material.notes;
       if (material.size !== undefined) updateData.size = material.size;
       if (material.last_purchase_date !== undefined) updateData.last_purchase_date = material.last_purchase_date;

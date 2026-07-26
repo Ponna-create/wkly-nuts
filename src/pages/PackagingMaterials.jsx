@@ -17,7 +17,7 @@ const CATEGORIES = {
 
 const emptyForm = {
   name: '', category: 'other', unit: 'pcs', current_stock: 0,
-  min_stock: 0, cost_per_unit: 0, vendor_name: '', notes: '',
+  min_stock: 0, cost_per_unit: 0, vendor_name: '', vendor_phone: '', vendor_address: '', notes: '',
   size: '', purchase_date: new Date().toISOString().split('T')[0],
 };
 
@@ -79,6 +79,7 @@ export default function PackagingMaterials() {
       name: mat.name, category: mat.category, unit: mat.unit,
       current_stock: mat.current_stock, min_stock: mat.min_stock,
       cost_per_unit: mat.cost_per_unit, vendor_name: mat.vendor_name || '',
+      vendor_phone: mat.vendor_phone || '', vendor_address: mat.vendor_address || '',
       notes: mat.notes || '', size: mat.size || '',
       purchase_date: mat.last_purchase_date || new Date().toISOString().split('T')[0],
     });
@@ -262,6 +263,9 @@ export default function PackagingMaterials() {
                     <div>
                       <p className="text-gray-500">Vendor</p>
                       <p className="font-medium text-gray-900 truncate">{mat.vendor_name || '-'}</p>
+                      {mat.vendor_phone && (
+                        <a href={`tel:${mat.vendor_phone}`} className="text-xs text-teal-600 hover:underline">{mat.vendor_phone}</a>
+                      )}
                     </div>
                     {mat.size && (
                       <div>
@@ -403,6 +407,18 @@ export default function PackagingMaterials() {
                 <label className="block text-sm font-semibold text-gray-900 mb-1">Vendor</label>
                 <input type="text" value={form.vendor_name} onChange={e => setForm({...form, vendor_name: e.target.value})}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Vendor name" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-1">Vendor Phone</label>
+                  <input type="tel" value={form.vendor_phone} onChange={e => setForm({...form, vendor_phone: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="10-digit mobile" />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-1">Vendor Address</label>
+                  <input type="text" value={form.vendor_address} onChange={e => setForm({...form, vendor_address: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Optional" />
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-semibold text-gray-900 mb-1">Notes</label>
