@@ -31,14 +31,14 @@ const monthLabel = (monthKey) => {
 };
 
 export default function Dashboard() {
-  const { state } = useApp();
+  const { state, useDatabase, connectionError, isLoading } = useApp();
   const orders = state.salesOrders || [];
   const skus = state.skus || [];
   const inventory = state.inventory || [];
   const expenses = state.expenses || [];
   const purchaseOrders = state.purchaseOrders || [];
-  const isCloudSynced = !!state.useDatabase;
-  const connectionError = state.connectionError;
+  const isCloudSynced = !!useDatabase;
+  const isCheckingConnection = !!isLoading;
 
   const availableMonths = useMemo(() => {
     const set = new Set([currentMonthKey()]);
@@ -176,7 +176,12 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      {isCloudSynced ? (
+      {isCheckingConnection ? (
+        <div className="flex items-center gap-2 border rounded-xl px-4 py-2.5 text-sm bg-gray-50 border-gray-200 text-gray-500">
+          <Cloud className="w-4 h-4 flex-shrink-0 animate-pulse" />
+          <span className="font-medium">Checking cloud connection…</span>
+        </div>
+      ) : isCloudSynced ? (
         <div className="flex items-center gap-2 border rounded-xl px-4 py-2.5 text-sm bg-green-50 border-green-200 text-green-800">
           <Cloud className="w-4 h-4 flex-shrink-0" />
           <span className="font-medium">Synced to cloud — visible on every device.</span>
