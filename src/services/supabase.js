@@ -302,6 +302,7 @@ const _realDbService = {
         processingNotes: sku.weekly_pack?.processingNotes || '',
         shelfLifeDays: sku.weekly_pack?.shelfLifeDays || 30,
         sellingPrice: sku.weekly_pack?.sellingPrice || 0,
+        mrp: sku.weekly_pack?.mrp ?? null,
         // Type + type-specific config (persisted in the JSONB)
         skuType: sku.weekly_pack?.skuType || 'weekly',
         unitWeight: sku.weekly_pack?.unitWeight ?? '',
@@ -354,6 +355,7 @@ const _realDbService = {
         processingNotes: sku.processingNotes || '',
         shelfLifeDays: sku.shelfLifeDays || 30,
         sellingPrice: sku.sellingPrice || 0,
+        mrp: sku.mrp ?? null,
       };
       const monthlyPack = {
         ...(sku.monthlyPack || {}),
@@ -363,6 +365,7 @@ const _realDbService = {
         processingNotes: sku.processingNotes || '',
         shelfLifeDays: sku.shelfLifeDays || 30,
         sellingPrice: sku.sellingPrice || 0,
+        mrp: sku.mrp ?? null,
       };
       const { data, error } = await supabase
         .from('skus')
@@ -425,6 +428,7 @@ const _realDbService = {
         processingNotes: sku.processingNotes || sku.weeklyPack?.processingNotes || '',
         shelfLifeDays: sku.shelfLifeDays || sku.weeklyPack?.shelfLifeDays || 30,
         sellingPrice: sku.sellingPrice || sku.weeklyPack?.sellingPrice || 0,
+        mrp: sku.mrp ?? sku.weeklyPack?.mrp ?? null,
       };
       const monthlyPackUpdate = {
         ...(sku.monthlyPack || {}),
@@ -434,6 +438,7 @@ const _realDbService = {
         processingNotes: sku.processingNotes || sku.monthlyPack?.processingNotes || '',
         shelfLifeDays: sku.shelfLifeDays || sku.monthlyPack?.shelfLifeDays || 30,
         sellingPrice: sku.sellingPrice || sku.monthlyPack?.sellingPrice || 0,
+        mrp: sku.mrp ?? sku.monthlyPack?.mrp ?? null,
       };
       const { data, error } = await supabase
         .from('skus')

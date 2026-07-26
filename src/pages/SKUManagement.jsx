@@ -146,8 +146,9 @@ export default function SKUManagement() {
     processingNotes: '',
     // Shelf life in days
     shelfLifeDays: 30,
-    // Selling price for margin reference
+    // Selling price for margin reference; MRP is the printed max retail price (can differ from actual selling price)
     sellingPrice: '',
+    mrp: '',
   });
 
   const [currentRecipeItem, setCurrentRecipeItem] = useState({
@@ -271,6 +272,7 @@ export default function SKUManagement() {
       processingNotes: '',
       shelfLifeDays: 30,
       sellingPrice: '',
+      mrp: '',
     });
     setCurrentRecipeItem({ ingredientId: '', gramsPerSachet: '' });
     setSkuCodeEdited(false);
@@ -525,6 +527,7 @@ export default function SKUManagement() {
       processingNotes: formData.processingNotes || '',
       shelfLifeDays: parseInt(formData.shelfLifeDays) || 30,
       sellingPrice: parseFloat(formData.sellingPrice) || 0,
+      mrp: formData.mrp !== '' ? parseFloat(formData.mrp) : null,
     };
 
     if (editingSKU) {
@@ -571,6 +574,7 @@ export default function SKUManagement() {
       processingNotes: sku.processingNotes || '',
       shelfLifeDays: sku.shelfLifeDays || 30,
       sellingPrice: sku.sellingPrice || '',
+      mrp: sku.mrp ?? '',
     });
     setEditingSKU(sku);
     setShowForm(true);
@@ -1390,16 +1394,21 @@ export default function SKUManagement() {
                       </div>
 
                       {/* Shelf life + selling price + reorder cycle */}
-                      <div className="grid grid-cols-3 gap-4">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Shelf Life (days)</label>
                           <input type="number" value={formData.shelfLifeDays} onChange={e => setFormData(f => ({ ...f, shelfLifeDays: e.target.value }))}
                             className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="e.g. 180" />
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Selling Price / Unit (MRP)</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Selling Price / Unit</label>
                           <input type="number" value={formData.sellingPrice} onChange={e => setFormData(f => ({ ...f, sellingPrice: e.target.value }))}
                             className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="e.g. 149" />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">MRP</label>
+                          <input type="number" value={formData.mrp} onChange={e => setFormData(f => ({ ...f, mrp: e.target.value }))}
+                            className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="e.g. 199" />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Reorder Cycle (days)</label>
@@ -1591,17 +1600,22 @@ export default function SKUManagement() {
                     );
                   })()}
 
-                  {/* Shelf Life, Selling Price & Reorder Cycle */}
-                  <div className="grid grid-cols-3 gap-4">
+                  {/* Shelf Life, Selling Price, MRP & Reorder Cycle */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Shelf Life (days)</label>
                       <input type="number" value={formData.shelfLifeDays} onChange={e => setFormData(f => ({ ...f, shelfLifeDays: e.target.value }))}
                         className="w-full border rounded-lg px-3 py-2 text-sm" min="1" placeholder="e.g. 180" />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Selling Price / Unit (MRP)</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Selling Price / Unit</label>
                       <input type="number" value={formData.sellingPrice} onChange={e => setFormData(f => ({ ...f, sellingPrice: e.target.value }))}
                         className="w-full border rounded-lg px-3 py-2 text-sm" min="0" placeholder="e.g. 199" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">MRP</label>
+                      <input type="number" value={formData.mrp} onChange={e => setFormData(f => ({ ...f, mrp: e.target.value }))}
+                        className="w-full border rounded-lg px-3 py-2 text-sm" min="0" placeholder="e.g. 249" />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Reorder Cycle (days)</label>
@@ -1847,17 +1861,22 @@ export default function SKUManagement() {
                     placeholder="e.g. Roast flax & pumpkin seeds at 150°C for 10 min → Mix with honey → Form balls → Pack" />
                 </div>
 
-                {/* Shelf Life, Selling Price & Reorder Cycle */}
-                <div className="grid grid-cols-3 gap-4">
+                {/* Shelf Life, Selling Price, MRP & Reorder Cycle */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Shelf Life (days)</label>
                     <input type="number" value={formData.shelfLifeDays} onChange={e => setFormData(f => ({ ...f, shelfLifeDays: e.target.value }))}
                       className="w-full border rounded-lg px-3 py-2 text-sm" min="1" placeholder="30" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Selling Price / Pack (MRP)</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Selling Price / Pack</label>
                     <input type="number" value={formData.sellingPrice} onChange={e => setFormData(f => ({ ...f, sellingPrice: e.target.value }))}
                       className="w-full border rounded-lg px-3 py-2 text-sm" min="0" placeholder="e.g. 399" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">MRP</label>
+                    <input type="number" value={formData.mrp} onChange={e => setFormData(f => ({ ...f, mrp: e.target.value }))}
+                      className="w-full border rounded-lg px-3 py-2 text-sm" min="0" placeholder="e.g. 449" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Days per Box (reorder)</label>
