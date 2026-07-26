@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Database, Download, Upload, Check, AlertCircle, Clock, HardDrive, Loader2, RefreshCw, Settings, Wifi, WifiOff } from 'lucide-react';
+import { Database, Download, Upload, Check, AlertCircle, AlertTriangle, Clock, HardDrive, Loader2, RefreshCw, Settings, Wifi, WifiOff } from 'lucide-react';
 import { dbService } from '../services/supabase';
 import { useApp } from '../context/AppContext';
 import { getGstRate, setGstRate, getDbMode, setDbMode } from '../utils/settings';
@@ -309,9 +309,9 @@ export default function BackupSettings() {
           <label className="block text-sm font-semibold text-gray-900 mb-3">Database Mode</label>
           <div className="space-y-2">
             {[
-              { value: 'auto', label: 'Auto-detect', desc: 'Use Supabase if available, fallback to local' },
+              { value: 'auto', label: 'Auto-detect (recommended)', desc: 'Always tries cloud first, falls back to local automatically only if cloud is unreachable — no manual switching needed' },
               { value: 'cloud', label: 'Cloud Only (Supabase)', desc: 'Always try cloud — needs VPN in India' },
-              { value: 'local', label: 'Local Only', desc: 'Use browser storage — works offline, this device only' },
+              { value: 'local', label: 'Local Only', desc: '⚠️ Nothing syncs to the cloud until you switch this back — other devices won\'t see anything you enter. Only use this if you have no internet at all.' },
             ].map(opt => (
               <label
                 key={opt.value}
@@ -335,6 +335,15 @@ export default function BackupSettings() {
               </label>
             ))}
           </div>
+          {dbModeValue === 'local' && (
+            <div className="mt-3 flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg p-3">
+              <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-red-800">
+                You're on Local Only right now — nothing entered is reaching the cloud, and other devices won't see it.
+                Switch back to Auto-detect unless you genuinely have no internet access.
+              </p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -469,8 +478,7 @@ export default function BackupSettings() {
         <ul className="text-sm text-amber-800 space-y-1 list-disc list-inside">
           <li>Export a full backup <strong>every week</strong> to your business laptop</li>
           <li>Keep the backup JSON file in a dedicated folder (e.g., D:\WKLY Nuts Backups\)</li>
-          <li>If Supabase is down or blocked, switch to <strong>Local Only</strong> mode above</li>
-          <li>The <strong>Auto-detect</strong> mode will automatically use local storage when cloud is unreachable</li>
+          <li>Leave this on <strong>Auto-detect</strong> — it already switches to local storage by itself when cloud is unreachable, and keeps retrying cloud on the next load. You should not need to touch <strong>Local Only</strong> manually.</li>
           <li>GST rate changes only apply to <strong>new</strong> orders — existing orders keep their saved rate</li>
         </ul>
       </div>

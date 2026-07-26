@@ -3646,7 +3646,7 @@ const _realDbService = {
     try {
       const { data, error } = await supabase
         .from('packaging_materials')
-        .select('id, name, category, unit, current_stock, min_stock')
+        .select('id, name, category, unit, current_stock, min_stock, cost_per_unit')
         .gt('current_stock', 0)
         .order('name');
       if (error) throw error;

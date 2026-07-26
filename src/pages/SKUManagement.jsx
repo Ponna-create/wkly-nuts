@@ -2037,7 +2037,7 @@ export default function SKUManagement() {
                 ))}
               </select>
             </div>
-            {selectedSKU && selectedSKU.skuType === 'single' ? (
+            {selectedSKU && selectedSKU.skuType !== 'weekly' ? (
               <div>
                 <label className="label">Number of Units</label>
                 <input

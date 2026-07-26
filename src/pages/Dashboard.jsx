@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertCircle, Package, Truck, Users, ChevronRight, PieChart, TrendingUp, TrendingDown } from 'lucide-react';
+import { AlertCircle, Package, Truck, Users, ChevronRight, PieChart, TrendingUp, TrendingDown, Cloud, CloudOff } from 'lucide-react';
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { useApp } from '../context/AppContext';
 
@@ -37,6 +37,8 @@ export default function Dashboard() {
   const inventory = state.inventory || [];
   const expenses = state.expenses || [];
   const purchaseOrders = state.purchaseOrders || [];
+  const isCloudSynced = !!state.useDatabase;
+  const connectionError = state.connectionError;
 
   const availableMonths = useMemo(() => {
     const set = new Set([currentMonthKey()]);
@@ -174,6 +176,24 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
+      {isCloudSynced ? (
+        <div className="flex items-center gap-2 border rounded-xl px-4 py-2.5 text-sm bg-green-50 border-green-200 text-green-800">
+          <Cloud className="w-4 h-4 flex-shrink-0" />
+          <span className="font-medium">Synced to cloud — visible on every device.</span>
+        </div>
+      ) : (
+        <Link to="/settings" className="flex items-center justify-between gap-3 border rounded-xl px-4 py-2.5 text-sm hover:opacity-90 transition bg-red-50 border-red-200 text-red-800">
+          <span className="flex items-center gap-2">
+            <CloudOff className="w-4 h-4 flex-shrink-0" />
+            <span className="font-medium">
+              Running on local data only — not synced to the cloud. Other devices won't see anything entered right now.
+              {connectionError ? ` (${connectionError})` : ''}
+            </span>
+          </span>
+          <span className="text-xs font-semibold underline whitespace-nowrap">Check Settings →</span>
+        </Link>
+      )}
+
       <Link to="/settings" className={`flex items-center justify-between gap-3 border rounded-xl px-4 py-2.5 text-sm hover:opacity-90 transition ${backupStyles}`}>
         <span className="flex items-center gap-2"><AlertCircle className="w-4 h-4 flex-shrink-0" /><span className="font-medium">{backupText}</span></span>
         <span className="text-xs font-semibold underline whitespace-nowrap">Back up now →</span>

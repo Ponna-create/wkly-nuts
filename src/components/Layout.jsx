@@ -51,6 +51,7 @@ const navGroups = [
   {
     label: 'Finance',
     items: [
+      { name: 'Expenses', href: '/expenses', icon: ClipboardList },
       { name: 'GST Filing', href: '/invoices', icon: FileText },
       { name: 'Reports', href: '/reports', icon: BarChart3 },
     ],

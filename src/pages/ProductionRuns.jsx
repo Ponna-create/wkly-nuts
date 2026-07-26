@@ -766,7 +766,33 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
     ...f, labourSessions: f.labourSessions.map((s, i) => i === idx ? { ...s, end: nowHM() } : s),
   }));
 
-  const totalCost = (parseFloat(form.ingredientCost) || 0) + (parseFloat(form.packagingCost) || 0) + labourCost;
+  // Weighted-average ₹/kg across active batches (locked costing decision) — falls
+  // back to 0 if the ingredient isn't found so cost never silently guesses.
+  const getIngredientRatePerKg = (name) => {
+    const ing = availableIngredients.find(ai => ai.name === name);
+    if (!ing) return 0;
+    const batches = ing.ingredient_batches || [];
+    const totalQty = batches.reduce((s, b) => s + (parseFloat(b.quantity_remaining) || 0), 0);
+    if (totalQty <= 0) return 0;
+    const totalValue = batches.reduce((s, b) => s + ((parseFloat(b.quantity_remaining) || 0) * (parseFloat(b.price_per_unit) || 0)), 0);
+    return totalValue / totalQty;
+  };
+  const getPackagingRate = (name) => availablePackaging.find(ap => ap.name === name)?.cost_per_unit || 0;
+
+  // Real ingredient/packaging cost for this run — was previously two dead manual
+  // fields that never had an input, so every run's cost was labour-only.
+  const computedIngredientCost = form.ingredientsUsed.reduce((sum, ing) => {
+    if (!ing.ingredient_name) return sum;
+    const grams = parseFloat(ing.quantity_grams) || 0;
+    return sum + (grams / 1000) * getIngredientRatePerKg(ing.ingredient_name);
+  }, 0);
+  const computedPackagingCost = form.packagingUsed.reduce((sum, pkg) => {
+    if (!pkg.material_name) return sum;
+    const qty = parseFloat(pkg.quantity) || 0;
+    return sum + qty * getPackagingRate(pkg.material_name);
+  }, 0);
+
+  const totalCost = computedIngredientCost + computedPackagingCost + labourCost;
   const runQty = parseInt(form.actualQuantity) || parseInt(form.plannedQuantity) || 0;
   const costPerUnit = runQty > 0 ? totalCost / runQty : 0;
 
@@ -889,8 +915,8 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
       rejected_quantity: parseInt(form.rejectedQuantity) || 0,
       quality_status: form.qualityStatus,
       quality_notes: form.qualityNotes,
-      ingredient_cost: parseFloat(form.ingredientCost) || 0,
-      packaging_cost: parseFloat(form.packagingCost) || 0,
+      ingredient_cost: computedIngredientCost,
+      packaging_cost: computedPackagingCost,
       labor_cost: labourCost,
       labour_sessions: form.labourSessions || [],
       total_cost: totalCost,
@@ -907,8 +933,8 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
       plannedQuantity: parseInt(form.plannedQuantity) || 0,
       actualQuantity: parseInt(form.actualQuantity) || 0,
       shelfLifeDays: parseInt(form.shelfLifeDays) || 30,
-      ingredientCost: parseFloat(form.ingredientCost) || 0,
-      packagingCost: parseFloat(form.packagingCost) || 0,
+      ingredientCost: computedIngredientCost,
+      packagingCost: computedPackagingCost,
       laborCost: labourCost,
       labourSessions: form.labourSessions || [],
       totalCost: totalCost,
@@ -1201,6 +1227,17 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
               <option value="Labelling" />
               <option value="Sealing" />
             </datalist>
+          </div>
+
+          {/* Cost Summary — ingredient/packaging cost computed live from real rates */}
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-1 text-sm">
+            <div className="flex items-center justify-between"><span className="text-gray-500">Ingredient cost</span><span className="font-medium text-gray-900">₹{computedIngredientCost.toFixed(2)}</span></div>
+            <div className="flex items-center justify-between"><span className="text-gray-500">Packaging cost</span><span className="font-medium text-gray-900">₹{computedPackagingCost.toFixed(2)}</span></div>
+            <div className="flex items-center justify-between"><span className="text-gray-500">Labour cost</span><span className="font-medium text-gray-900">₹{labourCost.toFixed(2)}</span></div>
+            <div className="border-t pt-1 flex items-center justify-between font-bold">
+              <span className="text-gray-700">Total cost{runQty > 0 ? ` · ₹${costPerUnit.toFixed(2)}/unit` : ''}</span>
+              <span className="text-teal-700">₹{totalCost.toFixed(2)}</span>
+            </div>
           </div>
 
           {/* Notes */}

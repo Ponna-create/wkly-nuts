@@ -3,6 +3,7 @@ import { Plus, Trash2, Layers, ChevronDown, ChevronUp } from 'lucide-react';
 import { dbService } from '../services/supabase';
 import { useApp } from '../context/AppContext';
 import { orderCost } from '../utils/skuCost';
+import { getManualChannels, addManualChannel } from '../utils/settings';
 
 const SOURCE_LABELS = {
   whatsapp: 'WhatsApp', website: 'Website', instagram: 'Instagram', inst: 'Instagram',
@@ -24,6 +25,7 @@ export default function OmniChannels() {
   const [expandedChannel, setExpandedChannel] = useState(null);
   const [addingChannel, setAddingChannel] = useState(false);
   const [newChannelKey, setNewChannelKey] = useState('');
+  const [manualChannels, setManualChannels] = useState(getManualChannels());
 
   useEffect(() => { loadData(); }, []);
 
@@ -40,13 +42,15 @@ export default function OmniChannels() {
 
   const monthKey = new Date().toISOString().slice(0, 7);
 
-  // Every channel that has real orders, or already has expenses/fee configured, or is a known default
+  // Every channel that has real orders, already has expenses/fee configured,
+  // was manually added, or is a known default
   const channelKeys = useMemo(() => {
     const set = new Set(KNOWN_CHANNELS);
     (state.salesOrders || []).forEach(o => set.add(o.order_source || 'other'));
     expenses.forEach(e => set.add(e.channel));
+    manualChannels.forEach(c => set.add(c));
     return Array.from(set);
-  }, [state.salesOrders, expenses]);
+  }, [state.salesOrders, expenses, manualChannels]);
 
   const channels = useMemo(() => {
     const skus = state.skus || [];
@@ -113,7 +117,15 @@ export default function OmniChannels() {
                 <option value="">Select channel...</option>
                 {Object.entries(SOURCE_LABELS).filter(([k]) => !channelKeys.includes(k)).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </select>
-              <button onClick={() => { if (newChannelKey) { setExpenses(prev => [...prev]); setAddingFor(newChannelKey); setExpandedChannel(newChannelKey); } setAddingChannel(false); setNewChannelKey(''); }}
+              <button onClick={() => {
+                  if (newChannelKey) {
+                    addManualChannel(newChannelKey);
+                    setManualChannels(getManualChannels());
+                    setExpandedChannel(newChannelKey);
+                    showToast(`${SOURCE_LABELS[newChannelKey] || newChannelKey} added`, 'success');
+                  }
+                  setAddingChannel(false); setNewChannelKey('');
+                }}
                 className="px-3 py-2 bg-teal-600 text-white rounded-lg text-sm font-medium">Add</button>
               <button onClick={() => { setAddingChannel(false); setNewChannelKey(''); }} className="px-3 py-2 text-sm text-gray-600">Cancel</button>
             </div>

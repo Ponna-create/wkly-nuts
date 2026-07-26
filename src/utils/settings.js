@@ -33,3 +33,15 @@ export const setChannelFee = (channel, pct) => {
   fees[channel] = pct;
   setSetting('channelFees', fees);
 };
+
+// Channels manually added on the Omni Channels page that don't have any real
+// orders yet — without this they'd have nowhere to persist and "Add Channel"
+// would silently do nothing.
+export const getManualChannels = () => getSetting('manualChannels', []);
+export const addManualChannel = (channel) => {
+  const list = getManualChannels();
+  if (!list.includes(channel)) {
+    list.push(channel);
+    setSetting('manualChannels', list);
+  }
+};
