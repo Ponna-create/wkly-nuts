@@ -303,6 +303,7 @@ const _realDbService = {
         shelfLifeDays: sku.weekly_pack?.shelfLifeDays || 30,
         sellingPrice: sku.weekly_pack?.sellingPrice || 0,
         mrp: sku.weekly_pack?.mrp ?? null,
+        processCosts: sku.weekly_pack?.processCosts || [],
         // Type + type-specific config (persisted in the JSONB)
         skuType: sku.weekly_pack?.skuType || 'weekly',
         unitWeight: sku.weekly_pack?.unitWeight ?? '',
@@ -356,6 +357,7 @@ const _realDbService = {
         shelfLifeDays: sku.shelfLifeDays || 30,
         sellingPrice: sku.sellingPrice || 0,
         mrp: sku.mrp ?? null,
+        processCosts: sku.processCosts || [],
       };
       const monthlyPack = {
         ...(sku.monthlyPack || {}),
@@ -366,6 +368,7 @@ const _realDbService = {
         shelfLifeDays: sku.shelfLifeDays || 30,
         sellingPrice: sku.sellingPrice || 0,
         mrp: sku.mrp ?? null,
+        processCosts: sku.processCosts || [],
       };
       const { data, error } = await supabase
         .from('skus')
@@ -429,6 +432,7 @@ const _realDbService = {
         shelfLifeDays: sku.shelfLifeDays || sku.weeklyPack?.shelfLifeDays || 30,
         sellingPrice: sku.sellingPrice || sku.weeklyPack?.sellingPrice || 0,
         mrp: sku.mrp ?? sku.weeklyPack?.mrp ?? null,
+        processCosts: sku.processCosts || sku.weeklyPack?.processCosts || [],
       };
       const monthlyPackUpdate = {
         ...(sku.monthlyPack || {}),
@@ -439,6 +443,7 @@ const _realDbService = {
         shelfLifeDays: sku.shelfLifeDays || sku.monthlyPack?.shelfLifeDays || 30,
         sellingPrice: sku.sellingPrice || sku.monthlyPack?.sellingPrice || 0,
         mrp: sku.mrp ?? sku.monthlyPack?.mrp ?? null,
+        processCosts: sku.processCosts || sku.monthlyPack?.processCosts || [],
       };
       const { data, error } = await supabase
         .from('skus')
@@ -2703,6 +2708,7 @@ const _realDbService = {
           instance_end: instanceEnd,
           ingredient_cost: run.ingredientCost || 0,
           packaging_cost: run.packagingCost || 0,
+          process_cost: run.processCost || 0,
           labor_cost: run.laborCost || 0,
           labour_sessions: run.labourSessions || [],
           total_cost: run.totalCost || 0,
@@ -2733,6 +2739,7 @@ const _realDbService = {
         quality_notes: run.quality_notes,
         ingredient_cost: run.ingredient_cost,
         packaging_cost: run.packaging_cost,
+        process_cost: run.process_cost,
         labor_cost: run.labor_cost,
         labour_sessions: run.labour_sessions,
         total_cost: run.total_cost,

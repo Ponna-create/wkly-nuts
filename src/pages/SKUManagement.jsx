@@ -149,6 +149,8 @@ export default function SKUManagement() {
     // Selling price for margin reference; MRP is the printed max retail price (can differ from actual selling price)
     sellingPrice: '',
     mrp: '',
+    // Process cost — roasting gas, grinding, machine sealing, etc. Per-unit ₹ line items.
+    processCosts: [],
   });
 
   const [currentRecipeItem, setCurrentRecipeItem] = useState({
@@ -177,6 +179,10 @@ export default function SKUManagement() {
     const price = parseFloat(pkg.price_per_unit) || 0;
     return sum + qty * price;
   }, 0);
+
+  // Process cost — roasting gas, grinding, machine sealing, etc. A separate
+  // per-unit ₹ bucket from raw material and packaging.
+  const getProcessCost = (costs) => (costs || []).reduce((sum, c) => sum + (parseFloat(c.cost_per_unit) || 0), 0);
 
   // Auto-build the SKU code from name + size, until the user edits it by hand
   useEffect(() => {
@@ -273,6 +279,7 @@ export default function SKUManagement() {
       shelfLifeDays: 30,
       sellingPrice: '',
       mrp: '',
+      processCosts: [],
     });
     setCurrentRecipeItem({ ingredientId: '', gramsPerSachet: '' });
     setSkuCodeEdited(false);
@@ -413,11 +420,11 @@ export default function SKUManagement() {
   };
 
   const getCurrentDayTotal = () => {
-    return formData.recipes[currentDay].reduce((sum, item) => sum + item.gramsPerSachet, 0);
+    return (formData.recipes[currentDay] || []).reduce((sum, item) => sum + item.gramsPerSachet, 0);
   };
 
   const getCompletedDays = () => {
-    return DAYS.filter((day) => formData.recipes[day].length > 0);
+    return DAYS.filter((day) => (formData.recipes[day] || []).length > 0);
   };
 
   const calculateSKUTotals = () => {
@@ -528,6 +535,7 @@ export default function SKUManagement() {
       shelfLifeDays: parseInt(formData.shelfLifeDays) || 30,
       sellingPrice: parseFloat(formData.sellingPrice) || 0,
       mrp: formData.mrp !== '' ? parseFloat(formData.mrp) : null,
+      processCosts: formData.processCosts || [],
     };
 
     if (editingSKU) {
@@ -565,8 +573,12 @@ export default function SKUManagement() {
       buyPrice: sku.buyPrice ?? '',
       reorderCycleDays: sku.reorderCycleDays ?? '',
       selectedVendorId: sku.selectedVendorId || '',
-      recipes: sku.recipes || {
+      // Merge onto the full 7-day shape — Repack/Resale/Single SKUs store recipes
+      // as {} (no day keys at all), which crashed getCurrentDayTotal/getCompletedDays
+      // since `sku.recipes || {...defaults}` never falls back for a truthy {}.
+      recipes: {
         MON: [], TUE: [], WED: [], THU: [], FRI: [], SAT: [], SUN: [],
+        ...(sku.recipes || {}),
       },
       singleUnitIngredients: sku.singleUnitIngredients || [],
       packagingMaterials: sku.packagingMaterials || [],
@@ -575,6 +587,7 @@ export default function SKUManagement() {
       shelfLifeDays: sku.shelfLifeDays || 30,
       sellingPrice: sku.sellingPrice || '',
       mrp: sku.mrp ?? '',
+      processCosts: sku.processCosts || [],
     });
     setEditingSKU(sku);
     setShowForm(true);
@@ -1320,7 +1333,8 @@ export default function SKUManagement() {
                     detail = 'Purchase price per finished unit';
                   }
                   const packagingCost = getPackagingCost(formData.packagingMaterials);
-                  const totalCost = materialCost + packagingCost;
+                  const processCost = getProcessCost(formData.processCosts);
+                  const totalCost = materialCost + packagingCost + processCost;
                   const sp = parseFloat(formData.sellingPrice) || 0;
                   const margin = sp > 0 ? ((sp - totalCost) / sp * 100) : 0;
                   return (
@@ -1329,7 +1343,7 @@ export default function SKUManagement() {
                       <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-5">
                         <h3 className="text-lg font-bold text-gray-900 mb-1">{formData.name || 'New product'}</h3>
                         <p className="text-xs text-gray-500 mb-3">{detail}</p>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-center">
                           <div>
                             <p className="text-xs text-gray-500">Raw material</p>
                             <p className="text-lg font-bold text-gray-700">₹{materialCost.toFixed(2)}</p>
@@ -1337,6 +1351,10 @@ export default function SKUManagement() {
                           <div>
                             <p className="text-xs text-gray-500">+ Packaging</p>
                             <p className="text-lg font-bold text-gray-700">₹{packagingCost.toFixed(2)}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500">+ Process</p>
+                            <p className="text-lg font-bold text-gray-700">₹{processCost.toFixed(2)}</p>
                           </div>
                           <div>
                             <p className="text-xs text-gray-500">= Cost / unit</p>
@@ -1391,6 +1409,32 @@ export default function SKUManagement() {
                         <datalist id="sku-packaging-list">
                           {availablePackagingMaterials.map(m => <option key={m.id} value={m.name} />)}
                         </datalist>
+                      </div>
+
+                      {/* Process costs */}
+                      <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="text-sm font-semibold text-orange-800">Process Cost (per unit) — roasting gas, grinding, machine sealing</label>
+                          <button type="button" onClick={() => setFormData(f => ({ ...f, processCosts: [...f.processCosts, { name: '', cost_per_unit: '' }] }))}
+                            className="text-xs text-orange-600 hover:text-orange-800 font-medium">+ Add Cost</button>
+                        </div>
+                        {formData.processCosts.map((c, idx) => (
+                          <div key={idx} className="flex items-center gap-2 mb-2">
+                            <input type="text" value={c.name} onChange={e => { const u = [...formData.processCosts]; u[idx] = { ...u[idx], name: e.target.value }; setFormData(f => ({ ...f, processCosts: u })); }}
+                              className="flex-1 border rounded-lg px-3 py-1.5 text-sm" placeholder="e.g. Roasting gas, Machine sealing" />
+                            <input type="number" value={c.cost_per_unit} onChange={e => { const u = [...formData.processCosts]; u[idx] = { ...u[idx], cost_per_unit: e.target.value }; setFormData(f => ({ ...f, processCosts: u })); }}
+                              className="w-24 border rounded-lg px-2 py-1.5 text-sm" placeholder="₹/unit" min="0" step="0.01" title="Cost per unit" />
+                            <button type="button" onClick={() => setFormData(f => ({ ...f, processCosts: f.processCosts.filter((_, i) => i !== idx) }))}
+                              className="p-1 text-red-400 hover:text-red-600"><X className="w-4 h-4" /></button>
+                          </div>
+                        ))}
+                        {formData.processCosts.length === 0 ? (
+                          <p className="text-xs text-orange-500 italic">e.g. Roasting gas ₹2, Machine sealing ₹1.50</p>
+                        ) : (
+                          <p className="text-xs font-semibold text-orange-700 text-right mt-1">
+                            Process total: ₹{getProcessCost(formData.processCosts).toFixed(2)}
+                          </p>
+                        )}
                       </div>
 
                       {/* Shelf life + selling price + reorder cycle */}
@@ -1534,14 +1578,15 @@ export default function SKUManagement() {
                   {(() => {
                     const materialCost = formData.singleUnitIngredients.reduce((sum, item) => sum + ((parseFloat(item.gramsPerUnit) || 0) * (parseFloat(item.pricePerGram) || 0)), 0);
                     const packagingCost = getPackagingCost(formData.packagingMaterials);
-                    const totalCost = materialCost + packagingCost;
+                    const processCost = getProcessCost(formData.processCosts);
+                    const totalCost = materialCost + packagingCost + processCost;
                     const sp = parseFloat(formData.sellingPrice) || 0;
                     const margin = sp > 0 ? ((sp - totalCost) / sp * 100) : 0;
                     return (
                       <>
                         <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-5">
                           <h3 className="text-lg font-bold text-gray-900 mb-1">{formData.name || 'New product'}</h3>
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-center">
                             <div>
                               <p className="text-xs text-gray-500">Raw material</p>
                               <p className="text-lg font-bold text-gray-700">₹{materialCost.toFixed(2)}</p>
@@ -1549,6 +1594,10 @@ export default function SKUManagement() {
                             <div>
                               <p className="text-xs text-gray-500">+ Packaging</p>
                               <p className="text-lg font-bold text-gray-700">₹{packagingCost.toFixed(2)}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-gray-500">+ Process</p>
+                              <p className="text-lg font-bold text-gray-700">₹{processCost.toFixed(2)}</p>
                             </div>
                             <div>
                               <p className="text-xs text-gray-500">= Cost / unit</p>
@@ -1595,6 +1644,31 @@ export default function SKUManagement() {
                           <datalist id="sku-packaging-list-single">
                             {availablePackagingMaterials.map(m => <option key={m.id} value={m.name} />)}
                           </datalist>
+                        </div>
+
+                        <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                          <div className="flex items-center justify-between mb-2">
+                            <label className="text-sm font-semibold text-orange-800">Process Cost (per unit) — roasting gas, grinding, machine sealing</label>
+                            <button type="button" onClick={() => setFormData(f => ({ ...f, processCosts: [...f.processCosts, { name: '', cost_per_unit: '' }] }))}
+                              className="text-xs text-orange-600 hover:text-orange-800 font-medium">+ Add Cost</button>
+                          </div>
+                          {formData.processCosts.map((c, idx) => (
+                            <div key={idx} className="flex items-center gap-2 mb-2">
+                              <input type="text" value={c.name} onChange={e => { const u = [...formData.processCosts]; u[idx] = { ...u[idx], name: e.target.value }; setFormData(f => ({ ...f, processCosts: u })); }}
+                                className="flex-1 border rounded-lg px-3 py-1.5 text-sm" placeholder="e.g. Roasting gas, Machine sealing" />
+                              <input type="number" value={c.cost_per_unit} onChange={e => { const u = [...formData.processCosts]; u[idx] = { ...u[idx], cost_per_unit: e.target.value }; setFormData(f => ({ ...f, processCosts: u })); }}
+                                className="w-24 border rounded-lg px-2 py-1.5 text-sm" placeholder="₹/unit" min="0" step="0.01" title="Cost per unit" />
+                              <button type="button" onClick={() => setFormData(f => ({ ...f, processCosts: f.processCosts.filter((_, i) => i !== idx) }))}
+                                className="p-1 text-red-400 hover:text-red-600"><X className="w-4 h-4" /></button>
+                            </div>
+                          ))}
+                          {formData.processCosts.length === 0 ? (
+                            <p className="text-xs text-orange-500 italic">e.g. Roasting gas ₹2, Machine sealing ₹1.50</p>
+                          ) : (
+                            <p className="text-xs font-semibold text-orange-700 text-right mt-1">
+                              Process total: ₹{getProcessCost(formData.processCosts).toFixed(2)}
+                            </p>
+                          )}
                         </div>
                       </>
                     );
@@ -2801,12 +2875,21 @@ export default function SKUManagement() {
                         const pc = parseFloat(sku.pouchCount) || 0, pw = parseFloat(sku.pouchWeight) || 0, u = sku.unitOfMeasure || 'g';
                         const ingSum = (sku.singleUnitIngredients || []).reduce((s, i) => s + (parseFloat(i.gramsPerUnit) || 0), 0);
                         const netStr = (pc > 0 && pw > 0) ? `${(pc * pw).toFixed(0)} ${u}` : (ingSum > 0 ? `${ingSum.toFixed(0)} g` : '—');
-                        const cost = (sku.singleUnitIngredients || []).reduce((s, i) => s + ((parseFloat(i.gramsPerUnit) || 0) * (parseFloat(i.pricePerGram) || 0)), 0);
+                        const materialCost = (sku.singleUnitIngredients || []).reduce((s, i) => s + ((parseFloat(i.gramsPerUnit) || 0) * (parseFloat(i.pricePerGram) || 0)), 0);
+                        const packagingCost = (sku.packagingMaterials || []).reduce((sum, pkg) =>
+                          sum + ((parseFloat(pkg.quantity_per_pack) || 0) * (parseFloat(pkg.price_per_unit) || 0)), 0);
+                        const processCost = (sku.processCosts || []).reduce((sum, c) => sum + (parseFloat(c.cost_per_unit) || 0), 0);
+                        const totalCost = materialCost + packagingCost + processCost;
                         return (
                           <div className="bg-blue-50 p-3 rounded-lg border-t">
                             <p className="text-xs text-blue-600 font-semibold mb-1">PROCESSED PACK</p>
                             <p className="text-sm text-gray-700">Net weight: {netStr}{pc > 1 ? ` (${pc} × ${pw}${u})` : ''}</p>
-                            {cost > 0 && <p className="text-sm font-bold text-blue-700">₹{cost.toFixed(2)} per unit (raw material)</p>}
+                            {totalCost > 0 && (
+                              <p className="text-sm font-bold text-blue-700">
+                                ₹{totalCost.toFixed(2)} per unit
+                                <span className="font-normal text-xs text-blue-500"> (₹{materialCost.toFixed(2)} material + ₹{packagingCost.toFixed(2)} packaging{processCost > 0 ? ` + ₹${processCost.toFixed(2)} process` : ''})</span>
+                              </p>
+                            )}
                           </div>
                         );
                       })()}
@@ -2827,7 +2910,8 @@ export default function SKUManagement() {
                       }
                       const packagingCost = (sku.packagingMaterials || []).reduce((sum, pkg) =>
                         sum + ((parseFloat(pkg.quantity_per_pack) || 0) * (parseFloat(pkg.price_per_unit) || 0)), 0);
-                      const totalCost = materialCost + packagingCost;
+                      const processCost = (sku.processCosts || []).reduce((sum, c) => sum + (parseFloat(c.cost_per_unit) || 0), 0);
+                      const totalCost = materialCost + packagingCost + processCost;
                       const sp = parseFloat(sku.sellingPrice) || 0;
                       const margin = sp > 0 ? ((sp - totalCost) / sp * 100) : 0;
                       return (
@@ -2842,6 +2926,12 @@ export default function SKUManagement() {
                               <span className="text-gray-500">+ Packaging</span>
                               <p className="font-semibold text-gray-900">₹{packagingCost.toFixed(2)}</p>
                             </div>
+                            {processCost > 0 && (
+                              <div>
+                                <span className="text-gray-500">+ Process</span>
+                                <p className="font-semibold text-gray-900">₹{processCost.toFixed(2)}</p>
+                              </div>
+                            )}
                             <div>
                               <span className="text-gray-500">Cost / unit</span>
                               <p className="font-bold text-amber-700">₹{totalCost.toFixed(2)}</p>

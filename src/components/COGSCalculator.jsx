@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
+import { processCostOf } from '../utils/skuCost';
 
 const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 const DAY_COLORS = {
@@ -54,21 +55,22 @@ export default function COGSCalculator() {
   const directCostPerUnit = useMemo(() => {
     if (!selectedSKU || mode !== 'sku') return null;
     const packagingCost = getPackagingCost(selectedSKU.packagingMaterials);
+    const processCost = processCostOf(selectedSKU.processCosts);
     if (selectedSKU.skuType === 'repack') {
       const yieldF = selectedSKU.yieldPercent ? (parseFloat(selectedSKU.yieldPercent) / 100) : 1;
       const bulkQtyG = (parseFloat(selectedSKU.bulkQty) || 0) * 1000;
       const usableG = bulkQtyG * yieldF;
       const costPerG = usableG > 0 ? (parseFloat(selectedSKU.bulkPrice) || 0) / usableG : 0;
       const packG = (parseFloat(selectedSKU.packSize) || 0) * (selectedSKU.unitOfMeasure === 'kg' ? 1000 : 1);
-      return costPerG * packG + packagingCost;
+      return costPerG * packG + packagingCost + processCost;
     }
     if (selectedSKU.skuType === 'resale') {
-      return (parseFloat(selectedSKU.buyPrice) || 0) + packagingCost;
+      return (parseFloat(selectedSKU.buyPrice) || 0) + packagingCost + processCost;
     }
     if (selectedSKU.skuType === 'single') {
       const materialCost = (selectedSKU.singleUnitIngredients || []).reduce((sum, item) =>
         sum + ((parseFloat(item.gramsPerUnit) || 0) * (parseFloat(item.pricePerGram) || 0)), 0);
-      return materialCost + packagingCost;
+      return materialCost + packagingCost + processCost;
     }
     return null;
   }, [selectedSKU, mode]);
