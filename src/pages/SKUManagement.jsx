@@ -2728,6 +2728,16 @@ export default function SKUManagement() {
                           Processed Pack
                         </span>
                       )}
+                      {sku.skuType === 'repack' && (
+                        <span className="px-2 py-1 bg-indigo-100 text-indigo-800 text-xs font-semibold rounded">
+                          Repack
+                        </span>
+                      )}
+                      {sku.skuType === 'resale' && (
+                        <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs font-semibold rounded">
+                          Resale
+                        </span>
+                      )}
                     </div>
                     <p className="text-sm text-gray-600">{sku.description}</p>
                     {sku.skuType === 'single' ? (
@@ -2738,6 +2748,14 @@ export default function SKUManagement() {
                           const sum = (sku.singleUnitIngredients || []).reduce((s, i) => s + (parseFloat(i.gramsPerUnit) || 0), 0);
                           return sum > 0 ? `${sum.toFixed(0)}g` : '—';
                         })()}
+                      </p>
+                    ) : sku.skuType === 'repack' ? (
+                      <p className="text-sm text-primary font-semibold mt-1">
+                        Pack size: {sku.packSize || 0}{sku.unitOfMeasure || 'g'} from {sku.bulkQty || 0}kg bulk
+                      </p>
+                    ) : sku.skuType === 'resale' ? (
+                      <p className="text-sm text-primary font-semibold mt-1">
+                        Buy price: ₹{sku.buyPrice || 0} per unit
                       </p>
                     ) : (
                       <p className="text-sm text-primary font-semibold mt-1">
@@ -2793,6 +2811,50 @@ export default function SKUManagement() {
                         );
                       })()}
                     </div>
+                  ) : (sku.skuType === 'repack' || sku.skuType === 'resale') ? (
+                    /* Repack / Resale Details */
+                    (() => {
+                      const yieldF = sku.yieldPercent ? (parseFloat(sku.yieldPercent) / 100) : 1;
+                      let materialCost = 0;
+                      if (sku.skuType === 'repack') {
+                        const bulkQtyG = (parseFloat(sku.bulkQty) || 0) * 1000;
+                        const usableG = bulkQtyG * yieldF;
+                        const costPerG = usableG > 0 ? (parseFloat(sku.bulkPrice) || 0) / usableG : 0;
+                        const packG = (parseFloat(sku.packSize) || 0) * (sku.unitOfMeasure === 'kg' ? 1000 : 1);
+                        materialCost = costPerG * packG;
+                      } else {
+                        materialCost = parseFloat(sku.buyPrice) || 0;
+                      }
+                      const packagingCost = (sku.packagingMaterials || []).reduce((sum, pkg) =>
+                        sum + ((parseFloat(pkg.quantity_per_pack) || 0) * (parseFloat(pkg.price_per_unit) || 0)), 0);
+                      const totalCost = materialCost + packagingCost;
+                      const sp = parseFloat(sku.sellingPrice) || 0;
+                      const margin = sp > 0 ? ((sp - totalCost) / sp * 100) : 0;
+                      return (
+                        <div className="bg-amber-50 p-3 rounded-lg border">
+                          <p className="text-xs text-amber-600 font-semibold mb-2">{sku.skuType === 'repack' ? 'REPACK' : 'RESALE'}</p>
+                          <div className="grid grid-cols-2 gap-2 text-sm">
+                            <div>
+                              <span className="text-gray-500">Raw material</span>
+                              <p className="font-semibold text-gray-900">₹{materialCost.toFixed(2)}</p>
+                            </div>
+                            <div>
+                              <span className="text-gray-500">+ Packaging</span>
+                              <p className="font-semibold text-gray-900">₹{packagingCost.toFixed(2)}</p>
+                            </div>
+                            <div>
+                              <span className="text-gray-500">Cost / unit</span>
+                              <p className="font-bold text-amber-700">₹{totalCost.toFixed(2)}</p>
+                            </div>
+                            <div>
+                              <span className="text-gray-500">Margin</span>
+                              <p className={`font-bold ${margin > 30 ? 'text-green-600' : margin > 15 ? 'text-amber-600' : 'text-red-600'}`}>{sp > 0 ? `${margin.toFixed(1)}%` : '—'}</p>
+                            </div>
+                          </div>
+                          {sp > 0 && <p className="text-xs text-gray-400 mt-2">Selling price: ₹{sp.toFixed(2)}</p>}
+                        </div>
+                      );
+                    })()
                   ) : (
                     /* Weekly Pack Details */
                     <>
