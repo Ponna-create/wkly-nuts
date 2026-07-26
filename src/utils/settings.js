@@ -24,3 +24,12 @@ export const setGstRate = (rate) => setSetting('gstRate', rate);
 // Database mode - 'auto', 'cloud', 'local'
 export const getDbMode = () => getSetting('dbMode', 'auto');
 export const setDbMode = (mode) => setSetting('dbMode', mode);
+
+// Channel fee % — platform cut taken out of revenue before it reaches you
+// (Amazon referral fee, Zoho payment gateway cut). Default 0 = not configured yet.
+export const getChannelFees = () => getSetting('channelFees', { amazon: 0, zoho: 0 });
+export const setChannelFee = (channel, pct) => {
+  const fees = getChannelFees();
+  fees[channel] = pct;
+  setSetting('channelFees', fees);
+};

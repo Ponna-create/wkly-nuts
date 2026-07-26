@@ -179,6 +179,9 @@ export default function Expenses() {
                   <div className="flex items-center gap-2">
                     <span className="font-medium text-gray-900 text-sm truncate">{exp.description || getCategoryLabel(exp.category)}</span>
                     <span className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-full">{getCategoryLabel(exp.category)}</span>
+                    {exp.is_recurring && (
+                      <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full capitalize">↻ {exp.recurring_frequency || 'recurring'}</span>
+                    )}
                   </div>
                   <div className="flex items-center gap-3 text-xs text-gray-400 mt-0.5">
                     <span>{exp.expense_number}</span>
@@ -288,6 +291,8 @@ function ExpenseForm({ expense, vendors, onClose, onSave }) {
     bill_number: expense?.bill_number || '',
     bill_date: expense?.bill_date || '',
     notes: expense?.notes || '',
+    is_recurring: expense?.is_recurring || false,
+    recurring_frequency: expense?.recurring_frequency || 'monthly',
   });
   const [saving, setSaving] = useState(false);
 
@@ -312,6 +317,8 @@ function ExpenseForm({ expense, vendors, onClose, onSave }) {
       paymentDate: form.payment_date,
       billNumber: form.bill_number,
       billDate: form.bill_date,
+      isRecurring: form.is_recurring,
+      recurringFrequency: form.is_recurring ? form.recurring_frequency : null,
     });
     setSaving(false);
   };
@@ -391,6 +398,21 @@ function ExpenseForm({ expense, vendors, onClose, onSave }) {
               <label className="block text-sm font-medium text-gray-700 mb-1">Bill Date</label>
               <input type="date" value={form.bill_date || ''} onChange={e => setForm(f => ({ ...f, bill_date: e.target.value }))}
                 className="w-full border rounded-lg px-3 py-2 text-sm" />
+            </div>
+            <div className="col-span-2 flex items-center gap-3 bg-gray-50 rounded-lg p-3">
+              <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                <input type="checkbox" checked={form.is_recurring} onChange={e => setForm(f => ({ ...f, is_recurring: e.target.checked }))}
+                  className="rounded" />
+                Recurring expense
+              </label>
+              {form.is_recurring && (
+                <select value={form.recurring_frequency} onChange={e => setForm(f => ({ ...f, recurring_frequency: e.target.value }))}
+                  className="border rounded-lg px-2 py-1 text-sm">
+                  <option value="monthly">Monthly</option>
+                  <option value="quarterly">Quarterly</option>
+                  <option value="yearly">Yearly</option>
+                </select>
+              )}
             </div>
             <div className="col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>

@@ -2,11 +2,51 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, Edit2, Trash2, X, Users, TrendingUp, DollarSign, Instagram, Youtube, Globe, Search, Megaphone, BarChart3, Gift } from 'lucide-react';
 import { dbService } from '../services/supabase';
 import { useApp } from '../context/AppContext';
+import { getChannelFees, setChannelFee as saveChannelFee } from '../utils/settings';
 
 const SOURCE_LABELS = {
-  whatsapp: 'WhatsApp', website: 'Website', instagram: 'Instagram',
-  meta_ad: 'Meta Ads', amazon: 'Amazon', referral: 'Referral', other: 'Other',
+  whatsapp: 'WhatsApp', website: 'Website', instagram: 'Instagram', inst: 'Instagram',
+  meta_ad: 'Meta Ads', amazon: 'Amazon', zoho: 'Zoho', referral: 'Referral',
+  direct: 'Direct', collab: 'Collab', promotion: 'Promotion', other: 'Other',
 };
+
+// Channels where a platform fee % applies (Amazon referral cut, Zoho gateway cut)
+const FEE_CHANNELS = ['amazon', 'zoho'];
+
+const packagingCostOf = (materials) => (materials || []).reduce((sum, pkg) =>
+  sum + ((parseFloat(pkg.quantity_per_pack) || 0) * (parseFloat(pkg.price_per_unit) || 0)), 0);
+
+// Per-unit COGS for one order line item, using each SKU's own saved cost config.
+// Mirrors the cost preview shown in SKU Management — kept approximate on purpose
+// (e.g. combo items with no clean SKU match cost ₹0) rather than guessing.
+function itemCost(item, skus) {
+  const name = item.sku_name || item.skuName;
+  const sku = skus.find(s => String(s.id) === String(item.sku_id || item.skuId)) || skus.find(s => s.name === name);
+  const qty = parseFloat(item.quantity || item.qty) || 0;
+  if (!sku || qty <= 0) return 0;
+  const packagingCost = packagingCostOf(sku.packagingMaterials);
+
+  if (sku.skuType === 'single') {
+    const materialCost = (sku.singleUnitIngredients || []).reduce((s, i) =>
+      s + ((parseFloat(i.gramsPerUnit) || 0) * (parseFloat(i.pricePerGram) || 0)), 0);
+    return (materialCost + packagingCost) * qty;
+  }
+  if (sku.skuType === 'repack') {
+    const yieldF = sku.yieldPercent ? (parseFloat(sku.yieldPercent) / 100) : 1;
+    const bulkQtyG = (parseFloat(sku.bulkQty) || 0) * 1000;
+    const usableG = bulkQtyG * yieldF;
+    const costPerG = usableG > 0 ? (parseFloat(sku.bulkPrice) || 0) / usableG : 0;
+    const packG = (parseFloat(sku.packSize) || 0) * (sku.unitOfMeasure === 'kg' ? 1000 : 1);
+    return (costPerG * packG + packagingCost) * qty;
+  }
+  if (sku.skuType === 'resale') {
+    return ((parseFloat(sku.buyPrice) || 0) + packagingCost) * qty;
+  }
+  // Recipe Pack (weekly) — cost is stored per box; monthly = 4 boxes (established box model)
+  const perBox = (sku.weeklyPack?.rawMaterialCost || 0) + packagingCost;
+  const isMonthly = (item.pack_type || item.packType) === 'monthly';
+  return perBox * (isMonthly ? 4 : 1) * qty;
+}
 
 export default function Marketing() {
   const { state } = useApp();
@@ -24,6 +64,13 @@ export default function Marketing() {
 
   const [contactForm, setContactForm] = useState(emptyContact);
   const [campaignForm, setCampaignForm] = useState(emptyCampaign);
+  const [channelFees, setChannelFees] = useState(getChannelFees());
+
+  const updateChannelFee = (channel, pct) => {
+    const value = parseFloat(pct) || 0;
+    setChannelFees(prev => ({ ...prev, [channel]: value }));
+    saveChannelFee(channel, value);
+  };
 
   useEffect(() => { loadData(); }, []);
 
@@ -47,20 +94,44 @@ export default function Marketing() {
   const roi = totalMarketingSpend > 0 ? ((totalRevenue - totalMarketingSpend) / totalMarketingSpend * 100) : 0;
   const barterDeals = contacts.filter(c => c.compensationType === 'barter' || c.compensationType === 'mixed');
 
-  // Channel performance — computed straight from real order sources, not manual entry
+  // Ad spend by channel — only attribute where the platform maps unambiguously to an order_source
+  const adSpendBySource = useMemo(() => {
+    const bySource = {};
+    campaigns.forEach(c => {
+      const spend = parseFloat(c.spend) || 0;
+      if (spend <= 0) return;
+      if (c.platform === 'amazon') bySource.amazon = (bySource.amazon || 0) + spend;
+      else if (c.platform === 'meta' || c.platform === 'instagram') {
+        bySource.instagram = (bySource.instagram || 0) + spend;
+      }
+      // 'google' ads don't map cleanly to one order_source — left unattributed rather than guessed
+    });
+    return bySource;
+  }, [campaigns]);
+
+  // Channel performance — revenue/orders from real order sources, then COGS/fees/ad
+  // spend layered on top so this shows real Net profit per channel, not just revenue.
   const channelPerformance = useMemo(() => {
     const orders = state.salesOrders || [];
+    const skus = state.skus || [];
     const bySource = {};
     orders.forEach(o => {
       const src = o.order_source || 'other';
-      if (!bySource[src]) bySource[src] = { orders: 0, revenue: 0 };
+      if (!bySource[src]) bySource[src] = { orders: 0, revenue: 0, cogs: 0 };
       bySource[src].orders += 1;
       bySource[src].revenue += parseFloat(o.total_amount) || 0;
+      bySource[src].cogs += (o.items || []).reduce((s, it) => s + itemCost(it, skus), 0);
     });
     return Object.entries(bySource)
-      .map(([source, v]) => ({ source, label: SOURCE_LABELS[source] || source, ...v, avg: v.orders > 0 ? v.revenue / v.orders : 0 }))
+      .map(([source, v]) => {
+        const feePct = FEE_CHANNELS.includes(source) ? (channelFees[source] || 0) : 0;
+        const fee = v.revenue * (feePct / 100);
+        const adSpend = adSpendBySource[source] || 0;
+        const net = v.revenue - v.cogs - fee - adSpend;
+        return { source, label: SOURCE_LABELS[source] || source, ...v, avg: v.orders > 0 ? v.revenue / v.orders : 0, feePct, fee, adSpend, net };
+      })
       .sort((a, b) => b.revenue - a.revenue);
-  }, [state.salesOrders]);
+  }, [state.salesOrders, state.skus, channelFees, adSpendBySource]);
 
   const platformIcon = (platform) => {
     const icons = { instagram: Instagram, youtube: Youtube };
@@ -230,17 +301,33 @@ export default function Marketing() {
       {tab === 'channels' ? (
         <div className="space-y-4">
           <p className="text-sm text-gray-500">Computed from actual order sources — not manual entry, so this reflects reality.</p>
+
+          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex flex-wrap gap-6">
+            {FEE_CHANNELS.map(ch => (
+              <label key={ch} className="flex items-center gap-2 text-sm">
+                <span className="font-medium text-gray-700">{SOURCE_LABELS[ch]} fee %</span>
+                <input type="number" min="0" max="100" step="0.1" value={channelFees[ch] || 0}
+                  onChange={e => updateChannelFee(ch, e.target.value)}
+                  className="w-20 border rounded-lg px-2 py-1 text-sm text-right" />
+                <span className="text-xs text-gray-400">{ch === 'amazon' ? 'referral fee' : 'gateway cut'}</span>
+              </label>
+            ))}
+          </div>
+
           {channelPerformance.length === 0 ? (
             <p className="text-center text-gray-400 py-10">No orders yet to analyze.</p>
           ) : (
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-xs text-gray-500 border-b bg-gray-50">
                     <th className="text-left px-4 py-3 font-medium">Channel</th>
                     <th className="text-right px-4 py-3 font-medium">Orders</th>
                     <th className="text-right px-4 py-3 font-medium">Revenue</th>
-                    <th className="text-right px-4 py-3 font-medium">Avg order value</th>
+                    <th className="text-right px-4 py-3 font-medium">COGS</th>
+                    <th className="text-right px-4 py-3 font-medium">Fee</th>
+                    <th className="text-right px-4 py-3 font-medium">Ad spend</th>
+                    <th className="text-right px-4 py-3 font-medium">Net</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -249,11 +336,17 @@ export default function Marketing() {
                       <td className="px-4 py-3 font-medium text-gray-900">{c.label}</td>
                       <td className="px-4 py-3 text-right">{c.orders}</td>
                       <td className="px-4 py-3 text-right font-semibold text-teal-700">₹{c.revenue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
-                      <td className="px-4 py-3 text-right text-gray-600">₹{c.avg.toFixed(0)}</td>
+                      <td className="px-4 py-3 text-right text-gray-500">₹{c.cogs.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
+                      <td className="px-4 py-3 text-right text-gray-500">{c.fee > 0 ? `₹${c.fee.toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : '—'}</td>
+                      <td className="px-4 py-3 text-right text-gray-500">{c.adSpend > 0 ? `₹${c.adSpend.toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : '—'}</td>
+                      <td className={`px-4 py-3 text-right font-bold ${c.net >= 0 ? 'text-green-600' : 'text-red-600'}`}>₹{c.net.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              <p className="px-4 py-2.5 text-[11px] text-gray-400 border-t">
+                COGS is estimated from each SKU's saved cost config — combo/gift orders with no clean SKU match show ₹0 COGS rather than a guess. Ad spend only counts Amazon and Meta/Instagram campaigns (Google Ads isn't attributed to one channel).
+              </p>
             </div>
           )}
           {barterDeals.length > 0 && (

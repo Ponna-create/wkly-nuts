@@ -2426,6 +2426,8 @@ const _realDbService = {
           bill_date: expense.bill_date,
           bill_image_url: expense.bill_image_url,
           notes: expense.notes,
+          is_recurring: expense.is_recurring ?? expense.isRecurring ?? false,
+          recurring_frequency: expense.recurring_frequency ?? expense.recurringFrequency ?? null,
         })
         .eq('id', expense.id)
         .select()
