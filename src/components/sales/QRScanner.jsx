@@ -4,8 +4,8 @@ import { X, Camera, CheckCircle, AlertCircle, Ban, Package, Clock, Minus, Plus }
 import { useApp } from '../../context/AppContext';
 import { dbService } from '../../services/supabase';
 
-// Statuses that mean order is already dispatched or beyond
-const ALREADY_DISPATCHED = ['dispatched', 'in_transit', 'delivered', 'completed'];
+// Statuses that mean order is already fulfilled (scanned) or beyond
+const ALREADY_DISPATCHED = ['fulfilled', 'collected', 'dispatched', 'transit', 'delivered', 'completed'];
 
 export default function QRScanner({ onClose, onScanComplete }) {
   const { showToast } = useApp();
@@ -132,11 +132,10 @@ export default function QRScanner({ onClose, onScanComplete }) {
         return;
       }
 
-      // ── SAFE TO DISPATCH — update order ──
+      // ── SAFE TO MARK FULFILLED — update order ──
       const { error: updateError } = await dbService.updateSalesOrder({
         id: data.id,
-        status: 'dispatched',
-        dispatch_date: new Date().toISOString().split('T')[0],
+        status: 'fulfilled',
       });
 
       if (updateError) {
@@ -149,7 +148,7 @@ export default function QRScanner({ onClose, onScanComplete }) {
       // Success!
       setLastScan({ ...data, status: 'success', previousStatus: dbOrder.status });
       setScannedOrders(prev => [...prev, { ...data, scannedAt: new Date(), previousStatus: dbOrder.status, boxesSmall: 0, boxesBig: 0 }]);
-      showToast(`✓ ${data.orderNumber} → Dispatched!`, 'success');
+      showToast(`✓ ${data.orderNumber} → Fulfilled!`, 'success');
 
       // Deduct inventory (non-blocking, don't fail the scan)
       try {
@@ -235,9 +234,9 @@ export default function QRScanner({ onClose, onScanComplete }) {
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
           <div>
-            <h2 className="text-xl font-bold text-gray-900">{showTimeLog ? 'Log Fulfilment Time?' : 'Scan for Dispatch'}</h2>
+            <h2 className="text-xl font-bold text-gray-900">{showTimeLog ? 'Log Fulfilment Time?' : 'Scan to Mark Fulfilled'}</h2>
             <p className="text-sm text-gray-500 mt-1">
-              {scannedOrders.length} order{scannedOrders.length !== 1 ? 's' : ''} dispatched
+              {scannedOrders.length} order{scannedOrders.length !== 1 ? 's' : ''} fulfilled
             </p>
           </div>
           <button onClick={showTimeLog ? finishAndClose : handleFinish} className="text-gray-500 hover:text-gray-700">
@@ -326,7 +325,7 @@ export default function QRScanner({ onClose, onScanComplete }) {
                 </p>
                 <p className="text-xs text-gray-600">
                   {lastScan.status === 'success'
-                    ? `✓ Dispatched! (was: ${(lastScan.previousStatus || 'unknown').replace('_', ' ')})`
+                    ? `✓ Fulfilled! (was: ${(lastScan.previousStatus || 'unknown').replace('_', ' ')})`
                     : lastScan.message || 'Error'}
                 </p>
               </div>
@@ -338,7 +337,7 @@ export default function QRScanner({ onClose, onScanComplete }) {
             <div className="space-y-2">
               <h3 className="font-bold text-gray-900 text-sm flex items-center gap-2">
                 <Package className="w-4 h-4 text-green-600" />
-                Dispatched Orders ({scannedOrders.length})
+                Fulfilled Orders ({scannedOrders.length})
               </h3>
               <div className="space-y-1.5 max-h-56 overflow-y-auto">
                 {scannedOrders.map((order, idx) => (
@@ -380,7 +379,7 @@ export default function QRScanner({ onClose, onScanComplete }) {
             )}
             <button onClick={handleFinish}
               className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 font-medium">
-              Done ({scannedOrders.length} dispatched)
+              Done ({scannedOrders.length} fulfilled)
             </button>
           </div>
         </div>

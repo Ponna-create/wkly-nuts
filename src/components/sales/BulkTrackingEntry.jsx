@@ -52,7 +52,7 @@ export default function BulkTrackingEntry({ orders, onClose, onUpdate }) {
         ...order,
         tracking_number: data.tracking,
         courier_name: data.courierName,
-        status: 'in_transit',
+        status: 'dispatched',
         dispatch_date: new Date().toISOString().split('T')[0],
       });
 
@@ -90,11 +90,11 @@ export default function BulkTrackingEntry({ orders, onClose, onUpdate }) {
         {/* Content */}
         <div className="p-6 space-y-4">
           {trackingData.length === 0 ? (
-            <p className="text-gray-500 text-center py-8">No dispatched orders to track</p>
+            <p className="text-gray-500 text-center py-8">No orders collected by courier yet</p>
           ) : (
             <>
               <p className="text-sm text-gray-600 mb-4">
-                Enter tracking numbers for {trackingData.length} dispatched order{trackingData.length !== 1 ? 's' : ''}
+                Enter tracking numbers for {trackingData.length} order{trackingData.length !== 1 ? 's' : ''} collected by courier
               </p>
 
               <div className="space-y-3">

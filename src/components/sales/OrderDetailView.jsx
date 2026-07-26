@@ -38,16 +38,18 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
     const badges = {
       follow_up: { bg: 'bg-blue-100', text: 'text-blue-800', label: 'Follow-up' },
       awaiting_payment: { bg: 'bg-red-100', text: 'text-red-800', label: 'Awaiting Payment' },
+      confirmed: { bg: 'bg-cyan-100', text: 'text-cyan-800', label: 'Confirmed' },
       packing: { bg: 'bg-yellow-100', text: 'text-yellow-800', label: 'Packing' },
-      packed: { bg: 'bg-orange-100', text: 'text-orange-800', label: 'Packed' },
+      fulfilled: { bg: 'bg-orange-100', text: 'text-orange-800', label: 'Fulfilled' },
+      collected: { bg: 'bg-pink-100', text: 'text-pink-800', label: 'Collected by Courier' },
       dispatched: { bg: 'bg-purple-100', text: 'text-purple-800', label: 'Dispatched' },
-      in_transit: { bg: 'bg-indigo-100', text: 'text-indigo-800', label: 'In Transit' },
+      transit: { bg: 'bg-indigo-100', text: 'text-indigo-800', label: 'In Transit' },
       delivered: { bg: 'bg-green-100', text: 'text-green-800', label: 'Delivered' },
       completed: { bg: 'bg-teal-100', text: 'text-teal-800', label: 'Completed' },
       returned: { bg: 'bg-rose-100', text: 'text-rose-800', label: 'Returned (RTO)' },
       cancelled: { bg: 'bg-gray-100', text: 'text-gray-800', label: 'Cancelled' },
     };
-    return badges[status] || badges.packing;
+    return badges[status] || badges.confirmed;
   };
 
   const handleCopyToClipboard = (text, field) => {
@@ -82,8 +84,8 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
           showToast(`${restock.restocked} item(s) returned to stock`, 'success');
         }
       }
-      // Deduct finished goods from inventory on dispatch
-      if (newStatus === 'dispatched') {
+      // Deduct finished goods from inventory once fulfilled (scanned/boxed for courier)
+      if (newStatus === 'fulfilled') {
         const invResult = await dbService.deductInventoryForOrder(currentOrder);
         if (invResult.deducted > 0) {
           showToast(`${invResult.deducted} item(s) deducted from inventory`, 'success');
@@ -92,7 +94,7 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
           showToast(`Stock warning: ${invResult.warnings[0]}`, 'error');
         }
 
-        // Auto-generate invoice on dispatch if not already linked
+        // Auto-generate invoice on fulfilment if not already linked
         if (!currentOrder.invoice_id) {
           try {
             const invoiceData = {
@@ -140,8 +142,8 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
 
   const handlePrintAndPack = async () => {
     setShowLabelPrinter(true);
-    if (currentOrder.status === 'packing') {
-      await handleStatusChange('packed');
+    if (currentOrder.status === 'confirmed') {
+      await handleStatusChange('packing');
     }
   };
 
@@ -152,12 +154,14 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
     }
     setSavingTracking(true);
 
-    // Auto-update status when tracking is added
+    // Adding a tracking number means the courier has collected & we've shared
+    // it with the customer — order moves to Dispatched (unless already beyond).
+    const PIPELINE_ORDER = ['follow_up', 'awaiting_payment', 'confirmed', 'packing', 'fulfilled', 'collected', 'dispatched', 'transit', 'delivered'];
     let newStatus = currentOrder.status;
     if (trackingInput.trim()) {
-      if (['packed', 'dispatched'].includes(currentOrder.status)) {
-        newStatus = 'in_transit';
-      } else if (['follow_up', 'awaiting_payment', 'packing'].includes(currentOrder.status)) {
+      const idx = PIPELINE_ORDER.indexOf(currentOrder.status);
+      const dispatchedIdx = PIPELINE_ORDER.indexOf('dispatched');
+      if (idx === -1 || idx < dispatchedIdx) {
         newStatus = 'dispatched';
       }
     }
@@ -169,7 +173,7 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
       status: newStatus,
     };
 
-    if (['dispatched', 'in_transit'].includes(newStatus) && !currentOrder.dispatch_date) {
+    if (newStatus === 'dispatched' && !currentOrder.dispatch_date) {
       updatedOrder.dispatch_date = new Date().toISOString().split('T')[0];
     }
 
@@ -272,10 +276,12 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
 
   const statusSteps = [
     { key: 'follow_up', label: 'Follow-up', icon: MessageCircle },
+    { key: 'confirmed', label: 'Confirmed', icon: CheckCircle },
     { key: 'packing', label: 'Packing', icon: Package },
-    { key: 'packed', label: 'Packed', icon: Package },
+    { key: 'fulfilled', label: 'Fulfilled', icon: Package },
+    { key: 'collected', label: 'Collected', icon: Truck },
     { key: 'dispatched', label: 'Dispatched', icon: Truck },
-    { key: 'in_transit', label: 'In Transit', icon: Truck },
+    { key: 'transit', label: 'In Transit', icon: Truck },
     { key: 'delivered', label: 'Delivered', icon: CheckCircle },
   ];
 
@@ -334,10 +340,12 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
             >
               <option value="follow_up">Follow-up</option>
               <option value="awaiting_payment">Awaiting Payment</option>
+              <option value="confirmed">Confirmed</option>
               <option value="packing">Packing</option>
-              <option value="packed">Packed</option>
+              <option value="fulfilled">Fulfilled</option>
+              <option value="collected">Collected by Courier</option>
               <option value="dispatched">Dispatched</option>
-              <option value="in_transit">In Transit</option>
+              <option value="transit">In Transit</option>
               <option value="delivered">Delivered</option>
               <option value="completed">Completed</option>
               <option value="returned">Returned (RTO)</option>
@@ -346,7 +354,7 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
           </div>
           {currentOrder.status === 'returned' && (
             <p className="text-xs text-rose-600">
-              Packs are back in stock. To resend, set the status to <strong>Dispatched</strong> again — stock will deduct once more.
+              Packs are back in stock. To resend, set the status to <strong>Fulfilled</strong> again — stock will deduct once more.
             </p>
           )}
 

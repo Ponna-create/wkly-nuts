@@ -31,14 +31,16 @@ export default function SalesOrders() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
 
-  // Status tabs
+  // Status tabs — 8-stage pipeline: Follow-up -> Confirmed -> Packing -> Fulfilled -> Collected -> Dispatched -> Transit -> Delivered
   const statusTabs = [
     { label: 'All', value: 'all', color: 'bg-gray-100', count: orders.length },
     { label: 'Follow-up', value: 'follow_up', color: 'bg-blue-100', count: orders.filter(o => o.status === 'follow_up').length },
+    { label: 'Confirmed', value: 'confirmed', color: 'bg-cyan-100', count: orders.filter(o => o.status === 'confirmed').length },
     { label: 'Packing', value: 'packing', color: 'bg-yellow-100', count: orders.filter(o => o.status === 'packing').length },
-    { label: 'Packed', value: 'packed', color: 'bg-orange-100', count: orders.filter(o => o.status === 'packed').length },
+    { label: 'Fulfilled', value: 'fulfilled', color: 'bg-orange-100', count: orders.filter(o => o.status === 'fulfilled').length },
+    { label: 'Collected', value: 'collected', color: 'bg-pink-100', count: orders.filter(o => o.status === 'collected').length },
     { label: 'Dispatched', value: 'dispatched', color: 'bg-purple-100', count: orders.filter(o => o.status === 'dispatched').length },
-    { label: 'In Transit', value: 'in_transit', color: 'bg-indigo-100', count: orders.filter(o => o.status === 'in_transit').length },
+    { label: 'In Transit', value: 'transit', color: 'bg-indigo-100', count: orders.filter(o => o.status === 'transit').length },
     { label: 'Delivered', value: 'delivered', color: 'bg-green-100', count: orders.filter(o => o.status === 'delivered').length },
   ];
 
@@ -74,16 +76,18 @@ export default function SalesOrders() {
     const badges = {
       follow_up: { bg: 'bg-blue-100', text: 'text-blue-800', label: 'Follow-up' },
       awaiting_payment: { bg: 'bg-red-100', text: 'text-red-800', label: 'Awaiting Payment' },
+      confirmed: { bg: 'bg-cyan-100', text: 'text-cyan-800', label: 'Confirmed' },
       packing: { bg: 'bg-yellow-100', text: 'text-yellow-800', label: 'Packing' },
-      packed: { bg: 'bg-orange-100', text: 'text-orange-800', label: 'Packed' },
+      fulfilled: { bg: 'bg-orange-100', text: 'text-orange-800', label: 'Fulfilled' },
+      collected: { bg: 'bg-pink-100', text: 'text-pink-800', label: 'Collected by Courier' },
       dispatched: { bg: 'bg-purple-100', text: 'text-purple-800', label: 'Dispatched' },
-      in_transit: { bg: 'bg-indigo-100', text: 'text-indigo-800', label: 'In Transit' },
+      transit: { bg: 'bg-indigo-100', text: 'text-indigo-800', label: 'In Transit' },
       delivered: { bg: 'bg-green-100', text: 'text-green-800', label: 'Delivered' },
       completed: { bg: 'bg-teal-100', text: 'text-teal-800', label: 'Completed' },
       cancelled: { bg: 'bg-gray-100', text: 'text-gray-800', label: 'Cancelled' },
-      returned: { bg: 'bg-pink-100', text: 'text-pink-800', label: 'Returned' },
+      returned: { bg: 'bg-rose-100', text: 'text-rose-800', label: 'Returned' },
     };
-    return badges[status] || badges.packing;
+    return badges[status] || badges.confirmed;
   };
 
   const getSourceIcon = (source) => {
@@ -381,7 +385,7 @@ export default function SalesOrders() {
 
       {showTrackingEntry && (
         <BulkTrackingEntry
-          orders={orders.filter(o => o.status === 'dispatched')}
+          orders={orders.filter(o => o.status === 'collected')}
           onClose={() => {
             setShowTrackingEntry(false);
             loadOrders();
@@ -424,6 +428,7 @@ export default function SalesOrders() {
         <BulkLabelPrint
           orders={orders}
           onClose={() => setShowBulkLabelPrint(false)}
+          onPrinted={() => loadOrders()}
           showToast={showToast}
         />
       )}

@@ -24,7 +24,7 @@ const SKUS = [
 
 // ── Sales Orders ──
 function buildOrders() {
-  const statuses = ['follow_up', 'packing', 'packed', 'dispatched', 'in_transit', 'delivered'];
+  const statuses = ['follow_up', 'confirmed', 'packing', 'fulfilled', 'collected', 'dispatched', 'transit', 'delivered'];
   const sources = ['whatsapp', 'website', 'instagram', 'meta_ad'];
   const orders = [];
 
@@ -65,9 +65,9 @@ function buildOrders() {
       subtotal: total,
       gst_amount: Math.round(total * 0.05),
       total_amount: total + Math.round(total * 0.05),
-      tracking_number: ['dispatched', 'in_transit', 'delivered'].includes(status) ? `ST${100000 + i}` : '',
-      courier_name: ['dispatched', 'in_transit', 'delivered'].includes(status) ? 'ST Courier' : '',
-      dispatch_date: ['dispatched', 'in_transit', 'delivered'].includes(status) ? orderDate : null,
+      tracking_number: ['dispatched', 'transit', 'delivered'].includes(status) ? `ST${100000 + i}` : '',
+      courier_name: ['dispatched', 'transit', 'delivered'].includes(status) ? 'ST Courier' : '',
+      dispatch_date: ['dispatched', 'transit', 'delivered'].includes(status) ? orderDate : null,
       notes: '',
       created_at: new Date(orderDate).toISOString(),
       updated_at: new Date(orderDate).toISOString(),

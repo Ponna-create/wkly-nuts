@@ -80,10 +80,11 @@ export default function Dashboard() {
 
   // ---- Pending Actions ----
   const followUpCount = orders.filter(o => o.status === 'follow_up').length;
-  const toBePacked = orders.filter(o => o.status === 'packing').length;
-  const toBeShipped = orders.filter(o => o.status === 'packed').length;
-  const toBeDelivered = orders.filter(o => ['dispatched', 'in_transit'].includes(o.status)).length;
-  const needTracking = orders.filter(o => ['dispatched', 'in_transit'].includes(o.status) && !o.tracking_number).length;
+  const toBePacked = orders.filter(o => o.status === 'confirmed').length;
+  const toBeShipped = orders.filter(o => o.status === 'packing').length;
+  const toBeCollected = orders.filter(o => o.status === 'fulfilled').length;
+  const toBeDelivered = orders.filter(o => ['collected', 'dispatched', 'transit'].includes(o.status)).length;
+  const needTracking = orders.filter(o => o.status === 'collected' && !o.tracking_number).length;
   const toBeInvoiced = orders.filter(o => !o.invoice_id && o.status !== 'delivered').length;
   const poPending = purchaseOrders.filter(p => p.status !== 'received' && p.status !== 'completed').length;
   const belowReorder = outOfStock.length > 0 ? outOfStock.length : 0;
@@ -286,8 +287,9 @@ export default function Dashboard() {
                 <p className="text-xs font-semibold text-gray-400 uppercase mb-1">Sales</p>
                 <div className="space-y-1">
                   <Link to="/orders" className="flex justify-between text-gray-700 hover:text-teal-600"><span>Follow-up needed</span><span className="font-semibold">{followUpCount}</span></Link>
-                  <Link to="/orders" className="flex justify-between text-gray-700 hover:text-teal-600"><span>To Be Packed</span><span className="font-semibold">{toBePacked}</span></Link>
-                  <Link to="/orders" className="flex justify-between text-gray-700 hover:text-teal-600"><span>To Be Shipped</span><span className="font-semibold">{toBeShipped}</span></Link>
+                  <Link to="/orders" className="flex justify-between text-gray-700 hover:text-teal-600"><span>To Be Packed (labels pending)</span><span className="font-semibold">{toBePacked}</span></Link>
+                  <Link to="/orders" className="flex justify-between text-gray-700 hover:text-teal-600"><span>Packing (scan pending)</span><span className="font-semibold">{toBeShipped}</span></Link>
+                  <Link to="/orders" className="flex justify-between text-gray-700 hover:text-teal-600"><span>Awaiting Courier Pickup</span><span className="font-semibold">{toBeCollected}</span></Link>
                   <Link to="/orders" className="flex justify-between text-gray-700 hover:text-teal-600"><span>To Be Delivered</span><span className="font-semibold">{toBeDelivered}</span></Link>
                   <Link to="/orders" className="flex justify-between text-gray-700 hover:text-teal-600"><span>Needs Tracking Number</span><span className="font-semibold">{needTracking}</span></Link>
                   <Link to="/invoices" className="flex justify-between text-gray-700 hover:text-teal-600"><span>To Be Invoiced</span><span className="font-semibold">{toBeInvoiced}</span></Link>

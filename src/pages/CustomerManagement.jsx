@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import { Plus, Edit, Trash2, Search, X, User, Mail, Phone, MapPin, Building2, AlertTriangle, Merge, Download, Calendar } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, X, User, Mail, Phone, MapPin, Building2, AlertTriangle, Merge, Download, Calendar, UserPlus } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { dbService } from '../services/supabase';
 
 export default function CustomerManagement() {
   const { state, dispatch, showToast } = useApp();
@@ -9,6 +10,14 @@ export default function CustomerManagement() {
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [showDuplicates, setShowDuplicates] = useState(false);
+  const [showFollowUpForm, setShowFollowUpForm] = useState(false);
+  const [savingFollowUp, setSavingFollowUp] = useState(false);
+  const [followUpData, setFollowUpData] = useState({
+    name: '',
+    phone: '',
+    followUpDate: '',
+    notes: '',
+  });
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -94,6 +103,46 @@ export default function CustomerManagement() {
     });
     setEditingCustomer(customer);
     setShowForm(true);
+  };
+
+  const handleSaveFollowUp = async () => {
+    if (!followUpData.name || !followUpData.phone) {
+      showToast('Please fill in name and phone number', 'error');
+      return;
+    }
+    setSavingFollowUp(true);
+    const { data: customer, error } = await dbService.findOrCreateCustomer({
+      name: followUpData.name,
+      phone: followUpData.phone,
+    });
+    if (error || !customer) {
+      showToast('Error saving follow-up customer', 'error');
+      setSavingFollowUp(false);
+      return;
+    }
+    dispatch({ type: 'REPLACE_CUSTOMER', payload: { tempId: customer.id, customer } });
+
+    const { error: orderError } = await dbService.createSalesOrder({
+      customerId: customer.id,
+      customerName: customer.name,
+      orderDate: new Date().toISOString().split('T')[0],
+      orderSource: 'whatsapp',
+      items: [],
+      status: 'follow_up',
+      paymentStatus: 'pending',
+      followUpDate: followUpData.followUpDate || null,
+      followUpNotes: followUpData.notes || null,
+    });
+    setSavingFollowUp(false);
+
+    if (orderError) {
+      showToast('Customer saved, but follow-up entry failed', 'error');
+      return;
+    }
+
+    showToast('Follow-up customer added', 'success');
+    setFollowUpData({ name: '', phone: '', followUpDate: '', notes: '' });
+    setShowFollowUpForm(false);
   };
 
   const handleDelete = (customerId) => {
@@ -306,6 +355,13 @@ export default function CustomerManagement() {
             </button>
           )}
           <button
+            onClick={() => setShowFollowUpForm(true)}
+            className="btn-secondary flex items-center gap-2 bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200"
+          >
+            <UserPlus className="w-5 h-5" />
+            Add Follow-up
+          </button>
+          <button
             onClick={() => setShowForm(true)}
             className="btn-primary flex items-center gap-2"
           >
@@ -314,6 +370,71 @@ export default function CustomerManagement() {
           </button>
         </div>
       </div>
+
+      {/* Add Follow-up Modal */}
+      {showFollowUpForm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg max-w-md w-full">
+            <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-gray-900">Add Follow-up Customer</h2>
+              <button onClick={() => setShowFollowUpForm(false)} className="text-gray-500 hover:text-gray-700">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-gray-600">
+                For enquiries that aren't confirmed yet — e.g. "I'll pay tomorrow". This creates a lead
+                you can follow up on from the Sales Orders &rarr; Follow-up tab, separate from confirmed orders.
+              </p>
+              <div>
+                <label className="label">Customer Name *</label>
+                <input
+                  type="text"
+                  value={followUpData.name}
+                  onChange={(e) => setFollowUpData(prev => ({ ...prev, name: e.target.value }))}
+                  className="input-field"
+                  placeholder="Enter customer name"
+                />
+              </div>
+              <div>
+                <label className="label">Phone Number *</label>
+                <input
+                  type="tel"
+                  value={followUpData.phone}
+                  onChange={(e) => setFollowUpData(prev => ({ ...prev, phone: e.target.value }))}
+                  className="input-field"
+                  placeholder="Enter phone number"
+                />
+              </div>
+              <div>
+                <label className="label">Follow-up Date</label>
+                <input
+                  type="date"
+                  value={followUpData.followUpDate}
+                  onChange={(e) => setFollowUpData(prev => ({ ...prev, followUpDate: e.target.value }))}
+                  className="input-field"
+                />
+              </div>
+              <div>
+                <label className="label">Notes</label>
+                <textarea
+                  value={followUpData.notes}
+                  onChange={(e) => setFollowUpData(prev => ({ ...prev, notes: e.target.value }))}
+                  className="input-field"
+                  rows="3"
+                  placeholder="What did the customer enquire about? Any preferences?"
+                />
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <button onClick={() => setShowFollowUpForm(false)} className="btn-secondary">Cancel</button>
+                <button onClick={handleSaveFollowUp} disabled={savingFollowUp} className="btn-primary disabled:opacity-50">
+                  {savingFollowUp ? 'Saving...' : 'Save Follow-up'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Duplicates Section */}
       {showDuplicates && duplicateGroups.length > 0 && (

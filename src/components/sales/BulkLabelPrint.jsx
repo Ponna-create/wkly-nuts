@@ -2,8 +2,9 @@ import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { X, Printer, Calendar, CheckSquare, Square } from 'lucide-react';
 import { sanitizeHtml } from '../../utils/sanitize';
+import { dbService } from '../../services/supabase';
 
-export default function BulkLabelPrint({ orders, onClose, showToast }) {
+export default function BulkLabelPrint({ orders, onClose, onPrinted, showToast }) {
   const printRef = useRef(null);
   const [labelSize, setLabelSize] = useState('a4');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
@@ -44,10 +45,17 @@ export default function BulkLabelPrint({ orders, onClose, showToast }) {
 
   const selectedOrders = dateOrders.filter(o => selectedIds.has(o.id));
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
     if (selectedOrders.length === 0) {
       showToast('No orders selected to print', 'error');
       return;
+    }
+
+    // Printing the label moves a confirmed order into packing
+    const toBump = selectedOrders.filter(o => o.status === 'confirmed');
+    if (toBump.length > 0) {
+      await Promise.all(toBump.map(o => dbService.updateSalesOrder({ id: o.id, status: 'packing' })));
+      if (onPrinted) onPrinted();
     }
 
     const printContent = printRef.current;

@@ -264,7 +264,7 @@ export default function Reports() {
   }, [filteredOrders, filteredExpenses]);
 
   const SOURCE_LABELS = { whatsapp: 'WhatsApp', website: 'Website', instagram: 'Instagram', meta_ad: 'Meta Ads', walkin: 'Walk-in', zoho: 'Zoho', direct: 'Direct' };
-  const STATUS_LABELS = { follow_up: 'Follow-up', packing: 'Packing', packed: 'Packed', dispatched: 'Dispatched', in_transit: 'In Transit', delivered: 'Delivered', completed: 'Completed', cancelled: 'Cancelled', returned: 'Returned' };
+  const STATUS_LABELS = { follow_up: 'Follow-up', confirmed: 'Confirmed', packing: 'Packing', fulfilled: 'Fulfilled', collected: 'Collected by Courier', dispatched: 'Dispatched', transit: 'In Transit', delivered: 'Delivered', completed: 'Completed', cancelled: 'Cancelled', returned: 'Returned' };
   const CATEGORY_LABELS = { raw_materials: 'Raw Materials', packaging: 'Packaging', shipping: 'Shipping', advertising: 'Advertising', rent: 'Rent', utilities: 'Utilities', equipment: 'Equipment', salary: 'Salary', courier: 'Courier', misc: 'Miscellaneous' };
 
   if (loading) return <div className="text-center py-12"><p className="text-gray-500">Loading reports...</p></div>;

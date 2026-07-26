@@ -12,7 +12,7 @@ export default function BulkWhatsAppSend({ orders, onClose }) {
   // Filter orders that have tracking numbers and phone numbers
   const eligibleOrders = orders.filter(
     o => o.tracking_number && o.phone &&
-    (o.status === 'dispatched' || o.status === 'in_transit')
+    ['collected', 'dispatched', 'transit'].includes(o.status)
   );
 
   const handleSendWhatsApp = (order) => {
@@ -58,7 +58,7 @@ export default function BulkWhatsAppSend({ orders, onClose }) {
             </div>
             <div className="flex-1 p-3 bg-gray-50 rounded-lg text-center">
               <p className="text-2xl font-bold text-gray-700">
-                {orders.filter(o => (o.status === 'dispatched' || o.status === 'in_transit') && (!o.tracking_number || !o.phone)).length}
+                {orders.filter(o => ['collected', 'dispatched', 'transit'].includes(o.status) && (!o.tracking_number || !o.phone)).length}
               </p>
               <p className="text-xs text-gray-600">Missing Info</p>
             </div>

@@ -164,7 +164,7 @@ export default function WhatsAppSender({ order, onClose }) {
 
   const defaultKey =
     order.status === 'follow_up' ? 'follow_up' :
-    order.status === 'in_transit' || order.status === 'dispatched' ? 'dispatched' :
+    ['collected', 'dispatched', 'transit'].includes(order.status) ? 'dispatched' :
     order.status === 'delivered' ? 'delivered' :
     'order_confirmation';
 

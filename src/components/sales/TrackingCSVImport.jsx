@@ -109,9 +109,9 @@ export default function TrackingCSVImport({ orders, onClose, onImportComplete, s
 
   const matchedCount = matches.filter(m => m.matchedOrder).length;
   const selectedCount = matches.filter(m => m.selected).length;
-  // Unmatched dispatched orders for manual assignment dropdown
+  // Unmatched orders collected by courier, awaiting a tracking number
   const dispatchableOrders = orders.filter(o =>
-    ['packing', 'packed', 'dispatched'].includes(o.status) && !o.tracking_number
+    ['collected', 'fulfilled'].includes(o.status) && !o.tracking_number
   );
 
   return (

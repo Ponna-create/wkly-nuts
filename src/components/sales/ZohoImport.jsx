@@ -173,16 +173,16 @@ export default function ZohoImport({ onClose, onImportComplete }) {
   };
 
   const mapZohoStatus = (zohoStatus) => {
-    if (!zohoStatus) return 'packing';
+    if (!zohoStatus) return 'confirmed';
     const l = String(zohoStatus).toLowerCase();
-    if (l === 'invoiced' || l.includes('confirm') || l.includes('approved')) return 'packing';
-    if (l.includes('pack')) return 'packed';
+    if (l === 'invoiced' || l.includes('confirm') || l.includes('approved')) return 'confirmed';
+    if (l.includes('pack')) return 'packing';
     if (l.includes('ship') || l.includes('dispatch')) return 'dispatched';
     if (l.includes('deliver')) return 'delivered';
     if (l.includes('cancel') || l === 'cancelled') return 'cancelled';
-    if (l.includes('draft') || l.includes('pending') || l === 'unshipped') return 'packing';
+    if (l.includes('draft') || l.includes('pending') || l === 'unshipped') return 'confirmed';
     if (l === 'shipped') return 'dispatched';
-    return 'packing';
+    return 'confirmed';
   };
 
   const detectPackType = (itemName) => {
@@ -318,7 +318,7 @@ export default function ZohoImport({ onClose, onImportComplete }) {
           paymentStatus: isPaid ? 'received' : 'pending',
           amountPaid: isPaid ? amount : 0,
           transactionId: '',
-          status: mapZohoStatus(row[columnMapping.status]) || 'packing',
+          status: mapZohoStatus(row[columnMapping.status]) || 'confirmed',
           shippingAddress: addressParts.join(', '),
           orderDate: orderDate || new Date().toISOString().split('T')[0],
           notes: excelNotes ? `${excelNotes} (Imported: Row ${orderNum})` : `Imported: Row ${orderNum}`,
