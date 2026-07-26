@@ -660,6 +660,7 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
         code: s.skuCode || s.sku_code,
         name: s.name,
         id: s.id,
+        skuType: s.skuType || 'weekly',
         hasPhases: s.name?.toLowerCase().includes('seed cycle'),
       }))
     : FALLBACK_SKU_CODES;
@@ -674,7 +675,7 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
     plannedQuantity: run?.planned_quantity || '',
     actualQuantity: run?.actual_quantity || '',
     rejectedQuantity: run?.rejected_quantity || '0',
-    packType: run?.pack_type || 'weekly',
+    packType: run?.pack_type || ((defaultSku.skuType || 'weekly') === 'weekly' ? 'weekly' : 'single'),
     status: run?.status || 'planned',
     qualityStatus: run?.quality_status || 'pending',
     qualityNotes: run?.quality_notes || '',
@@ -810,10 +811,14 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
       skuCode: code,
       skuName: sku?.name || code,
       seedCyclePhase: sku?.hasPhases ? (f.seedCyclePhase || 'phase1') : '',
+      packType: (sku?.skuType || 'weekly') === 'weekly' ? f.packType : 'single',
       ingredientsUsed: recipeIngredients.length > 0 ? recipeIngredients : f.ingredientsUsed,
       packagingUsed: recipePackaging.length > 0 ? recipePackaging : f.packagingUsed,
     }));
   };
+
+  const selectedSkuMeta = skuCodes.find(s => s.code === form.skuCode);
+  const isRecipeSku = (selectedSkuMeta?.skuType || 'weekly') === 'weekly';
 
   // Weight check: expected vs actual ingredient weight
   const totalIngredientGrams = form.ingredientsUsed.reduce((s, i) => s + (parseFloat(i.quantity_grams) || 0), 0);
@@ -972,16 +977,25 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
           )}
 
           <div className="grid grid-cols-2 gap-3">
+            {isRecipeSku ? (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Pack Type</label>
+                <select value={form.packType} onChange={e => setForm(f => ({ ...f, packType: e.target.value }))}
+                  className="w-full border rounded-lg px-3 py-2 text-sm">
+                  <option value="weekly">Weekly (7 sachets)</option>
+                  <option value="monthly">Monthly (4 boxes)</option>
+                </select>
+              </div>
+            ) : (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                <div className="w-full border rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-500 capitalize">
+                  {selectedSkuMeta?.skuType || 'unit'} — sold as units
+                </div>
+              </div>
+            )}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Pack Type</label>
-              <select value={form.packType} onChange={e => setForm(f => ({ ...f, packType: e.target.value }))}
-                className="w-full border rounded-lg px-3 py-2 text-sm">
-                <option value="weekly">Weekly (7 sachets)</option>
-                <option value="monthly">Monthly (4 boxes)</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">How many packs? *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{isRecipeSku ? 'How many packs? *' : 'How many units? *'}</label>
               <input type="number" value={form.plannedQuantity} onChange={e => { const v = e.target.value; setForm(f => ({ ...f, plannedQuantity: v })); if (form.skuCode) handleSkuChange(form.skuCode, v); }}
                 disabled={isEditing}
                 className="w-full border rounded-lg px-3 py-2 text-sm disabled:bg-gray-100" min="1" required />
