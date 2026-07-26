@@ -18,6 +18,7 @@ const CATEGORIES = {
 const emptyForm = {
   name: '', category: 'other', unit: 'pcs', current_stock: 0,
   min_stock: 0, cost_per_unit: 0, vendor_name: '', notes: '',
+  size: '', purchase_date: new Date().toISOString().split('T')[0],
 };
 
 const emptyTxn = {
@@ -54,11 +55,13 @@ export default function PackagingMaterials() {
 
   const handleSave = async () => {
     if (!form.name.trim()) { showToast('Name is required', 'error'); return; }
+    const { purchase_date, ...rest } = form;
+    const payload = { ...rest, last_purchase_date: purchase_date };
     let result;
     if (editingId) {
-      result = await dbService.updatePackagingMaterial({ id: editingId, ...form });
+      result = await dbService.updatePackagingMaterial({ id: editingId, ...payload });
     } else {
-      result = await dbService.createPackagingMaterial(form);
+      result = await dbService.createPackagingMaterial(payload);
     }
     if (result.error) {
       showToast('Error saving material', 'error');
@@ -76,7 +79,8 @@ export default function PackagingMaterials() {
       name: mat.name, category: mat.category, unit: mat.unit,
       current_stock: mat.current_stock, min_stock: mat.min_stock,
       cost_per_unit: mat.cost_per_unit, vendor_name: mat.vendor_name || '',
-      notes: mat.notes || '',
+      notes: mat.notes || '', size: mat.size || '',
+      purchase_date: mat.last_purchase_date || new Date().toISOString().split('T')[0],
     });
     setEditingId(mat.id);
     setShowForm(true);
@@ -206,6 +210,9 @@ export default function PackagingMaterials() {
           {Object.entries(CATEGORIES).map(([k, v]) => (
             <option key={k} value={k}>{v.label}</option>
           ))}
+          {Array.from(new Set(materials.map(m => m.category).filter(c => c && !CATEGORIES[c]))).map(c => (
+            <option key={c} value={c}>{c}</option>
+          ))}
         </select>
       </div>
 
@@ -220,7 +227,7 @@ export default function PackagingMaterials() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredMaterials.map((mat) => {
-            const cat = CATEGORIES[mat.category] || CATEGORIES.other;
+            const cat = CATEGORIES[mat.category] || { label: mat.category || 'Other', color: 'bg-gray-100 text-gray-800' };
             const isLow = mat.current_stock <= mat.min_stock && mat.min_stock > 0;
             const matTxns = transactions.filter(t => t.material_id === mat.id).slice(0, 5);
 
@@ -256,6 +263,18 @@ export default function PackagingMaterials() {
                       <p className="text-gray-500">Vendor</p>
                       <p className="font-medium text-gray-900 truncate">{mat.vendor_name || '-'}</p>
                     </div>
+                    {mat.size && (
+                      <div>
+                        <p className="text-gray-500">Size</p>
+                        <p className="font-medium text-gray-900 truncate">{mat.size}</p>
+                      </div>
+                    )}
+                    {mat.last_purchase_date && (
+                      <div>
+                        <p className="text-gray-500">Purchased</p>
+                        <p className="font-medium text-gray-900">{new Date(mat.last_purchase_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</p>
+                      </div>
+                    )}
                   </div>
 
                   {mat.notes && <p className="text-xs text-gray-500 mt-2 truncate">{mat.notes}</p>}
@@ -329,12 +348,12 @@ export default function PackagingMaterials() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-semibold text-gray-900 mb-1">Category</label>
-                  <select value={form.category} onChange={e => setForm({...form, category: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg">
-                    {Object.entries(CATEGORIES).map(([k, v]) => (
-                      <option key={k} value={k}>{v.label}</option>
-                    ))}
-                  </select>
+                  <input type="text" list="packaging-categories" value={form.category}
+                    onChange={e => setForm({...form, category: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="e.g., Pouch" />
+                  <datalist id="packaging-categories">
+                    {Object.entries(CATEGORIES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                  </datalist>
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-gray-900 mb-1">Unit</label>
@@ -343,11 +362,24 @@ export default function PackagingMaterials() {
                     <option value="pcs">Pieces</option>
                     <option value="rolls">Rolls</option>
                     <option value="kg">Kg</option>
+                    <option value="grams">Grams</option>
                     <option value="liters">Liters</option>
                     <option value="meters">Meters</option>
                     <option value="sheets">Sheets</option>
                     <option value="cylinders">Cylinders</option>
                   </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-1">Size / Dimension</label>
+                  <input type="text" value={form.size} onChange={e => setForm({...form, size: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="e.g., 10cm x 15cm" />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-1">Purchase Date</label>
+                  <input type="date" value={form.purchase_date} onChange={e => setForm({...form, purchase_date: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                 </div>
               </div>
               <div className="grid grid-cols-3 gap-4">

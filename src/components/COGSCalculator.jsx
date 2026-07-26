@@ -44,6 +44,35 @@ export default function COGSCalculator() {
     [skus, selectedSkuId]
   );
 
+  const isDayRecipeSKU = mode === 'custom' || !selectedSKU || selectedSKU.skuType === 'weekly';
+
+  const getPackagingCost = (materials) => (materials || []).reduce((sum, pkg) =>
+    sum + ((parseFloat(pkg.quantity_per_pack) || 0) * (parseFloat(pkg.price_per_unit) || 0)), 0);
+
+  // Non-recipe SKUs (Repack/Resale/Single Unit) already know their own per-unit cost —
+  // reuse that instead of forcing them through the weekly/monthly day-recipe model.
+  const directCostPerUnit = useMemo(() => {
+    if (!selectedSKU || mode !== 'sku') return null;
+    const packagingCost = getPackagingCost(selectedSKU.packagingMaterials);
+    if (selectedSKU.skuType === 'repack') {
+      const yieldF = selectedSKU.yieldPercent ? (parseFloat(selectedSKU.yieldPercent) / 100) : 1;
+      const bulkQtyG = (parseFloat(selectedSKU.bulkQty) || 0) * 1000;
+      const usableG = bulkQtyG * yieldF;
+      const costPerG = usableG > 0 ? (parseFloat(selectedSKU.bulkPrice) || 0) / usableG : 0;
+      const packG = (parseFloat(selectedSKU.packSize) || 0) * (selectedSKU.unitOfMeasure === 'kg' ? 1000 : 1);
+      return costPerG * packG + packagingCost;
+    }
+    if (selectedSKU.skuType === 'resale') {
+      return (parseFloat(selectedSKU.buyPrice) || 0) + packagingCost;
+    }
+    if (selectedSKU.skuType === 'single') {
+      const materialCost = (selectedSKU.singleUnitIngredients || []).reduce((sum, item) =>
+        sum + ((parseFloat(item.gramsPerUnit) || 0) * (parseFloat(item.pricePerGram) || 0)), 0);
+      return materialCost + packagingCost;
+    }
+    return null;
+  }, [selectedSKU, mode]);
+
   const allVendorIngredients = useMemo(() => {
     const map = new Map();
     vendors.forEach(v => {
@@ -83,6 +112,15 @@ export default function COGSCalculator() {
   const results = useMemo(() => {
     const qty = parseInt(quantity) || 0;
     if (qty <= 0) return null;
+
+    if (mode === 'sku' && selectedSKU && !isDayRecipeSKU) {
+      const costPerUnit = directCostPerUnit || 0;
+      const totalCost = costPerUnit * qty;
+      const sp = parseFloat(sellingPrice) || 0;
+      const margin = sp > 0 ? ((sp - costPerUnit) / sp * 100) : 0;
+      const profit = sp > 0 ? (sp - costPerUnit) * qty : 0;
+      return { items: [], totalCost, totalSachets: qty, costPerSachet: costPerUnit, costPerPack: costPerUnit, margin, profit, qty, sp, isDirect: true };
+    }
 
     const multiplier = packType === 'weekly' ? qty : qty * 4;
     const consolidated = new Map();
@@ -142,7 +180,7 @@ export default function COGSCalculator() {
     const profit = sp > 0 ? (sp - costPerPack) * qty : 0;
 
     return { items, totalCost, totalSachets, costPerSachet, costPerPack, margin, profit, qty, sp };
-  }, [mode, selectedSKU, customIngredients, quantity, packType, sellingPrice, allVendorIngredients, inventoryIngredients]);
+  }, [mode, selectedSKU, customIngredients, quantity, packType, sellingPrice, allVendorIngredients, inventoryIngredients, isDayRecipeSKU, directCostPerUnit]);
 
   const dayBreakdown = useMemo(() => {
     if (!selectedSKU?.recipes || !results) return null;
@@ -241,25 +279,33 @@ export default function COGSCalculator() {
                 </select>
               </div>
             )}
+            {isDayRecipeSKU && (
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Pack Type</label>
+                <select value={packType} onChange={e => setPackType(e.target.value)}
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500">
+                  <option value="weekly">Weekly (7)</option>
+                  <option value="monthly">Monthly (28)</option>
+                </select>
+              </div>
+            )}
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Pack Type</label>
-              <select value={packType} onChange={e => setPackType(e.target.value)}
-                className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500">
-                <option value="weekly">Weekly (7)</option>
-                <option value="monthly">Monthly (28)</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Packs to Make</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">{isDayRecipeSKU ? 'Packs to Make' : 'Units to Make'}</label>
               <input type="number" value={quantity} onChange={e => setQuantity(e.target.value)}
                 className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500" placeholder="e.g. 50" min="1" />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Selling Price/Pack</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">{isDayRecipeSKU ? 'Selling Price/Pack' : 'Selling Price/Unit'}</label>
               <input type="number" value={sellingPrice} onChange={e => setSellingPrice(e.target.value)}
                 className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500" placeholder="e.g. 399" min="0" />
             </div>
           </div>
+
+          {mode === 'sku' && selectedSKU && !isDayRecipeSKU && (
+            <p className="text-xs text-gray-500 -mt-2">
+              {selectedSKU.name} is a {selectedSKU.skuType === 'repack' ? 'Repack' : selectedSKU.skuType === 'resale' ? 'Resale' : 'Single Unit'} product — cost pulled directly from its saved configuration, no day-recipes needed.
+            </p>
+          )}
 
           {/* Custom Recipe Builder */}
           {mode === 'custom' && (
@@ -295,17 +341,17 @@ export default function COGSCalculator() {
               {/* Summary Cards */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-center">
-                  <p className="text-xs text-amber-600">Raw Material Cost</p>
+                  <p className="text-xs text-amber-600">{results.isDirect ? 'Total Cost' : 'Raw Material Cost'}</p>
                   <p className="text-lg font-bold text-amber-800">
                     {results.totalCost.toLocaleString('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })}
                   </p>
                 </div>
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-center">
-                  <p className="text-xs text-blue-600">Cost / Pack</p>
+                  <p className="text-xs text-blue-600">{results.isDirect ? 'Cost / Unit' : 'Cost / Pack'}</p>
                   <p className="text-lg font-bold text-blue-800">
                     {results.costPerPack.toLocaleString('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 })}
                   </p>
-                  <p className="text-[10px] text-blue-500">{results.costPerSachet.toFixed(2)}/sachet</p>
+                  {!results.isDirect && <p className="text-[10px] text-blue-500">{results.costPerSachet.toFixed(2)}/sachet</p>}
                 </div>
                 <div className={`border rounded-lg p-3 text-center ${results.margin > 0 ? 'bg-green-50 border-green-200' : results.sp > 0 ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'}`}>
                   <p className={`text-xs ${results.margin > 0 ? 'text-green-600' : results.sp > 0 ? 'text-red-600' : 'text-gray-500'}`}>Margin</p>
@@ -319,13 +365,14 @@ export default function COGSCalculator() {
                   )}
                 </div>
                 <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 text-center">
-                  <p className="text-xs text-purple-600">Total Sachets</p>
-                  <p className="text-lg font-bold text-purple-800">{results.totalSachets}</p>
-                  <p className="text-[10px] text-purple-500">{results.qty} packs</p>
+                  <p className="text-xs text-purple-600">{results.isDirect ? 'Units to Make' : 'Total Sachets'}</p>
+                  <p className="text-lg font-bold text-purple-800">{results.isDirect ? results.qty : results.totalSachets}</p>
+                  {!results.isDirect && <p className="text-[10px] text-purple-500">{results.qty} packs</p>}
                 </div>
               </div>
 
-              {/* Ingredients Table */}
+              {/* Ingredients Table (recipe-based SKUs and custom recipes only) */}
+              {!results.isDirect && (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
@@ -380,6 +427,7 @@ export default function COGSCalculator() {
                   </tfoot>
                 </table>
               </div>
+              )}
 
               {/* Day Breakdown (SKU mode only) */}
               {mode === 'sku' && dayBreakdown && (
@@ -425,8 +473,10 @@ export default function COGSCalculator() {
           {/* No results hint */}
           {!results && quantity && (mode === 'sku' ? selectedSkuId : customIngredients.length > 0) && (
             <div className="text-center py-4 text-sm text-gray-400">
-              {mode === 'sku' && !selectedSKU?.recipes
+              {mode === 'sku' && isDayRecipeSKU && !selectedSKU?.recipes
                 ? 'This SKU has no recipes defined — set up 7-day recipes in SKU Management first'
+                : mode === 'sku' && !isDayRecipeSKU
+                ? 'This SKU has no cost data yet — add packaging/pricing in SKU Management first'
                 : 'Add ingredients with grams to see COGS breakdown'}
             </div>
           )}

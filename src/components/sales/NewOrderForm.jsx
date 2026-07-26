@@ -20,6 +20,7 @@ export default function NewOrderForm({ onClose }) {
 
   const [formData, setFormData] = useState({
     customerName: '',
+    orderDate: new Date().toISOString().split('T')[0],
     orderSource: 'whatsapp',
     items: [],
     subtotal: 0,
@@ -449,6 +450,18 @@ export default function NewOrderForm({ onClose }) {
               </div>
             </div>
           )}
+
+          {/* Order Date */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-900 mb-2">Order Date</label>
+            <input
+              type="date"
+              value={formData.orderDate}
+              onChange={(e) => setFormData(prev => ({ ...prev, orderDate: e.target.value }))}
+              max={new Date().toISOString().split('T')[0]}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
+            />
+          </div>
 
           {/* Order Source & Payment */}
           <div className="grid grid-cols-2 gap-4">

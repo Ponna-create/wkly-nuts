@@ -68,13 +68,15 @@ export default function IngredientInventory() {
       name: sku.name,
       isRecipe,
       qty: isRecipe ? (inv?.weeklyPacksAvailable || 0) : (inv?.singleUnitsAvailable || 0),
+      minStockThreshold: inv?.minStockThreshold || 0,
     };
   }).filter(r => r.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
   const totalFinishedUnits = skuStockRows.reduce((s, r) => s + r.qty, 0);
   const skusInStockCount = skuStockRows.filter(r => r.qty > 0).length;
+  const skusLowStockCount = skuStockRows.filter(r => r.minStockThreshold > 0 && r.qty < r.minStockThreshold).length;
 
-  const startEditStock = (row) => setEditingStock({ skuId: row.skuId, isRecipe: row.isRecipe, qty: row.qty });
+  const startEditStock = (row) => setEditingStock({ skuId: row.skuId, isRecipe: row.isRecipe, qty: row.qty, minStockThreshold: row.minStockThreshold });
 
   const saveStock = async () => {
     if (!editingStock) return;
@@ -84,6 +86,7 @@ export default function IngredientInventory() {
       weeklyPacksAvailable: editingStock.isRecipe ? newQty : 0,
       monthlyPacksAvailable: 0, // retired — monthly is now just 4 boxes, not its own pool
       singleUnitsAvailable: editingStock.isRecipe ? 0 : newQty,
+      minStockThreshold: parseFloat(editingStock.minStockThreshold) || 0,
     }, 'Manual stock entry');
     setSavingStock(false);
     if (error) { showToast('Failed to update stock', 'error'); return; }
@@ -222,7 +225,7 @@ export default function IngredientInventory() {
       </div>
 
       {/* Summary tiles */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
           <p className="text-sm text-gray-500">Raw ingredients</p>
           <p className="text-2xl font-bold">{ingredients.length}</p>
@@ -238,6 +241,10 @@ export default function IngredientInventory() {
         <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
           <p className="text-sm text-gray-500">Finished units</p>
           <p className="text-2xl font-bold text-teal-600">{totalFinishedUnits}</p>
+        </div>
+        <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+          <p className="text-sm text-gray-500">Low-stock finished</p>
+          <p className="text-2xl font-bold text-red-600">{skusLowStockCount}</p>
         </div>
       </div>
 
@@ -269,6 +276,7 @@ export default function IngredientInventory() {
                 <tr className="text-xs text-gray-500 border-b bg-gray-50">
                   <th className="text-left px-4 py-3 font-medium">SKU</th>
                   <th className="text-left px-4 py-3 font-medium">Unit</th>
+                  <th className="text-right px-4 py-3 font-medium">Low stock at</th>
                   <th className="text-right px-4 py-3 font-medium">In stock</th>
                   <th className="px-4 py-3 w-16"></th>
                 </tr>
@@ -276,12 +284,18 @@ export default function IngredientInventory() {
               <tbody className="divide-y divide-gray-100">
                 {skuStockRows.map(r => {
                   const isEditingThis = editingStock?.skuId === r.skuId;
+                  const isLow = r.minStockThreshold > 0 && r.qty < r.minStockThreshold;
                   return (
-                    <tr key={r.skuId} className="hover:bg-gray-50">
+                    <tr key={r.skuId} className={isLow ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50'}>
                       <td className="px-4 py-3 font-medium text-gray-900">{r.name}</td>
                       <td className="px-4 py-3 text-gray-400 text-xs">{r.isRecipe ? 'box (1 week)' : 'unit'}</td>
                       {isEditingThis ? (
                         <>
+                          <td className="px-4 py-2 text-right">
+                            <input type="number" min="0" value={editingStock.minStockThreshold}
+                              onChange={e => setEditingStock(prev => ({ ...prev, minStockThreshold: e.target.value }))}
+                              className="w-20 border rounded px-2 py-1 text-sm text-right" placeholder="0" />
+                          </td>
                           <td className="px-4 py-2 text-right">
                             <input type="number" min="0" autoFocus value={editingStock.qty}
                               onChange={e => setEditingStock(prev => ({ ...prev, qty: e.target.value }))}
@@ -298,7 +312,8 @@ export default function IngredientInventory() {
                         </>
                       ) : (
                         <>
-                          <td className="px-4 py-3 text-right font-semibold text-teal-700">{r.qty}</td>
+                          <td className="px-4 py-3 text-right text-gray-500">{r.minStockThreshold > 0 ? r.minStockThreshold : '—'}</td>
+                          <td className={`px-4 py-3 text-right font-semibold ${isLow ? 'text-red-600' : 'text-teal-700'}`}>{r.qty}</td>
                           <td className="px-4 py-3 text-right">
                             <button onClick={() => startEditStock(r)} className="p-1 text-gray-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg" title="Edit stock">
                               <Edit2 className="w-4 h-4" />

@@ -1506,6 +1506,7 @@ const _realDbService = {
         weeklyPacksAvailable: parseFloat(item.weekly_packs_available || 0),
         monthlyPacksAvailable: parseFloat(item.monthly_packs_available || 0),
         singleUnitsAvailable: parseFloat(item.single_units_available || 0),
+        minStockThreshold: parseFloat(item.min_stock_threshold || 0),
         lastUpdated: item.last_updated,
         notes: item.notes,
         createdAt: item.created_at,
@@ -1573,6 +1574,7 @@ const _realDbService = {
           weekly_packs_available: inventory.weeklyPacksAvailable || 0,
           monthly_packs_available: inventory.monthlyPacksAvailable || 0,
           single_units_available: inventory.singleUnitsAvailable || 0,
+          min_stock_threshold: inventory.minStockThreshold || 0,
           notes: inventory.notes || null,
           last_updated: new Date().toISOString(),
         })
@@ -1621,6 +1623,7 @@ const _realDbService = {
           weekly_packs_available: inventory.weeklyPacksAvailable || 0,
           monthly_packs_available: inventory.monthlyPacksAvailable || 0,
           single_units_available: inventory.singleUnitsAvailable || 0,
+          min_stock_threshold: inventory.minStockThreshold ?? 0,
           notes: inventory.notes || null,
           last_updated: new Date().toISOString(),
         })
@@ -1727,6 +1730,7 @@ const _realDbService = {
         weeklyPacksAvailable: values.weeklyPacksAvailable ?? current?.weeklyPacksAvailable ?? 0,
         monthlyPacksAvailable: values.monthlyPacksAvailable ?? current?.monthlyPacksAvailable ?? 0,
         singleUnitsAvailable: values.singleUnitsAvailable ?? current?.singleUnitsAvailable ?? 0,
+        minStockThreshold: values.minStockThreshold ?? current?.minStockThreshold ?? 0,
         notes: reason,
       };
 
@@ -2871,6 +2875,8 @@ const _realDbService = {
           cost_per_unit: material.cost_per_unit || 0,
           vendor_name: material.vendor_name,
           notes: material.notes,
+          size: material.size,
+          last_purchase_date: material.last_purchase_date,
         }])
         .select()
         .single();
@@ -2894,6 +2900,7 @@ const _realDbService = {
       if (material.cost_per_unit !== undefined) updateData.cost_per_unit = material.cost_per_unit;
       if (material.vendor_name !== undefined) updateData.vendor_name = material.vendor_name;
       if (material.notes !== undefined) updateData.notes = material.notes;
+      if (material.size !== undefined) updateData.size = material.size;
       if (material.last_purchase_date !== undefined) updateData.last_purchase_date = material.last_purchase_date;
       if (material.last_purchase_qty !== undefined) updateData.last_purchase_qty = material.last_purchase_qty;
       if (material.last_purchase_cost !== undefined) updateData.last_purchase_cost = material.last_purchase_cost;
@@ -3481,7 +3488,7 @@ const _realDbService = {
           }
         }
 
-        // 4. Finished goods alerts - low stock (below 5 units)
+        // 4. Finished goods alerts - below each SKU's own reorder threshold (falls back to 5 if unset)
         const { data: finishedGoods } = await supabase
           .from('inventory')
           .select('*, skus(id, name)')
@@ -3491,18 +3498,22 @@ const _realDbService = {
           for (const inv of finishedGoods) {
             const weekly = parseFloat(inv.weekly_packs_available) || 0;
             const monthly = parseFloat(inv.monthly_packs_available) || 0;
-            const total = weekly + monthly;
-            if (total < 5) {
+            const single = parseFloat(inv.single_units_available) || 0;
+            const total = weekly + monthly + single;
+            const threshold = parseFloat(inv.min_stock_threshold) || 5;
+            if (total < threshold) {
               alerts.push({
                 type: 'finished_goods',
-                severity: total === 0 ? 'critical' : 'medium',
+                severity: total === 0 ? 'critical' : total <= threshold * 0.5 ? 'high' : 'medium',
                 name: inv.skus?.name || 'Unknown SKU',
+                currentStock: total,
+                threshold,
                 weeklyStock: weekly,
                 monthlyStock: monthly,
                 unit: 'boxes',
                 message: total === 0
                   ? `${inv.skus?.name}: NO STOCK! Need to produce more.`
-                  : `${inv.skus?.name}: Only ${weekly} weekly + ${monthly} monthly packs left`,
+                  : `${inv.skus?.name}: Only ${total} left (min: ${threshold})`,
               });
             }
           }
