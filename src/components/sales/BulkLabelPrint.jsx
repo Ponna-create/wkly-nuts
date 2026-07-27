@@ -8,7 +8,7 @@ import { useApp } from '../../context/AppContext';
 import { buildInvoiceDataFromOrder } from '../../utils/invoiceFromOrder';
 
 export default function BulkLabelPrint({ orders, onClose, onPrinted, showToast }) {
-  const { dispatch } = useApp();
+  const { state, dispatch } = useApp();
   const navigate = useNavigate();
   const printRef = useRef(null);
   const [labelSize, setLabelSize] = useState('a4');
@@ -70,7 +70,7 @@ export default function BulkLabelPrint({ orders, onClose, onPrinted, showToast }
       const results = await Promise.all(needsInvoice.map(async (o) => {
         try {
           const { data: invoice, error } = await dbService.createInvoice(
-            buildInvoiceDataFromOrder(o, 'Auto-generated on label print')
+            buildInvoiceDataFromOrder(o, 'Auto-generated on label print', state.skus)
           );
           if (error || !invoice) return null;
           await dbService.updateSalesOrder({ id: o.id, invoice_id: invoice.id });

@@ -109,7 +109,7 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
   const ensureInvoiceForOrder = async (targetOrder) => {
     if (targetOrder.invoice_id) return targetOrder.invoice_id;
     try {
-      const invoiceData = buildInvoiceDataFromOrder(targetOrder, 'Auto-generated on label print');
+      const invoiceData = buildInvoiceDataFromOrder(targetOrder, 'Auto-generated on label print', state.skus);
       const { data: autoInvoice, error } = await dbService.createInvoice(invoiceData);
       if (error || !autoInvoice) {
         showToast('Could not auto-generate invoice for this order', 'error');
@@ -214,7 +214,7 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
         id: `inv-${Date.now()}`,
         dueDate: null,
         terms: 'Payment due within 15 days',
-        ...buildInvoiceDataFromOrder(currentOrder, 'Auto-generated from order'),
+        ...buildInvoiceDataFromOrder(currentOrder, 'Auto-generated from order', state.skus),
       };
 
       // Create invoice

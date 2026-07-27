@@ -113,6 +113,7 @@ export default function SKUManagement() {
   const [formData, setFormData] = useState({
     name: '',
     skuCode: '',
+    hsnCode: '',
     description: '',
     skuType: 'weekly', // weekly | processed | repack | resale
     targetWeightPerSachet: '', // For weekly packs
@@ -249,6 +250,7 @@ export default function SKUManagement() {
     setFormData({
       name: '',
       skuCode: '',
+      hsnCode: '',
       description: '',
       skuType: 'weekly',
       targetWeightPerSachet: '',
@@ -559,6 +561,7 @@ export default function SKUManagement() {
     setFormData({
       name: sku.name,
       skuCode: sku.skuCode || generateSkuCode(sku.name),
+      hsnCode: sku.hsnCode || '',
       description: sku.description,
       skuType: sku.skuType || 'weekly',
       targetWeightPerSachet: sku.targetWeightPerSachet || '',
@@ -1109,6 +1112,18 @@ export default function SKUManagement() {
                     maxLength={10}
                   />
                   <p className="text-xs text-gray-500 mt-1">Auto-generated from name. You can edit it.</p>
+                </div>
+                <div>
+                  <label className="label">HSN Code</label>
+                  <input
+                    type="text"
+                    value={formData.hsnCode}
+                    onChange={(e) => setFormData({ ...formData, hsnCode: e.target.value })}
+                    className="input-field font-mono"
+                    placeholder="e.g., 08013100"
+                    maxLength={10}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Used on GST invoices for this product. Check with your CA if unsure.</p>
                 </div>
                 <div>
                   <label className="label">SKU Type <span className="text-red-500">*</span></label>
@@ -2794,6 +2809,11 @@ export default function SKUManagement() {
                       {sku.skuCode && (
                         <span className="px-2 py-1 bg-gray-100 text-gray-800 text-xs font-mono font-bold rounded">
                           {sku.skuCode}
+                        </span>
+                      )}
+                      {sku.hsnCode && (
+                        <span className="px-2 py-1 bg-gray-50 text-gray-500 text-xs font-mono rounded border border-gray-200" title="HSN Code">
+                          HSN {sku.hsnCode}
                         </span>
                       )}
                       <h3 className="text-lg font-bold text-gray-900">{sku.name}</h3>
