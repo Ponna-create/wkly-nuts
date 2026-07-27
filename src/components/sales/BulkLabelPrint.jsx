@@ -6,6 +6,7 @@ import { sanitizeHtml } from '../../utils/sanitize';
 import { dbService } from '../../services/supabase';
 import { useApp } from '../../context/AppContext';
 import { buildInvoiceDataFromOrder } from '../../utils/invoiceFromOrder';
+import { getBusinessInfo } from '../../utils/settings';
 
 export default function BulkLabelPrint({ orders, onClose, onPrinted, showToast }) {
   const { state, dispatch } = useApp();
@@ -129,6 +130,8 @@ export default function BulkLabelPrint({ orders, onClose, onPrinted, showToast }
     }
   };
 
+  const businessInfo = getBusinessInfo();
+
   // Render a single label
   const renderLabel = (order) => {
     const items = order.items || [];
@@ -171,9 +174,20 @@ export default function BulkLabelPrint({ orders, onClose, onPrinted, showToast }
             <div style={{ flex: 1, padding: `${8*s}px ${10*s}px` }}>
               <div style={{ fontWeight: 'bold', fontSize: `${10*s}px` }}>FROM:</div>
               <div style={{ marginTop: `${4*s}px` }}>
-                <div style={{ fontSize: `${10*s}px`, fontWeight: '500' }}>WKLY Nuts</div>
-                <div style={{ fontSize: `${9*s}px`, color: '#333', marginTop: '2px' }}>Chennai, Tamil Nadu, India</div>
+                <div style={{ fontSize: `${10*s}px`, fontWeight: '500' }}>{businessInfo.companyName || 'WKLY Nuts'}</div>
+                <div style={{ fontSize: `${9*s}px`, color: '#333', marginTop: '2px' }}>{businessInfo.registeredAddress || 'Chennai, Tamil Nadu, India'}</div>
               </div>
+            </div>
+          </div>
+
+          {/* If undelivered, return to */}
+          <div style={{ borderBottom: '2px solid #000', padding: `${6*s}px ${10*s}px` }}>
+            <div style={{ fontSize: `${8*s}px`, fontWeight: 'bold', color: '#555' }}>IF UNDELIVERED, PLEASE RETURN TO:</div>
+            <div style={{ fontSize: `${9*s}px`, marginTop: '2px' }}>
+              <span style={{ fontWeight: '500' }}>{businessInfo.companyName || 'WKLY Nuts'}</span>
+              {' — '}
+              {businessInfo.returnAddress || businessInfo.registeredAddress || 'Chennai, Tamil Nadu, India'}
+              {businessInfo.phone && ` | Ph: ${businessInfo.phone}`}
             </div>
           </div>
 

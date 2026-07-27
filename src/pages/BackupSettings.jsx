@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { Database, Download, Upload, Check, AlertCircle, AlertTriangle, Clock, HardDrive, Loader2, RefreshCw, Settings, Wifi, WifiOff } from 'lucide-react';
+import { Database, Download, Upload, Check, AlertCircle, AlertTriangle, Clock, HardDrive, Loader2, RefreshCw, Settings, Wifi, WifiOff, Building2, Save } from 'lucide-react';
 import { dbService } from '../services/supabase';
 import { useApp } from '../context/AppContext';
-import { getGstRate, setGstRate, getDbMode, setDbMode } from '../utils/settings';
+import { getGstRate, setGstRate, getDbMode, setDbMode, getBusinessInfo, setBusinessInfo } from '../utils/settings';
 
 export default function BackupSettings() {
   const { showToast, useDatabase } = useApp();
@@ -17,6 +17,23 @@ export default function BackupSettings() {
     ![0, 5, 12, 18].includes(getGstRate()) ? getGstRate() : ''
   );
   const [dbModeValue, setDbModeValue] = useState(getDbMode());
+  const [businessInfo, setBusinessInfoState] = useState(getBusinessInfo());
+  const [sameAsRegistered, setSameAsRegistered] = useState(
+    !!getBusinessInfo().registeredAddress && getBusinessInfo().registeredAddress === getBusinessInfo().returnAddress
+  );
+
+  // ==========================================
+  // BUSINESS INFO (GSTIN, addresses) — used on invoices & shipping labels
+  // ==========================================
+  const handleBusinessInfoSave = () => {
+    const toSave = {
+      ...businessInfo,
+      returnAddress: sameAsRegistered ? businessInfo.registeredAddress : businessInfo.returnAddress,
+    };
+    setBusinessInfo(toSave);
+    setBusinessInfoState(toSave);
+    showToast('Business info saved', 'success');
+  };
 
   // ==========================================
   // GST RATE SETTINGS
@@ -344,6 +361,93 @@ export default function BackupSettings() {
               </p>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Business Info — GSTIN & addresses used on invoices/labels */}
+      <div className="bg-white border border-gray-200 rounded-lg p-6">
+        <div className="flex items-center gap-3 mb-5">
+          <Building2 className="w-6 h-6 text-teal-600" />
+          <h2 className="text-lg font-semibold text-gray-900">Business Info</h2>
+        </div>
+        <p className="text-sm text-gray-600 mb-4">
+          Used on the shipping label and GST invoice. Fully editable any time — add, change, or clear as needed.
+        </p>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-semibold text-gray-900 mb-1">Company Name</label>
+            <input
+              type="text"
+              value={businessInfo.companyName || ''}
+              onChange={(e) => setBusinessInfoState(prev => ({ ...prev, companyName: e.target.value }))}
+              className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg text-sm focus:border-teal-500 focus:ring-0"
+              placeholder="WKLY Nuts"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-semibold text-gray-900 mb-1">GSTIN</label>
+              <input
+                type="text"
+                value={businessInfo.gstin || ''}
+                onChange={(e) => setBusinessInfoState(prev => ({ ...prev, gstin: e.target.value.toUpperCase() }))}
+                className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg text-sm font-mono focus:border-teal-500 focus:ring-0"
+                placeholder="e.g., 33AAAAA0000A1Z5"
+                maxLength={15}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-900 mb-1">Phone</label>
+              <input
+                type="text"
+                value={businessInfo.phone || ''}
+                onChange={(e) => setBusinessInfoState(prev => ({ ...prev, phone: e.target.value }))}
+                className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg text-sm focus:border-teal-500 focus:ring-0"
+                placeholder="For the shipping label"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-900 mb-1">Registered Address</label>
+            <textarea
+              value={businessInfo.registeredAddress || ''}
+              onChange={(e) => setBusinessInfoState(prev => ({ ...prev, registeredAddress: e.target.value }))}
+              rows="2"
+              className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg text-sm focus:border-teal-500 focus:ring-0"
+              placeholder="Full registered business address"
+            />
+          </div>
+
+          <div>
+            <label className="flex items-center gap-2 text-sm text-gray-700 mb-2">
+              <input
+                type="checkbox"
+                checked={sameAsRegistered}
+                onChange={(e) => setSameAsRegistered(e.target.checked)}
+                className="w-4 h-4 text-teal-600 rounded"
+              />
+              Return-to address (for undelivered parcels) is the same as above
+            </label>
+            {!sameAsRegistered && (
+              <textarea
+                value={businessInfo.returnAddress || ''}
+                onChange={(e) => setBusinessInfoState(prev => ({ ...prev, returnAddress: e.target.value }))}
+                rows="2"
+                className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg text-sm focus:border-teal-500 focus:ring-0"
+                placeholder="Where undelivered parcels should be returned"
+              />
+            )}
+          </div>
+
+          <button
+            onClick={handleBusinessInfoSave}
+            className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 text-sm font-medium"
+          >
+            <Save className="w-4 h-4" /> Save Business Info
+          </button>
         </div>
       </div>
 

@@ -6,6 +6,7 @@ import { dbService, isSupabaseAvailable } from '../services/supabase';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import logo from '../assets/wkly-nuts-logo.png';
+import { getBusinessInfo } from '../utils/settings';
 
 export default function InvoiceManagement() {
   const { state, dispatch, showToast } = useApp();
@@ -1165,23 +1166,31 @@ export default function InvoiceManagement() {
         doc.text('WKLY Nuts', margin, yPos + 8);
       }
 
-      // Company Name and Address (Right side, top)
+      // Company Name, Address & GSTIN (Right side, top) — editable in Settings > Business Info
+      const businessInfo = getBusinessInfo();
       const rightX = pageWidth - margin;
       let companyY = margin;
       doc.setFontSize(16);
       doc.setFont(undefined, 'bold');
       doc.setTextColor(0, 0, 0);
-      doc.text('Dhanish Enterprises', rightX, companyY, { align: 'right' });
+      doc.text(businessInfo.companyName || 'Dhanish Enterprises', rightX, companyY, { align: 'right' });
       companyY += 6;
       doc.setFontSize(10);
       doc.setFont(undefined, 'normal');
       doc.setTextColor(60, 60, 60);
-      doc.text('No.1, Chelliamman koil,', rightX, companyY, { align: 'right' });
-      companyY += 5;
-      doc.text('Ambattur, Chennai,', rightX, companyY, { align: 'right' });
-      companyY += 5;
-      doc.text('TamilNadu - 600058', rightX, companyY, { align: 'right' });
-      
+      const addressLines = businessInfo.registeredAddress
+        ? doc.splitTextToSize(businessInfo.registeredAddress, 80)
+        : ['No.1, Chelliamman koil,', 'Ambattur, Chennai,', 'TamilNadu - 600058'];
+      addressLines.forEach(line => {
+        doc.text(line, rightX, companyY, { align: 'right' });
+        companyY += 5;
+      });
+      if (businessInfo.gstin) {
+        doc.setFont(undefined, 'bold');
+        doc.text(`GSTIN: ${businessInfo.gstin}`, rightX, companyY, { align: 'right' });
+        companyY += 5;
+      }
+
       // Invoice Number and Date (Right side, below company address)
       const invoiceDate = invoice.invoiceDate || invoice.invoice_date;
       const invoiceNum = invoice.invoiceNumber || invoice.invoice_number || 'N/A';

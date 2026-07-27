@@ -34,6 +34,18 @@ export const setChannelFee = (channel, pct) => {
   setSetting('channelFees', fees);
 };
 
+// Business info used on invoices & shipping labels (GSTIN, registered/return
+// address). Kept fully editable here — not hardcoded — so it can be added,
+// changed, or cleared any time without a code change.
+export const getBusinessInfo = () => getSetting('businessInfo', {
+  companyName: 'WKLY Nuts',
+  gstin: '',
+  registeredAddress: '',
+  returnAddress: '',
+  phone: '',
+});
+export const setBusinessInfo = (info) => setSetting('businessInfo', info);
+
 // Channels manually added on the Omni Channels page that don't have any real
 // orders yet — without this they'd have nowhere to persist and "Add Channel"
 // would silently do nothing.

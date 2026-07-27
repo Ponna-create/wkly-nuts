@@ -2,6 +2,7 @@ import React, { useRef, useState, useMemo } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { X, Printer, Edit3, ChevronDown } from 'lucide-react';
 import { sanitizeHtml } from '../../utils/sanitize';
+import { getBusinessInfo } from '../../utils/settings';
 
 // Box presets
 const BOX_PRESETS = [
@@ -27,6 +28,8 @@ export default function LabelPrinter({ order, onClose, labelSize: initialSize = 
     const pt = (i.pack_type || i.packType || '').toLowerCase();
     return s + (pt.includes('month') ? qty * 1.0 : qty * 0.25);
   }, 0);
+
+  const businessInfo = getBusinessInfo();
 
   const itemsSummary = items.map(i =>
     `${i.sku_name || i.skuName} (${i.pack_type || i.packType}) x${i.quantity}`
@@ -169,9 +172,20 @@ export default function LabelPrinter({ order, onClose, labelSize: initialSize = 
                 <div style={{ flex: 1, padding: `${10*s}px ${12*s}px` }}>
                   <div style={{ fontWeight: 'bold', fontSize: `${11*s}px`, marginBottom: `${6*s}px` }}>FROM:</div>
                   <div style={{ marginTop: `${4*s}px` }}>
-                    <div style={{ fontSize: `${11*s}px`, fontWeight: '500', lineHeight: '1.5' }}>WKLY Nuts</div>
-                    <div style={{ fontSize: `${10*s}px`, color: '#333', lineHeight: '1.5', marginTop: `${2*s}px` }}>Chennai, Tamil Nadu,<br/>India</div>
+                    <div style={{ fontSize: `${11*s}px`, fontWeight: '500', lineHeight: '1.5' }}>{businessInfo.companyName || 'WKLY Nuts'}</div>
+                    <div style={{ fontSize: `${10*s}px`, color: '#333', lineHeight: '1.5', marginTop: `${2*s}px` }}>{businessInfo.registeredAddress || 'Chennai, Tamil Nadu, India'}</div>
                   </div>
+                </div>
+              </div>
+
+              {/* If undelivered, return to */}
+              <div style={{ borderBottom: '2px solid #000', padding: `${6*s}px ${12*s}px` }}>
+                <div style={{ fontSize: `${9*s}px`, fontWeight: 'bold', color: '#555' }}>IF UNDELIVERED, PLEASE RETURN TO:</div>
+                <div style={{ fontSize: `${10*s}px`, marginTop: '2px' }}>
+                  <span style={{ fontWeight: '500' }}>{businessInfo.companyName || 'WKLY Nuts'}</span>
+                  {' — '}
+                  {businessInfo.returnAddress || businessInfo.registeredAddress || 'Chennai, Tamil Nadu, India'}
+                  {businessInfo.phone && ` | Ph: ${businessInfo.phone}`}
                 </div>
               </div>
 
