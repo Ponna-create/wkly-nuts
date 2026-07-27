@@ -5,9 +5,10 @@ import {
   Plus, Search, X, Edit2, Trash2, Package, ChevronDown, ChevronUp,
   IndianRupee, Truck, CheckCircle, Clock, AlertCircle, FileSpreadsheet,
   RefreshCw, TrendingUp, TrendingDown, Minus, ShoppingCart, Eye, Zap,
-  BarChart3, ArrowRight, AlertTriangle
+  BarChart3, ArrowRight, AlertTriangle, FileDown
 } from 'lucide-react';
 import BillCSVImport from '../components/BillCSVImport';
+import { generatePurchaseOrderPDF } from '../utils/purchaseOrderPdf';
 
 const STATUS_CONFIG = {
   draft: { label: 'Draft', color: 'bg-gray-100 text-gray-700', icon: Clock },
@@ -288,6 +289,10 @@ export default function PurchaseOrders() {
                               </button>
                             )
                           )}
+                          <button onClick={() => generatePurchaseOrderPDF(po, state?.vendors?.find(v => v.id === po.vendor_id))}
+                            className="flex items-center gap-1 px-3 py-1.5 text-sm text-teal-600 hover:bg-teal-50 rounded-lg">
+                            <FileDown className="w-3.5 h-3.5" /> PDF
+                          </button>
                           <button onClick={() => { setEditingPO(po); setShowForm(true); }}
                             className="flex items-center gap-1 px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded-lg">
                             <Edit2 className="w-3.5 h-3.5" /> Edit
