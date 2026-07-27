@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { X, Copy, Check, Printer, MessageCircle, Package, Truck, CheckCircle, FileText, Loader2, Save, Edit2 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { dbService } from '../../services/supabase';
 import LabelPrinter from './LabelPrinter';
 import WhatsAppSender from './WhatsAppSender';
+import { buildInvoiceDataFromOrder } from '../../utils/invoiceFromOrder';
 
 export default function OrderDetailView({ order, onClose, onUpdate }) {
   const { state, dispatch, showToast } = useApp();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [copiedField, setCopiedField] = useState(null);
   const [showLabelPrinter, setShowLabelPrinter] = useState(false);
@@ -93,45 +96,6 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
         if (invResult.warnings.length > 0) {
           showToast(`Stock warning: ${invResult.warnings[0]}`, 'error');
         }
-
-        // Auto-generate invoice on fulfilment if not already linked
-        if (!currentOrder.invoice_id) {
-          try {
-            const invoiceData = {
-              customerId: currentOrder.customer_id,
-              invoiceDate: new Date().toISOString().split('T')[0],
-              items: (currentOrder.items || []).map(item => ({
-                skuId: item.sku_id || item.skuId,
-                skuName: item.sku_name || item.skuName,
-                packType: item.pack_type || item.packType,
-                quantity: item.quantity,
-                unitPrice: item.unit_price || item.unitPrice,
-                total: item.total,
-              })),
-              gstRate: currentOrder.gst_rate || 5,
-              subtotal: currentOrder.subtotal || 0,
-              gstAmount: currentOrder.gst_amount || 0,
-              discountPercent: currentOrder.discount_percent || 0,
-              discountAmount: currentOrder.discount_amount || 0,
-              shippingCharge: currentOrder.shipping_charge || 0,
-              totalAmount: currentOrder.total_amount || 0,
-              balanceDue: (currentOrder.total_amount || 0) - (currentOrder.amount_paid || 0),
-              advancePaid: currentOrder.amount_paid || 0,
-              status: currentOrder.payment_status === 'received' ? 'paid' : 'sent',
-              paymentMethod: currentOrder.payment_method,
-              notes: `Auto-generated on dispatch — ${currentOrder.order_number}`,
-            };
-            const { data: autoInvoice } = await dbService.createInvoice(invoiceData);
-            if (autoInvoice) {
-              updateData.invoice_id = autoInvoice.id;
-              await dbService.updateSalesOrder({ id: currentOrder.id, invoice_id: autoInvoice.id });
-              dispatch({ type: 'ADD_INVOICE', payload: autoInvoice });
-              showToast(`Invoice ${autoInvoice.invoiceNumber || autoInvoice.invoice_number} auto-generated`, 'success');
-            }
-          } catch (invErr) {
-            console.warn('Auto-invoice failed:', invErr);
-          }
-        }
       }
       showToast(`Status updated to ${getStatusBadge(newStatus).label}`, 'success');
       setCurrentOrder(prev => ({ ...prev, status: newStatus }));
@@ -140,10 +104,37 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
     setLoading(false);
   };
 
+  // Creates the invoice for this order if it doesn't have one yet, links it, and
+  // returns the invoice id — used so printing a label also produces the invoice.
+  const ensureInvoiceForOrder = async (targetOrder) => {
+    if (targetOrder.invoice_id) return targetOrder.invoice_id;
+    try {
+      const invoiceData = buildInvoiceDataFromOrder(targetOrder, 'Auto-generated on label print');
+      const { data: autoInvoice, error } = await dbService.createInvoice(invoiceData);
+      if (error || !autoInvoice) {
+        showToast('Could not auto-generate invoice for this order', 'error');
+        return null;
+      }
+      await dbService.updateSalesOrder({ id: targetOrder.id, invoice_id: autoInvoice.id });
+      dispatch({ type: 'ADD_INVOICE', payload: autoInvoice });
+      setCurrentOrder(prev => ({ ...prev, invoice_id: autoInvoice.id }));
+      return autoInvoice.id;
+    } catch (invErr) {
+      console.warn('Auto-invoice failed:', invErr);
+      showToast('Could not auto-generate invoice for this order', 'error');
+      return null;
+    }
+  };
+
   const handlePrintAndPack = async () => {
     setShowLabelPrinter(true);
     if (currentOrder.status === 'confirmed') {
       await handleStatusChange('packing');
+    }
+    const invoiceId = await ensureInvoiceForOrder(currentOrder);
+    if (invoiceId) {
+      onUpdate();
+      navigate(`/invoices?autoprint=${invoiceId}`);
     }
   };
 
@@ -221,30 +212,9 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
     try {
       const invoiceData = {
         id: `inv-${Date.now()}`,
-        customerId: currentOrder.customer_id,
-        invoiceDate: new Date().toISOString().split('T')[0],
         dueDate: null,
-        items: (currentOrder.items || []).map(item => ({
-          skuId: item.sku_id || item.skuId,
-          skuName: item.sku_name || item.skuName,
-          packType: item.pack_type || item.packType,
-          quantity: item.quantity,
-          unitPrice: item.unit_price || item.unitPrice,
-          total: item.total,
-        })),
-        gstRate: currentOrder.gst_rate || 5,
-        subtotal: currentOrder.subtotal || 0,
-        gstAmount: currentOrder.gst_amount || 0,
-        discountPercent: currentOrder.discount_percent || 0,
-        discountAmount: currentOrder.discount_amount || 0,
-        shippingCharge: currentOrder.shipping_charge || 0,
-        totalAmount: currentOrder.total_amount || 0,
-        balanceDue: (currentOrder.total_amount || 0) - (currentOrder.amount_paid || 0),
-        advancePaid: currentOrder.amount_paid || 0,
-        status: currentOrder.payment_status === 'received' ? 'paid' : 'sent',
-        paymentMethod: currentOrder.payment_method,
-        notes: `Auto-generated from order ${currentOrder.order_number}`,
         terms: 'Payment due within 15 days',
+        ...buildInvoiceDataFromOrder(currentOrder, 'Auto-generated from order'),
       };
 
       // Create invoice
@@ -601,9 +571,10 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
             <button
               onClick={handlePrintAndPack}
               className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 font-medium text-sm"
+              title="Prints the shipping label, then opens the invoice PDF"
             >
               <Printer className="w-4 h-4" />
-              Print Label
+              Print Label + Invoice
             </button>
             {/* Invoice Button */}
             <button

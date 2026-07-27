@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Plus, Edit, Trash2, Search, X, FileText, CheckCircle, AlertCircle, Clock, DollarSign, Package, User, Save, Printer, Download, Calendar } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { dbService, isSupabaseAvailable } from '../services/supabase';
@@ -9,6 +10,23 @@ import logo from '../assets/wkly-nuts-logo.png';
 export default function InvoiceManagement() {
   const { state, dispatch, showToast } = useApp();
   const { invoices, customers, skus, pricingStrategies, inventory } = state;
+  const [searchParams, setSearchParams] = useSearchParams();
+  const autoprintHandled = useRef(false);
+
+  // Arriving here with ?autoprint=<invoiceId> means a label was just printed
+  // elsewhere and the invoice should open right after it, same click.
+  useEffect(() => {
+    const autoprintId = searchParams.get('autoprint');
+    if (!autoprintId || autoprintHandled.current) return;
+    const target = invoices.find(inv => String(inv.id) === String(autoprintId));
+    if (target) {
+      autoprintHandled.current = true;
+      generatePDF(target);
+      const next = new URLSearchParams(searchParams);
+      next.delete('autoprint');
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, invoices]);
   const [showForm, setShowForm] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -2469,7 +2487,7 @@ export default function InvoiceManagement() {
             <div className="text-center py-12">
               <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
               <h3 className="text-lg font-semibold text-gray-900 mb-2">No invoices for this period</h3>
-              <p className="text-gray-600 mb-4">Invoices are auto-generated when orders are dispatched. Try selecting a different month.</p>
+              <p className="text-gray-600 mb-4">Invoices are auto-generated when an order's shipping label is printed. Try selecting a different month.</p>
             </div>
           ) : (
             <>

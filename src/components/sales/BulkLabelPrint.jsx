@@ -1,10 +1,15 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { X, Printer, Calendar, CheckSquare, Square } from 'lucide-react';
 import { sanitizeHtml } from '../../utils/sanitize';
 import { dbService } from '../../services/supabase';
+import { useApp } from '../../context/AppContext';
+import { buildInvoiceDataFromOrder } from '../../utils/invoiceFromOrder';
 
 export default function BulkLabelPrint({ orders, onClose, onPrinted, showToast }) {
+  const { dispatch } = useApp();
+  const navigate = useNavigate();
   const printRef = useRef(null);
   const [labelSize, setLabelSize] = useState('a4');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
@@ -58,6 +63,32 @@ export default function BulkLabelPrint({ orders, onClose, onPrinted, showToast }
       if (onPrinted) onPrinted();
     }
 
+    // Auto-generate the invoice alongside the label for any order that doesn't have one yet
+    const needsInvoice = selectedOrders.filter(o => !o.invoice_id);
+    let firstNewInvoiceId = null;
+    if (needsInvoice.length > 0) {
+      const results = await Promise.all(needsInvoice.map(async (o) => {
+        try {
+          const { data: invoice, error } = await dbService.createInvoice(
+            buildInvoiceDataFromOrder(o, 'Auto-generated on label print')
+          );
+          if (error || !invoice) return null;
+          await dbService.updateSalesOrder({ id: o.id, invoice_id: invoice.id });
+          dispatch({ type: 'ADD_INVOICE', payload: invoice });
+          return invoice.id;
+        } catch (e) {
+          console.warn('Auto-invoice failed for', o.order_number, e);
+          return null;
+        }
+      }));
+      const created = results.filter(Boolean);
+      firstNewInvoiceId = created[0] || null;
+      if (created.length > 0) {
+        showToast(`${created.length} invoice(s) generated`, 'success');
+      }
+      if (onPrinted) onPrinted();
+    }
+
     const printContent = printRef.current;
     const printWindow = window.open('', '_blank');
 
@@ -87,6 +118,15 @@ export default function BulkLabelPrint({ orders, onClose, onPrinted, showToast }
       printWindow.close();
     }, 400);
     showToast(`Printing ${selectedOrders.length} labels`, 'success');
+
+    // Single order: open its invoice PDF right after, same as the one-order flow.
+    // For multiple orders, invoices are generated but not auto-opened (avoids N popup downloads).
+    if (selectedOrders.length === 1) {
+      const invoiceId = selectedOrders[0].invoice_id || firstNewInvoiceId;
+      if (invoiceId) {
+        navigate(`/invoices?autoprint=${invoiceId}`);
+      }
+    }
   };
 
   // Render a single label
