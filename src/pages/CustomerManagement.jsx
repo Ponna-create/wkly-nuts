@@ -1,11 +1,12 @@
 import React, { useState, useMemo } from 'react';
-import { Plus, Edit, Trash2, Search, X, User, Mail, Phone, MapPin, Building2, AlertTriangle, Merge, Download, Calendar, UserPlus } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, X, User, Mail, Phone, MapPin, Building2, AlertTriangle, Merge, Download, Calendar, UserPlus, Clock } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
 
 export default function CustomerManagement() {
   const { state, dispatch, showToast } = useApp();
-  const { customers, invoices } = state;
+  const { customers, invoices, salesOrders } = state;
+  const [activeTab, setActiveTab] = useState('customers'); // 'customers' | 'followups'
   const [showForm, setShowForm] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -122,7 +123,7 @@ export default function CustomerManagement() {
     }
     dispatch({ type: 'REPLACE_CUSTOMER', payload: { tempId: customer.id, customer } });
 
-    const { error: orderError } = await dbService.createSalesOrder({
+    const { data: newOrder, error: orderError } = await dbService.createSalesOrder({
       customerId: customer.id,
       customerName: customer.name,
       orderDate: new Date().toISOString().split('T')[0],
@@ -140,10 +141,30 @@ export default function CustomerManagement() {
       return;
     }
 
+    dispatch({ type: 'ADD_SALES_ORDER', payload: newOrder });
     showToast('Follow-up customer added', 'success');
     setFollowUpData({ name: '', phone: '', followUpDate: '', notes: '' });
     setShowFollowUpForm(false);
+    setActiveTab('followups');
   };
+
+  const handleDeleteFollowUp = async (orderId) => {
+    if (!window.confirm('Remove this follow-up lead?')) return;
+    const { error } = await dbService.deleteSalesOrder(orderId);
+    if (error) {
+      showToast('Error removing follow-up', 'error');
+      return;
+    }
+    dispatch({ type: 'DELETE_SALES_ORDER', payload: orderId });
+    showToast('Follow-up removed', 'success');
+  };
+
+  const followUpLeads = useMemo(() =>
+    (salesOrders || [])
+      .filter(o => o.status === 'follow_up')
+      .sort((a, b) => new Date(b.created_at || b.order_date || 0) - new Date(a.created_at || a.order_date || 0)),
+    [salesOrders]
+  );
 
   const handleDelete = (customerId) => {
     if (window.confirm('Are you sure you want to delete this customer? This action cannot be undone.')) {
@@ -371,6 +392,27 @@ export default function CustomerManagement() {
         </div>
       </div>
 
+      {/* Tabs */}
+      <div className="flex gap-2 border-b border-gray-200">
+        <button
+          onClick={() => setActiveTab('customers')}
+          className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition ${
+            activeTab === 'customers' ? 'border-teal-600 text-teal-700' : 'border-transparent text-gray-400 hover:text-gray-600'
+          }`}
+        >
+          All Customers ({customers.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('followups')}
+          className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition flex items-center gap-1.5 ${
+            activeTab === 'followups' ? 'border-teal-600 text-teal-700' : 'border-transparent text-gray-400 hover:text-gray-600'
+          }`}
+        >
+          <Clock className="w-4 h-4" />
+          Follow-ups ({followUpLeads.length})
+        </button>
+      </div>
+
       {/* Add Follow-up Modal */}
       {showFollowUpForm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
@@ -437,7 +479,7 @@ export default function CustomerManagement() {
       )}
 
       {/* Duplicates Section */}
-      {showDuplicates && duplicateGroups.length > 0 && (
+      {activeTab === 'customers' && showDuplicates && duplicateGroups.length > 0 && (
         <div className="card bg-yellow-50 border-yellow-200">
           <div className="flex justify-between items-center mb-4">
             <div>
@@ -537,7 +579,7 @@ export default function CustomerManagement() {
       )}
 
       {/* Search Bar */}
-      {!showForm && !showDuplicates && customers.length > 0 && (
+      {activeTab === 'customers' && !showForm && !showDuplicates && customers.length > 0 && (
         <div className="relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
           <input
@@ -551,7 +593,7 @@ export default function CustomerManagement() {
       )}
 
       {/* Customer Form */}
-      {showForm && (
+      {activeTab === 'customers' && showForm && (
         <div className="card">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-xl font-bold text-gray-900">
@@ -724,8 +766,73 @@ export default function CustomerManagement() {
         </div>
       )}
 
+      {/* Follow-ups List */}
+      {activeTab === 'followups' && (
+        <div className="card">
+          {followUpLeads.length === 0 ? (
+            <div className="text-center py-12">
+              <Clock className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">No follow-up leads yet</h3>
+              <p className="text-gray-600 mb-4">Enquiries that aren't confirmed orders show up here</p>
+              <button onClick={() => setShowFollowUpForm(true)} className="btn-primary">
+                <UserPlus className="w-5 h-5 inline mr-2" />
+                Add Follow-up
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="mb-4">
+                <h2 className="text-lg font-semibold text-gray-900">Follow-up Leads ({followUpLeads.length})</h2>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-gray-200">
+                      <th className="text-left py-3 px-4 font-semibold text-gray-700">Name</th>
+                      <th className="text-left py-3 px-4 font-semibold text-gray-700">Phone</th>
+                      <th className="text-left py-3 px-4 font-semibold text-gray-700">Follow-up Date</th>
+                      <th className="text-left py-3 px-4 font-semibold text-gray-700">Notes</th>
+                      <th className="text-right py-3 px-4 font-semibold text-gray-700">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {followUpLeads.map((lead) => (
+                      <tr key={lead.id} className="border-b border-gray-100 hover:bg-gray-50">
+                        <td className="py-4 px-4 font-medium text-gray-900">{lead.customer_name || 'N/A'}</td>
+                        <td className="py-4 px-4 text-sm text-gray-900">{lead.phone || '—'}</td>
+                        <td className="py-4 px-4 text-sm text-gray-900">
+                          {lead.follow_up_date || <span className="text-gray-400 italic">Not set</span>}
+                        </td>
+                        <td className="py-4 px-4 text-sm text-gray-600 max-w-xs truncate" title={lead.follow_up_notes}>
+                          {lead.follow_up_notes || <span className="text-gray-400 italic">—</span>}
+                        </td>
+                        <td className="py-4 px-4">
+                          <div className="flex justify-end">
+                            <button
+                              onClick={() => handleDeleteFollowUp(lead.id)}
+                              className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                              title="Remove"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-xs text-gray-400 mt-4">
+                To convert a lead into a real order, use <strong>New Order</strong> on the Sales Orders page —
+                entering the same mobile number will find this customer automatically.
+              </p>
+            </>
+          )}
+        </div>
+      )}
+
       {/* Customers List */}
-      {!showForm && !showDuplicates && (
+      {activeTab === 'customers' && !showForm && !showDuplicates && (
         <div className="card">
           {customers.length === 0 ? (
             <div className="text-center py-12">
