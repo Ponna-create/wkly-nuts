@@ -18,6 +18,15 @@ export const isSupabaseAvailable = () => {
   return supabase !== null;
 };
 
+// Strips whatever format a phone number was typed in (spaces, dashes, +91,
+// leading 0) down to a plain 10-digit number, so every customer record is
+// stored consistently and phone-lookup matches reliably.
+const normalizePhone = (phone) => {
+  if (!phone) return phone;
+  const digits = String(phone).replace(/\D/g, '').slice(-10);
+  return digits.length === 10 ? digits : phone;
+};
+
 // A "box" is the one physical production unit (e.g. a Day Pack's 7-sachet box).
 // "Monthly" is not a separately-stocked item — it's just 4 of the same box sold
 // at once. This converts any weekly/monthly quantity into an equivalent box
@@ -1032,7 +1041,7 @@ const _realDbService = {
         .insert({
           name: customer.name,
           email: customer.email,
-          phone: customer.phone,
+          phone: normalizePhone(customer.phone),
           address: customer.address,
           city: customer.city,
           state: customer.state,
@@ -1124,7 +1133,7 @@ const _realDbService = {
         .update({
           name: customer.name,
           email: customer.email,
-          phone: customer.phone,
+          phone: normalizePhone(customer.phone),
           address: customer.address,
           city: customer.city,
           state: customer.state,
