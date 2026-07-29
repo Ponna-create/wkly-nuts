@@ -1074,14 +1074,11 @@ const _realDbService = {
     try {
       const phone = String(customer.phone || '').replace(/[^0-9]/g, '').slice(-10);
 
-      // Try to find by phone first
+      // Try to find by phone first — compare cleaned digits on both sides
+      // (some stored numbers have spaces/dashes that break a plain LIKE match)
       if (phone.length === 10) {
-        const { data: existing } = await supabase
-          .from('customers')
-          .select('*')
-          .like('phone', `%${phone}%`)
-          .limit(1)
-          .maybeSingle();
+        const { data: allCustomers } = await supabase.from('customers').select('*');
+        const existing = (allCustomers || []).find(c => (c.phone || '').replace(/[^0-9]/g, '').slice(-10) === phone) || null;
 
         if (existing) {
           // Update address/email if the new data has more info
@@ -3487,13 +3484,10 @@ const _realDbService = {
     try {
       const cleaned = phone.replace(/\D/g, '').slice(-10);
       if (cleaned.length < 10) return null;
-      const { data } = await supabase
-        .from('customers')
-        .select('*')
-        .like('phone', `%${cleaned}%`)
-        .limit(1)
-        .maybeSingle();
-      return data;
+      // Compare cleaned digits on both sides — some stored numbers have spaces/
+      // dashes (e.g. " 84381 13437"), which breaks a plain LIKE substring match.
+      const { data } = await supabase.from('customers').select('*');
+      return (data || []).find(c => (c.phone || '').replace(/\D/g, '').slice(-10) === cleaned) || null;
     } catch { return null; }
   },
 
