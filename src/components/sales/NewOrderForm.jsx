@@ -3,6 +3,7 @@ import { X, Plus, Trash2, AlertTriangle, Phone, CheckCircle } from 'lucide-react
 import { useApp } from '../../context/AppContext';
 import { dbService } from '../../services/supabase';
 import { getGstRate } from '../../utils/settings';
+import { parseAddress } from '../../utils/addressParser';
 
 export default function NewOrderForm({ onClose }) {
   const { state, dispatch, showToast } = useApp();
@@ -385,31 +386,8 @@ export default function NewOrderForm({ onClose }) {
                   value={newCustomer.address}
                   onChange={(e) => {
                     const val = e.target.value;
-                    setNewCustomer(prev => ({ ...prev, address: val }));
-
-                    // Auto-extract pincode
-                    const pinMatch = val.match(/\b(\d{6})\b/);
-                    if (pinMatch) {
-                      setNewCustomer(prev => ({ ...prev, address: val, pincode: pinMatch[1] }));
-                    }
-
-                    // Auto-extract state
-                    const states = ['Tamil Nadu','Kerala','Karnataka','Andhra Pradesh','Telangana','Maharashtra','Gujarat','Rajasthan','Delhi','Uttar Pradesh','Madhya Pradesh','West Bengal','Bihar','Odisha','Punjab','Haryana','Jharkhand','Chhattisgarh','Assam','Goa','Himachal Pradesh','Uttarakhand','Jammu and Kashmir','Puducherry','Chandigarh','Meghalaya','Manipur','Mizoram','Tripura','Nagaland','Arunachal Pradesh','Sikkim'];
-                    const foundState = states.find(s => val.toLowerCase().includes(s.toLowerCase()));
-                    if (foundState) {
-                      setNewCustomer(prev => ({ ...prev, address: val, state: foundState, ...(pinMatch ? { pincode: pinMatch[1] } : {}) }));
-                    }
-
-                    // Auto-extract city — common Indian cities
-                    const cities = ['Chennai','Mumbai','Bangalore','Bengaluru','Hyderabad','Delhi','Kolkata','Pune','Ahmedabad','Jaipur','Coimbatore','Madurai','Tiruchirappalli','Salem','Erode','Tirunelveli','Vellore','Nellore','Vijayawada','Visakhapatnam','Kochi','Thiruvananthapuram','Thrissur','Kozhikode','Puducherry','Pondicherry','Cuddalore','Tiruvallur','Kancheepuram','Thanjavur','Dindigul','Theni','Tirupur','Ariyalur','Gudur','Chromepet','Ambattur','Perambur','Kodambakkam','Thiruvannamalai','Gummidipoondi','Thiruthuraipoondi'];
-                    const foundCity = cities.find(c => val.toLowerCase().includes(c.toLowerCase()));
-                    if (foundCity) {
-                      setNewCustomer(prev => ({
-                        ...prev, address: val, city: foundCity,
-                        ...(foundState ? { state: foundState } : {}),
-                        ...(pinMatch ? { pincode: pinMatch[1] } : {}),
-                      }));
-                    }
+                    const parsed = parseAddress(val);
+                    setNewCustomer(prev => ({ ...prev, address: val, ...parsed }));
                   }}
                   rows="2"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"

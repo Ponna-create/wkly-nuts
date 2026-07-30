@@ -4,7 +4,7 @@ import {
   Home, Package, Warehouse, ShoppingCart, FileText,
   Menu, X, LogOut, Users, Truck, Factory,
   ChevronDown, ChevronRight, Database, Settings, BarChart3, Boxes, Tag, ClipboardList,
-  Heart, Megaphone, Layers
+  Heart, Megaphone, Layers, Zap
 } from 'lucide-react';
 import { logout } from './Auth';
 import { isTestMode, setTestMode, resetTestData } from '../services/supabase';
@@ -20,6 +20,7 @@ const navGroups = [
   {
     label: 'Sales',
     items: [
+      { name: 'Quick Order', href: '/quick-order', icon: Zap },
       { name: 'Orders', href: '/orders', icon: Truck },
       { name: 'Customers', href: '/customers', icon: Users },
       { name: 'CRM', href: '/crm', icon: Heart },
@@ -75,6 +76,11 @@ export default function Layout({ children }) {
   const toggleGroup = (label) => {
     setCollapsedGroups(prev => ({ ...prev, [label]: !prev[label] }));
   };
+
+  // Quick Order is a standalone, chrome-free mobile page — no sidebar/header
+  if (location.pathname === '/quick-order') {
+    return children;
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
