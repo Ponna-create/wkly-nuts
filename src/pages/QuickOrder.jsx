@@ -1,6 +1,6 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Check, Minus, Plus, Trash2, Loader2, AlertTriangle, CheckCircle2, Circle } from 'lucide-react';
+import { ArrowLeft, Check, Minus, Plus, Trash2, Loader2, AlertTriangle } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
 import { getGstRate } from '../utils/settings';
@@ -100,24 +100,13 @@ export default function QuickOrder() {
     setItems([]);
   };
 
-  // Honest field-by-field checklist instead of a made-up "accuracy score" —
-  // we can only tell you whether something was FOUND, not whether it's correct.
-  const checks = useMemo(() => {
-    const phoneDigits = fields.phone.replace(/\D/g, '');
-    return [
-      { label: 'Name', ok: !!fields.name.trim(), detail: fields.name.trim() || 'Not found — check paste' },
-      { label: 'Phone', ok: phoneDigits.length === 10, detail: phoneDigits.length === 10 ? fields.phone : 'Not a valid 10-digit number' },
-      { label: 'Address', ok: !!fields.address.trim(), detail: fields.address.trim() ? 'Captured' : 'Not found' },
-      { label: 'Pincode', ok: !!fields.pincode.trim(), detail: fields.pincode.trim() || 'Not found — may need a manual add' },
-      { label: 'State', ok: !!fields.state.trim(), detail: fields.state.trim() || 'Not found' },
-    ];
-  }, [fields]);
-
+  const phoneDigits = fields.phone.replace(/\D/g, '');
+  const nameMissing = !fields.name.trim();
+  const phoneInvalid = phoneDigits.length !== 10;
+  const pincodeMissing = !fields.pincode.trim();
   const zeroPriceItems = items.filter(i => i.unitPrice <= 0);
-  const readyCount = checks.filter(c => c.ok).length;
-  const allChecksOk = readyCount === checks.length;
 
-  const canSave = fields.name.trim() && fields.phone.replace(/\D/g, '').length >= 10 && items.length > 0 && !saving;
+  const canSave = fields.name.trim() && !phoneInvalid && items.length > 0 && !saving;
 
   const handleSave = async () => {
     if (!canSave) {
@@ -215,18 +204,21 @@ export default function QuickOrder() {
             </div>
 
             <div className="grid grid-cols-2 gap-2">
-              <input
-                value={fields.name}
-                onChange={(e) => handleFieldChange('name', e.target.value)}
-                placeholder="Name"
-                className="col-span-2 px-3 py-2 border border-gray-300 rounded-lg text-sm"
-              />
+              <div className="col-span-2">
+                <input
+                  value={fields.name}
+                  onChange={(e) => handleFieldChange('name', e.target.value)}
+                  placeholder="Name"
+                  className={`w-full px-3 py-2 border rounded-lg text-sm ${nameMissing ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
+                />
+                {nameMissing && <p className="text-xs text-red-600 mt-0.5">Couldn't find a name — enter it manually</p>}
+              </div>
               <div className="col-span-2 relative">
                 <input
                   value={fields.phone}
                   onChange={(e) => handleFieldChange('phone', e.target.value)}
                   placeholder="Mobile number"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  className={`w-full px-3 py-2 border rounded-lg text-sm ${phoneInvalid ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
                 />
                 {phoneLookupStatus === 'found' && (
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-green-600">Existing customer</span>
@@ -234,6 +226,7 @@ export default function QuickOrder() {
                 {phoneLookupStatus === 'not_found' && (
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-amber-600">New customer</span>
                 )}
+                {phoneInvalid && <p className="text-xs text-red-600 mt-0.5">Not a valid 10-digit number</p>}
               </div>
               <textarea
                 value={fields.address}
@@ -254,12 +247,15 @@ export default function QuickOrder() {
                 placeholder="State"
                 className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
               />
-              <input
-                value={fields.pincode}
-                onChange={(e) => handleFieldChange('pincode', e.target.value)}
-                placeholder="Pincode"
-                className="col-span-2 px-3 py-2 border border-gray-300 rounded-lg text-sm"
-              />
+              <div className="col-span-2">
+                <input
+                  value={fields.pincode}
+                  onChange={(e) => handleFieldChange('pincode', e.target.value)}
+                  placeholder="Pincode"
+                  className={`w-full px-3 py-2 border rounded-lg text-sm ${pincodeMissing ? 'border-amber-400 bg-amber-50' : 'border-gray-300'}`}
+                />
+                {pincodeMissing && <p className="text-xs text-amber-600 mt-0.5">No pincode found — add it for the shipping label</p>}
+              </div>
             </div>
 
             {/* Quick-tap items */}
@@ -317,50 +313,49 @@ export default function QuickOrder() {
             )}
           </div>
 
-          {/* Right: review panel — sticky on desktop, stacks below on mobile */}
-          <div className="lg:sticky lg:top-16 bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xs font-bold text-gray-500 uppercase">Review before saving</h2>
-              <span className={`text-xs font-semibold ${allChecksOk ? 'text-green-600' : 'text-amber-600'}`}>
-                {readyCount}/{checks.length} confirmed
-              </span>
+          {/* Right: label preview — sticky on desktop, stacks below on mobile.
+              Shows exactly what will print on the shipping label, so problems
+              show up as red text right where they'd show up on the label —
+              nothing to actively "review" when everything's fine. */}
+          <div className="lg:sticky lg:top-16 space-y-3">
+            <div className="border-2 border-gray-900 rounded-lg overflow-hidden bg-white">
+              <div className="bg-gray-900 text-white text-xs font-bold px-3 py-1.5 tracking-wide">SHIP TO</div>
+              <div className="px-3 py-3 space-y-1">
+                <p className={`text-sm font-bold ${nameMissing ? 'text-red-600' : 'text-gray-900'}`}>
+                  {fields.name.trim() || '⚠ Name missing'}
+                </p>
+                {fields.address.trim()
+                  ? fields.address.split('\n').map((line, i) => (
+                      <p key={i} className="text-xs text-gray-700 leading-snug">{line}</p>
+                    ))
+                  : <p className="text-xs text-red-600">⚠ Address missing</p>}
+                <p className="text-xs text-gray-700">
+                  {[fields.city, fields.state].filter(Boolean).join(', ')}
+                  {fields.city || fields.state ? ' - ' : ''}
+                  <span className={pincodeMissing ? 'text-amber-600 font-medium' : ''}>
+                    {fields.pincode.trim() || '⚠ pincode missing'}
+                  </span>
+                </p>
+                <p className={`text-xs pt-1 ${phoneInvalid ? 'text-red-600 font-medium' : 'text-gray-700'}`}>
+                  Ph: {fields.phone.trim() || '⚠ missing'}
+                </p>
+              </div>
             </div>
 
-            <div className="space-y-1.5">
-              {checks.map(c => (
-                <div key={c.label} className="flex items-start gap-2">
-                  {c.ok
-                    ? <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0 mt-0.5" />
-                    : <Circle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />}
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold text-gray-700">{c.label}</p>
-                    <p className={`text-xs truncate ${c.ok ? 'text-gray-600' : 'text-amber-700'}`}>{c.detail}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <p className="text-xs text-center text-gray-400">This is how the shipping label will look</p>
 
-            <div className="border-t border-gray-200 pt-3">
-              <p className="text-xs font-semibold text-gray-700 mb-1">Customer</p>
-              <p className="text-xs text-gray-600">
-                {phoneLookupStatus === 'found' && 'Matches an existing customer — order will attach to them.'}
-                {phoneLookupStatus === 'not_found' && 'No match — a new customer record will be created.'}
-                {(phoneLookupStatus === 'idle' || phoneLookupStatus === 'searching') && 'Waiting for a valid phone number...'}
+            {phoneLookupStatus !== 'idle' && (
+              <p className={`text-xs text-center font-medium ${phoneLookupStatus === 'found' ? 'text-green-600' : phoneLookupStatus === 'not_found' ? 'text-amber-600' : 'text-gray-400'}`}>
+                {phoneLookupStatus === 'searching' && 'Checking existing customers...'}
+                {phoneLookupStatus === 'found' && 'Matches an existing customer'}
+                {phoneLookupStatus === 'not_found' && 'New customer will be created'}
               </p>
-            </div>
+            )}
 
-            {items.length > 0 && (
-              <div className="border-t border-gray-200 pt-3">
-                <p className="text-xs font-semibold text-gray-700 mb-1">Items ({items.length})</p>
-                {items.map(i => (
-                  <p key={i.key} className="text-xs text-gray-600">{i.quantity}× {i.skuName} ({i.packType})</p>
-                ))}
-                {zeroPriceItems.length > 0 && (
-                  <div className="flex items-start gap-1.5 mt-2 text-amber-700">
-                    <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
-                    <p className="text-xs">{zeroPriceItems.length} item(s) have no price set — this order will save at less than it should. Check the Pricing page, or edit the amount after saving.</p>
-                  </div>
-                )}
+            {zeroPriceItems.length > 0 && (
+              <div className="flex items-start gap-1.5 bg-amber-50 border border-amber-200 rounded-lg p-2.5">
+                <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-amber-600" />
+                <p className="text-xs text-amber-700">{zeroPriceItems.length} item(s) have no price set — check the Pricing page.</p>
               </div>
             )}
           </div>
