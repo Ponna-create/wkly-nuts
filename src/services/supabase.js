@@ -311,7 +311,11 @@ const _realDbService = {
         processingIngredients: sku.weekly_pack?.processingIngredients || [],
         processingNotes: sku.weekly_pack?.processingNotes || '',
         shelfLifeDays: sku.weekly_pack?.shelfLifeDays || 30,
+        // Master price the whole app should charge — Weekly and Monthly are
+        // genuinely separate (Monthly isn't just 4x Weekly; she prices it
+        // as its own deliberate figure, e.g. a bulk discount).
         sellingPrice: sku.weekly_pack?.sellingPrice || 0,
+        monthlySellingPrice: sku.monthly_pack?.sellingPrice || 0,
         mrp: sku.weekly_pack?.mrp ?? null,
         processCosts: sku.weekly_pack?.processCosts || [],
         // Type + type-specific config (persisted in the JSONB)
@@ -376,7 +380,9 @@ const _realDbService = {
         processingIngredients: sku.processingIngredients || [],
         processingNotes: sku.processingNotes || '',
         shelfLifeDays: sku.shelfLifeDays || 30,
-        sellingPrice: sku.sellingPrice || 0,
+        // Falls back to the weekly price only if no monthly price was set
+        // (e.g. Repack/Resale types that don't have a real weekly/monthly split)
+        sellingPrice: sku.monthlySellingPrice ?? sku.sellingPrice ?? 0,
         mrp: sku.mrp ?? null,
         processCosts: sku.processCosts || [],
       };
@@ -453,7 +459,7 @@ const _realDbService = {
         processingIngredients: sku.processingIngredients || sku.monthlyPack?.processingIngredients || [],
         processingNotes: sku.processingNotes || sku.monthlyPack?.processingNotes || '',
         shelfLifeDays: sku.shelfLifeDays || sku.monthlyPack?.shelfLifeDays || 30,
-        sellingPrice: sku.sellingPrice || sku.monthlyPack?.sellingPrice || 0,
+        sellingPrice: sku.monthlySellingPrice ?? sku.monthlyPack?.sellingPrice ?? sku.sellingPrice ?? 0,
         mrp: sku.mrp ?? sku.monthlyPack?.mrp ?? null,
         processCosts: sku.processCosts || sku.monthlyPack?.processCosts || [],
       };

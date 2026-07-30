@@ -15,9 +15,9 @@ export default function NewOrderForm({ onClose }) {
   const [phoneMatch, setPhoneMatch] = useState(null);
   const [savingCustomer, setSavingCustomer] = useState(false);
 
-  // SKUs and pricing from state
+  // SKUs from state — pricing comes from each SKU's own Selling Price, the
+  // master price (see getPricingForSku below)
   const skus = state.skus || [];
-  const pricingStrategies = state.pricingStrategies || [];
 
   const [formData, setFormData] = useState({
     customerName: '',
@@ -58,17 +58,14 @@ export default function NewOrderForm({ onClose }) {
     pincode: '',
   });
 
-  // Price lookup helper — some SKU types (Repack, Resale, Processed Pack)
-  // price themselves directly on the SKU record instead of through
-  // pricing_strategies, so fall back to that when there's no strategy match.
+  // Price lookup helper — the SKU's own Selling Price (set in SKU Management)
+  // is the master price for orders. Pricing Strategy is a planning tool only
+  // and is never used to price a live order.
   const getPricingForSku = (skuId, packType) => {
-    const strategy = pricingStrategies.find(
-      (p) => String(p.skuId) === String(skuId) && p.packType === packType
-    );
-    if (strategy) return strategy;
     const sku = skus.find((s) => String(s.id) === String(skuId));
-    if (sku?.sellingPrice) return { sellingPrice: sku.sellingPrice };
-    return null;
+    if (!sku) return null;
+    const price = packType === 'monthly' ? sku.monthlySellingPrice : sku.sellingPrice;
+    return price ? { sellingPrice: price } : null;
   };
 
   // Calculate totals

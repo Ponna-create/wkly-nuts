@@ -12,7 +12,6 @@ const EMPTY_FIELDS = { name: '', phone: '', address: '', city: '', state: '', pi
 export default function QuickOrder() {
   const { state, dispatch, showToast } = useApp();
   const skus = state.skus || [];
-  const pricingStrategies = state.pricingStrategies || [];
 
   const [orderDate, setOrderDate] = useState(new Date().toISOString().split('T')[0]);
   const [pasteText, setPasteText] = useState('');
@@ -24,13 +23,12 @@ export default function QuickOrder() {
   const [saving, setSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(null); // the last saved order, with phone attached for printing
 
-  // Some SKU types (Repack, Resale, Processed Pack) price themselves directly
-  // on the SKU record instead of through pricing_strategies — check both.
+  // The SKU's own Selling Price (set in SKU Management) is the master price
+  // for orders — Weekly and Monthly are separate fields there. Pricing
+  // Strategy is a planning tool only, never used to price a live order.
   const getPricingForSku = useCallback((sku, packType) => {
-    const strategy = pricingStrategies.find(p => String(p.skuId) === String(sku.id) && p.packType === packType);
-    if (strategy?.sellingPrice) return strategy.sellingPrice;
-    return sku.sellingPrice || 0;
-  }, [pricingStrategies]);
+    return (packType === 'monthly' ? sku.monthlySellingPrice : sku.sellingPrice) || 0;
+  }, []);
 
   const runPhoneLookup = async (phone) => {
     const digits = (phone || '').replace(/\D/g, '');
