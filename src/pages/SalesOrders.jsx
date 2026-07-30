@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Eye, Trash2, Zap, Camera, FileSpreadsheet, MessageCircle, Truck, Printer } from 'lucide-react';
+import { Plus, Search, Eye, Trash2, Zap, Camera, FileSpreadsheet, MessageCircle, Truck, Printer, LayoutGrid } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
 import NewOrderForm from '../components/sales/NewOrderForm';
@@ -11,6 +11,7 @@ import ZohoImport from '../components/sales/ZohoImport';
 import TrackingCSVImport from '../components/sales/TrackingCSVImport';
 import TrackingChecker from '../components/sales/TrackingChecker';
 import BulkLabelPrint from '../components/sales/BulkLabelPrint';
+import A4LabelSheet from '../components/sales/A4LabelSheet';
 
 export default function SalesOrders() {
   const { state, dispatch, showToast } = useApp();
@@ -25,6 +26,7 @@ export default function SalesOrders() {
   const [showBulkWhatsApp, setShowBulkWhatsApp] = useState(false);
   const [showTrackingChecker, setShowTrackingChecker] = useState(false);
   const [showBulkLabelPrint, setShowBulkLabelPrint] = useState(false);
+  const [showA4LabelSheet, setShowA4LabelSheet] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [filterStatus, setFilterStatus] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
@@ -185,6 +187,14 @@ export default function SalesOrders() {
           >
             <Printer className="w-4 h-4" />
             Labels
+          </button>
+          <button
+            onClick={() => setShowA4LabelSheet(true)}
+            className="flex items-center gap-2 px-3 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition text-sm font-medium"
+            title="Print 6 labels per A4 sheet — for regular printers, cut and paste onto each box"
+          >
+            <LayoutGrid className="w-4 h-4" />
+            A4 Sheet
           </button>
           <button
             onClick={() => setShowTrackingChecker(!showTrackingChecker)}
@@ -429,6 +439,14 @@ export default function SalesOrders() {
           orders={orders}
           onClose={() => setShowBulkLabelPrint(false)}
           onPrinted={() => loadOrders()}
+          showToast={showToast}
+        />
+      )}
+
+      {showA4LabelSheet && (
+        <A4LabelSheet
+          orders={orders}
+          onClose={() => setShowA4LabelSheet(false)}
           showToast={showToast}
         />
       )}

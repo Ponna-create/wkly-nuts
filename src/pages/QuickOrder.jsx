@@ -1,10 +1,11 @@
 import React, { useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Check, Minus, Plus, Trash2, Loader2, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Check, Minus, Plus, Trash2, Loader2, AlertTriangle, Printer } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
 import { getGstRate } from '../utils/settings';
 import { parseOrderPaste } from '../utils/orderPasteParser';
+import { generateA4LabelSheet } from '../utils/a4LabelSheet';
 
 const EMPTY_FIELDS = { name: '', phone: '', address: '', city: '', state: '', pincode: '' };
 
@@ -19,7 +20,7 @@ export default function QuickOrder() {
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [items, setItems] = useState([]); // { key, skuId, skuName, packType, quantity, unitPrice, total }
   const [saving, setSaving] = useState(false);
-  const [justSaved, setJustSaved] = useState(null); // order_number of the last saved order
+  const [justSaved, setJustSaved] = useState(null); // the last saved order, with phone attached for printing
 
   const getPricingForSku = useCallback((skuId, packType) =>
     pricingStrategies.find(p => String(p.skuId) === String(skuId) && p.packType === packType),
@@ -164,10 +165,17 @@ export default function QuickOrder() {
     }
 
     dispatch({ type: 'ADD_SALES_ORDER', payload: order });
-    setJustSaved(order.order_number);
+    // createSalesOrder's return doesn't carry phone (that's only joined in
+    // getSalesOrders) — attach it here so the label preview has it.
+    setJustSaved({ ...order, phone: fields.phone });
     showToast(`Order ${order.order_number} created for ${fields.name}`, 'success');
     resetForm();
-    setTimeout(() => setJustSaved(null), 4000);
+  };
+
+  const handlePrintJustSaved = () => {
+    if (!justSaved) return;
+    generateA4LabelSheet([justSaved]);
+    showToast('Label downloaded — 1 label on an A4 sheet (5 slots left blank)', 'success');
   };
 
   const packOptions = ['weekly', 'monthly'];
@@ -184,8 +192,16 @@ export default function QuickOrder() {
       </div>
 
       {justSaved && (
-        <div className="bg-green-600 text-white px-4 py-2 text-sm font-medium flex items-center gap-2">
-          <Check className="w-4 h-4" /> Order {justSaved} saved — ready for the next one
+        <div className="bg-green-600 text-white px-4 py-2 text-sm font-medium flex items-center justify-between gap-2">
+          <span className="flex items-center gap-2">
+            <Check className="w-4 h-4 flex-shrink-0" /> Order {justSaved.order_number} saved — ready for the next one
+          </span>
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <button onClick={handlePrintJustSaved} className="flex items-center gap-1.5 px-3 py-1 bg-white text-green-700 rounded-md text-xs font-semibold hover:bg-green-50">
+              <Printer className="w-3.5 h-3.5" /> Print Label
+            </button>
+            <button onClick={() => setJustSaved(null)} className="text-white/80 hover:text-white text-xs px-1.5">✕</button>
+          </div>
         </div>
       )}
 
