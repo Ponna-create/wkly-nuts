@@ -38,13 +38,16 @@ export default function QuickOrder() {
     if (found) {
       setSelectedCustomer(found);
       setPhoneLookupStatus('found');
+      // Prefer whatever was just pasted/typed over the customer's stored
+      // record — she may be pasting a fresh/updated address this time, and
+      // the stored one could also just be stale from an earlier order.
       setFields(prev => ({
         ...prev,
-        name: found.name || prev.name,
-        address: found.address || prev.address,
-        city: found.city || prev.city,
-        state: found.state || prev.state,
-        pincode: found.pincode || prev.pincode,
+        name: prev.name || found.name || '',
+        address: prev.address || found.address || '',
+        city: prev.city || found.city || '',
+        state: prev.state || found.state || '',
+        pincode: prev.pincode || found.pincode || '',
       }));
     } else {
       setSelectedCustomer(null);
