@@ -58,11 +58,17 @@ export default function NewOrderForm({ onClose }) {
     pincode: '',
   });
 
-  // Price lookup helper
+  // Price lookup helper — some SKU types (Repack, Resale, Processed Pack)
+  // price themselves directly on the SKU record instead of through
+  // pricing_strategies, so fall back to that when there's no strategy match.
   const getPricingForSku = (skuId, packType) => {
-    return pricingStrategies.find(
+    const strategy = pricingStrategies.find(
       (p) => String(p.skuId) === String(skuId) && p.packType === packType
     );
+    if (strategy) return strategy;
+    const sku = skus.find((s) => String(s.id) === String(skuId));
+    if (sku?.sellingPrice) return { sellingPrice: sku.sellingPrice };
+    return null;
   };
 
   // Calculate totals
