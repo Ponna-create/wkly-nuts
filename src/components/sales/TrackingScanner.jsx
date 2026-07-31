@@ -1,8 +1,16 @@
 import React, { useState, useRef } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
-import { X, Camera, Image as ImageIcon, CheckCircle, AlertCircle, Package } from 'lucide-react';
+import { X, Camera, Image as ImageIcon, Sparkles, CheckCircle, AlertCircle, Package } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { dbService } from '../../services/supabase';
+import { findBestOrderMatch } from '../../utils/ocrMatch';
+
+const fileToBase64 = (file) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(reader.result);
+  reader.onerror = reject;
+  reader.readAsDataURL(file);
+});
 
 // Scans the printed CONSIGNMENT NUMBER barcode straight off a courier's
 // paper slip (ST Courier etc.) instead of typing it in by hand. The
@@ -16,10 +24,13 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
   const [linkedOrders, setLinkedOrders] = useState({}); // orderId -> tracking number
   const [saving, setSaving] = useState(false);
   const [readingFile, setReadingFile] = useState(false);
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const [aiSuggestion, setAiSuggestion] = useState(null); // { order, confidence, matchedVia, trackingNumber }
   const html5QrCodeRef = useRef(null);
   const lastScanTimeRef = useRef(0);
   const processingRef = useRef(false);
   const fileInputRef = useRef(null);
+  const aiFileInputRef = useRef(null);
 
   const unlinkedOrders = orders.filter(o => !linkedOrders[o.id]);
 
@@ -97,12 +108,12 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
     }
   };
 
-  const handlePickOrder = async (order) => {
-    if (!scannedCode || saving) return;
+  const linkOrder = async (order, code) => {
+    if (!code || saving) return;
     setSaving(true);
     const updatedOrder = {
       id: order.id,
-      trackingNumber: scannedCode,
+      trackingNumber: code,
       courierName: order.courier_name || 'ST Courier',
       status: 'dispatched',
       dispatchDate: order.dispatch_date || new Date().toISOString().split('T')[0],
@@ -120,15 +131,65 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
       type: 'UPDATE_SALES_ORDER',
       payload: {
         ...order,
-        tracking_number: scannedCode,
+        tracking_number: code,
         courier_name: updatedOrder.courierName,
         status: 'dispatched',
         dispatch_date: updatedOrder.dispatchDate,
       },
     });
-    setLinkedOrders(prev => ({ ...prev, [order.id]: scannedCode }));
+    setLinkedOrders(prev => ({ ...prev, [order.id]: code }));
     setScannedCode(null);
-    showToast(`${order.order_number} → ${scannedCode}`, 'success');
+    setAiSuggestion(null);
+    showToast(`${order.order_number} → ${code}`, 'success');
+  };
+
+  const handlePickOrder = (order) => linkOrder(order, scannedCode);
+
+  // AI photo read (Google Cloud Vision OCR, server-side) — reads whatever
+  // text is on the slip and guesses the order via phone number (high
+  // confidence) or a fuzzy name match (shown as a suggestion, never
+  // auto-committed — she still taps Confirm).
+  const handleAiFileSelected = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    setError(null);
+    setAiSuggestion(null);
+    setOcrLoading(true);
+    if (scanning) await stopScanner();
+
+    try {
+      const base64 = await fileToBase64(file);
+      const res = await fetch('/api/scan-slip', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: base64 }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.text) {
+        setError("Couldn't read any text in that photo — try a clearer photo, or scan the barcode instead.");
+        return;
+      }
+
+      const match = findBestOrderMatch(data.text, unlinkedOrders);
+      if (!match.trackingNumber) {
+        setError("Found text but no tracking number in it — try a clearer/closer photo of the barcode area.");
+        return;
+      }
+      if (!match.order) {
+        // Got a tracking number but no confident order match — fall through
+        // to the normal manual picker with this number pre-filled.
+        applyDecodedCode(match.trackingNumber);
+        return;
+      }
+      setAiSuggestion(match);
+    } catch (err) {
+      console.error('AI scan error:', err);
+      setError('AI read failed — try again or scan the barcode instead.');
+    } finally {
+      setOcrLoading(false);
+    }
   };
 
   const linkedCount = Object.keys(linkedOrders).length;
@@ -153,26 +214,25 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
         </div>
 
         <div className="p-4 space-y-4">
-          {!scannedCode && (
+          {!scannedCode && !aiSuggestion && (
             <div className="relative bg-black rounded-lg overflow-hidden" style={{ minHeight: '220px' }}>
               <div id="tracking-scan-reader" className="w-full" />
               {!scanning && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-gray-900">
-                  <button onClick={startScanner} disabled={readingFile}
+                  <button onClick={startScanner} disabled={readingFile || ocrLoading}
                     className="flex items-center gap-3 px-6 py-3 bg-teal-600 text-white rounded-lg hover:bg-teal-700 font-medium text-lg disabled:opacity-50">
                     <Camera className="w-6 h-6" /> Start Camera
                   </button>
-                  <button onClick={() => fileInputRef.current?.click()} disabled={readingFile}
+                  <button onClick={() => fileInputRef.current?.click()} disabled={readingFile || ocrLoading}
                     className="flex items-center gap-2 px-4 py-2 bg-white text-gray-700 rounded-lg hover:bg-gray-100 font-medium text-sm disabled:opacity-50">
-                    <ImageIcon className="w-4 h-4" /> {readingFile ? 'Reading photo...' : 'Upload Photo'}
+                    <ImageIcon className="w-4 h-4" /> {readingFile ? 'Reading photo...' : 'Upload Photo (barcode)'}
                   </button>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileSelected}
-                    className="hidden"
-                  />
+                  <button onClick={() => aiFileInputRef.current?.click()} disabled={readingFile || ocrLoading}
+                    className="flex items-center gap-2 px-4 py-2 bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-200 rounded-lg hover:bg-fuchsia-100 font-medium text-sm disabled:opacity-50">
+                    <Sparkles className="w-4 h-4" /> {ocrLoading ? 'Reading with AI...' : 'Read with AI (whole slip)'}
+                  </button>
+                  <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileSelected} className="hidden" />
+                  <input ref={aiFileInputRef} type="file" accept="image/*" onChange={handleAiFileSelected} className="hidden" />
                 </div>
               )}
             </div>
@@ -182,6 +242,36 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
             <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
               <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
               <p className="text-sm text-red-700">{error}</p>
+            </div>
+          )}
+
+          {aiSuggestion && (
+            <div className="space-y-3">
+              <div className="p-3 bg-fuchsia-50 border border-fuchsia-200 rounded-lg">
+                <p className="text-xs text-fuchsia-600 font-medium flex items-center gap-1">
+                  <Sparkles className="w-3.5 h-3.5" /> AI BEST GUESS
+                  {aiSuggestion.matchedVia === 'phone' && ' — matched by phone number'}
+                  {aiSuggestion.matchedVia === 'name' && ` — ${Math.round(aiSuggestion.confidence * 100)}% name match`}
+                </p>
+                <p className="text-lg font-bold text-fuchsia-900 mt-1">{aiSuggestion.order.customer_name}</p>
+                <p className="text-xs text-gray-600">{aiSuggestion.order.order_number} · {aiSuggestion.order.shipping_address?.slice(0, 50) || ''}</p>
+                <p className="text-sm font-mono text-gray-700 mt-1">Tracking: {aiSuggestion.trackingNumber}</p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => linkOrder(aiSuggestion.order, aiSuggestion.trackingNumber)}
+                  disabled={saving}
+                  className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 bg-teal-600 text-white rounded-lg hover:bg-teal-700 font-medium disabled:opacity-50"
+                >
+                  <CheckCircle className="w-4 h-4" /> Confirm — this is correct
+                </button>
+                <button
+                  onClick={() => { applyDecodedCode(aiSuggestion.trackingNumber); setAiSuggestion(null); }}
+                  className="px-4 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 font-medium text-gray-700 text-sm"
+                >
+                  Not this one
+                </button>
+              </div>
             </div>
           )}
 
