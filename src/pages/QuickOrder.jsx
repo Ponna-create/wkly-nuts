@@ -14,6 +14,8 @@ export default function QuickOrder() {
 
   const [orderDate, setOrderDate] = useState(new Date().toISOString().split('T')[0]);
   const [orderSource, setOrderSource] = useState('whatsapp');
+  const [customSourceMode, setCustomSourceMode] = useState(false);
+  const [customSourceInput, setCustomSourceInput] = useState('');
   const [pasteText, setPasteText] = useState('');
   const [fields, setFields] = useState(EMPTY_FIELDS);
   const [phoneLookupStatus, setPhoneLookupStatus] = useState('idle'); // idle | searching | found | not_found
@@ -253,13 +255,15 @@ export default function QuickOrder() {
                     { value: 'instagram', label: '📷 Instagram' },
                     { value: 'website', label: '🌐 Website' },
                     { value: 'walkin', label: '🚶 Walk-in' },
+                    { value: 'meta_ad', label: '📢 Meta Ad' },
+                    { value: 'zoho', label: '📦 Zoho' },
                   ].map(opt => (
                     <button
                       key={opt.value}
                       type="button"
-                      onClick={() => setOrderSource(opt.value)}
+                      onClick={() => { setOrderSource(opt.value); setCustomSourceMode(false); }}
                       className={`px-2.5 py-2 rounded-lg text-xs font-medium border ${
-                        orderSource === opt.value
+                        orderSource === opt.value && !customSourceMode
                           ? 'border-teal-500 bg-teal-50 text-teal-700'
                           : 'border-gray-300 bg-white text-gray-600'
                       }`}
@@ -267,6 +271,29 @@ export default function QuickOrder() {
                       {opt.label}
                     </button>
                   ))}
+                  {customSourceMode ? (
+                    <input
+                      type="text"
+                      autoFocus
+                      value={customSourceInput}
+                      onChange={(e) => { setCustomSourceInput(e.target.value); setOrderSource(e.target.value); }}
+                      onBlur={() => { if (!customSourceInput.trim()) setCustomSourceMode(false); }}
+                      placeholder="Type source"
+                      className="px-2.5 py-2 rounded-lg text-xs font-medium border border-teal-500 bg-teal-50 text-teal-700 w-28"
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setCustomSourceMode(true)}
+                      className={`px-2.5 py-2 rounded-lg text-xs font-medium border ${
+                        customSourceMode
+                          ? 'border-teal-500 bg-teal-50 text-teal-700'
+                          : 'border-gray-300 bg-white text-gray-600'
+                      }`}
+                    >
+                      + Other
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
