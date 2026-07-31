@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import { ArrowLeft, Check, Minus, Plus, Trash2, Loader2, AlertTriangle, Printer } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
-import { getGstRate } from '../utils/settings';
 import { parseOrderPaste } from '../utils/orderPasteParser';
 import { generateA4LabelSheet } from '../utils/a4LabelSheet';
 
@@ -104,10 +103,19 @@ export default function QuickOrder() {
 
   const removeItem = (key) => setItems(prev => prev.filter(i => i.key !== key));
 
-  const gstRate = getGstRate();
-  const subtotal = items.reduce((s, i) => s + i.total, 0);
-  const gstAmount = (subtotal * gstRate) / 100;
-  const totalAmount = subtotal + gstAmount + (parseFloat(shippingCharge) || 0);
+  // Selling Price already includes GST — never add GST on top here. Each
+  // item's price is split back into taxable value + GST (using that SKU's
+  // own GST %, set in SKU Management) purely for the GST-filing breakup;
+  // the customer-facing total is just what was typed in, plus shipping.
+  const itemsTotal = items.reduce((s, i) => s + i.total, 0);
+  const subtotal = items.reduce((s, i) => {
+    const sku = skus.find(sk => String(sk.id) === String(i.skuId));
+    const rate = sku?.gstRate ?? 5;
+    return s + i.total / (1 + rate / 100);
+  }, 0);
+  const gstAmount = itemsTotal - subtotal;
+  const gstRate = subtotal > 0 ? (gstAmount / subtotal) * 100 : 0;
+  const totalAmount = itemsTotal + (parseFloat(shippingCharge) || 0);
 
   const resetForm = () => {
     setOrderDate(new Date().toISOString().split('T')[0]);
@@ -369,7 +377,7 @@ export default function QuickOrder() {
                   </div>
                 </div>
                 <div className="flex justify-between text-sm pt-1 px-1 border-t border-gray-200">
-                  <span className="text-gray-500">Total incl. GST ({gstRate}%) + Shipping</span>
+                  <span className="text-gray-500">Total (GST incl. in price) + Shipping</span>
                   <span className="font-bold text-teal-700">₹{totalAmount.toFixed(2)}</span>
                 </div>
               </div>

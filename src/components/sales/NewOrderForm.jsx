@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { X, Plus, Trash2, AlertTriangle, Phone, CheckCircle } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { dbService } from '../../services/supabase';
-import { getGstRate } from '../../utils/settings';
 import { parseAddress } from '../../utils/addressParser';
 
 export default function NewOrderForm({ onClose }) {
@@ -25,7 +24,7 @@ export default function NewOrderForm({ onClose }) {
     orderSource: 'whatsapp',
     items: [],
     subtotal: 0,
-    gstRate: getGstRate(),
+    gstRate: 5,
     gstAmount: 0,
     discountPercent: 0,
     discountAmount: 0,
@@ -68,24 +67,34 @@ export default function NewOrderForm({ onClose }) {
     return price ? { sellingPrice: price } : null;
   };
 
-  // Calculate totals
+  // Calculate totals — Selling Price already includes GST, so it's never
+  // added on top here. Each item's price is split back into taxable value +
+  // GST (using that SKU's own GST %) purely for the GST-filing breakup; the
+  // total charged is just the entered item prices, minus discount, plus shipping.
   useEffect(() => {
-    const subtotal = formData.items.reduce((sum, item) => sum + (item.total || 0), 0);
-    const gstAmount = (subtotal * formData.gstRate) / 100;
+    const itemsTotal = formData.items.reduce((sum, item) => sum + (item.total || 0), 0);
+    const subtotal = formData.items.reduce((sum, item) => {
+      const sku = skus.find(s => String(s.id) === String(item.skuId));
+      const rate = sku?.gstRate ?? 5;
+      return sum + (item.total || 0) / (1 + rate / 100);
+    }, 0);
+    const gstAmount = itemsTotal - subtotal;
+    const gstRate = subtotal > 0 ? (gstAmount / subtotal) * 100 : 0;
     const discountAmount = formData.discountPercent > 0
       ? (subtotal * formData.discountPercent) / 100
       : formData.discountAmount;
-    const totalAmount = subtotal + gstAmount - discountAmount + (formData.shippingCharge || 0);
+    const totalAmount = itemsTotal - discountAmount + (formData.shippingCharge || 0);
 
     setFormData(prev => ({
       ...prev,
       subtotal,
+      gstRate,
       gstAmount,
       discountAmount,
       totalAmount,
       amountPaid: formData.paymentStatus === 'received' ? totalAmount : formData.amountPaid,
     }));
-  }, [formData.items, formData.gstRate, formData.discountPercent, formData.discountAmount, formData.shippingCharge, formData.paymentStatus]);
+  }, [formData.items, skus, formData.discountPercent, formData.discountAmount, formData.shippingCharge, formData.paymentStatus]);
 
   // Phone-first customer lookup — type the mobile number, we find (or offer to create) the customer
   const phoneLookupTimer = useRef(null);
@@ -611,7 +620,7 @@ export default function NewOrderForm({ onClose }) {
                   <span className="font-medium">₹{formData.subtotal.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">GST ({formData.gstRate}%):</span>
+                  <span className="text-gray-600">GST ({formData.gstRate.toFixed(1)}%, incl. in price):</span>
                   <span className="font-medium">₹{formData.gstAmount.toFixed(2)}</span>
                 </div>
                 <div className="flex gap-2">

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Database, Download, Upload, Check, AlertCircle, AlertTriangle, Clock, HardDrive, Loader2, RefreshCw, Settings, Wifi, WifiOff, Building2, Save } from 'lucide-react';
 import { dbService } from '../services/supabase';
 import { useApp } from '../context/AppContext';
-import { getGstRate, setGstRate, getDbMode, setDbMode, getBusinessInfo, setBusinessInfo } from '../utils/settings';
+import { getDbMode, setDbMode, getBusinessInfo, setBusinessInfo } from '../utils/settings';
 
 export default function BackupSettings() {
   const { showToast, useDatabase } = useApp();
@@ -11,10 +11,6 @@ export default function BackupSettings() {
   const [importResult, setImportResult] = useState(null);
   const [lastBackup, setLastBackup] = useState(
     localStorage.getItem('wklyNutsLastBackup') || null
-  );
-  const [gstValue, setGstValue] = useState(getGstRate());
-  const [customGst, setCustomGst] = useState(
-    ![0, 5, 12, 18].includes(getGstRate()) ? getGstRate() : ''
   );
   const [dbModeValue, setDbModeValue] = useState(getDbMode());
   const [businessInfo, setBusinessInfoState] = useState(getBusinessInfo());
@@ -33,16 +29,6 @@ export default function BackupSettings() {
     setBusinessInfo(toSave);
     setBusinessInfoState(toSave);
     showToast('Business info saved', 'success');
-  };
-
-  // ==========================================
-  // GST RATE SETTINGS
-  // ==========================================
-  const handleGstChange = (rate) => {
-    const numRate = parseFloat(rate);
-    setGstValue(numRate);
-    setGstRate(numRate);
-    showToast(`GST rate set to ${numRate}%`, 'success');
   };
 
   // ==========================================
@@ -280,45 +266,6 @@ export default function BackupSettings() {
         <div className="flex items-center gap-3 mb-5">
           <Settings className="w-6 h-6 text-teal-600" />
           <h2 className="text-lg font-semibold text-gray-900">App Settings</h2>
-        </div>
-
-        {/* GST Rate */}
-        <div className="mb-6">
-          <label className="block text-sm font-semibold text-gray-900 mb-3">GST Rate</label>
-          <div className="flex flex-wrap gap-2">
-            {[0, 5, 12, 18].map(rate => (
-              <button
-                key={rate}
-                onClick={() => { setCustomGst(''); handleGstChange(rate); }}
-                className={`px-4 py-2 rounded-lg text-sm font-medium border-2 transition ${
-                  gstValue === rate && !customGst
-                    ? 'border-teal-500 bg-teal-50 text-teal-700'
-                    : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                {rate}%
-              </button>
-            ))}
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                placeholder="Custom %"
-                min="0"
-                max="28"
-                step="0.5"
-                value={customGst}
-                onChange={(e) => {
-                  setCustomGst(e.target.value);
-                  if (e.target.value) handleGstChange(e.target.value);
-                }}
-                className="w-24 px-3 py-2 border-2 border-gray-200 rounded-lg text-sm focus:border-teal-500 focus:ring-0"
-              />
-              <span className="text-sm text-gray-500">%</span>
-            </div>
-          </div>
-          <p className="text-xs text-gray-500 mt-2">
-            Current: <strong>{gstValue}%</strong> — Applied to all new orders & invoices
-          </p>
         </div>
 
         {/* Database Mode */}

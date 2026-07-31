@@ -217,12 +217,20 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
 
   const handleSaveOrderEdit = async () => {
     setSavingOrder(true);
-    const subtotal = editForm.items.reduce((s, i) => s + (parseFloat(i.total) || 0), 0);
-    const gstRate = currentOrder.gst_rate || 5;
-    const gstAmount = subtotal * gstRate / 100;
+    // Selling Price already includes GST — never add GST on top. Each item's
+    // price is split back into taxable value + GST (using that SKU's own
+    // GST %) purely for the GST-filing breakup; the total is unaffected.
+    const itemsTotal = editForm.items.reduce((s, i) => s + (parseFloat(i.total) || 0), 0);
+    const subtotal = editForm.items.reduce((s, i) => {
+      const skuId = i.sku_id || i.skuId;
+      const sku = (state.skus || []).find(sk => String(sk.id) === String(skuId));
+      const rate = sku?.gstRate ?? 5;
+      return s + (parseFloat(i.total) || 0) / (1 + rate / 100);
+    }, 0);
+    const gstAmount = itemsTotal - subtotal;
     const discount = currentOrder.discount_amount || 0;
     const shippingCharge = parseFloat(editForm.shipping_charge) || 0;
-    const totalAmount = subtotal + gstAmount - discount + shippingCharge;
+    const totalAmount = itemsTotal - discount + shippingCharge;
 
     const updatedOrder = {
       ...currentOrder,

@@ -114,6 +114,7 @@ export default function SKUManagement() {
     name: '',
     skuCode: '',
     hsnCode: '',
+    gstRate: '5',
     description: '',
     skuType: 'weekly', // weekly | processed | repack | resale
     targetWeightPerSachet: '', // For weekly packs
@@ -254,6 +255,7 @@ export default function SKUManagement() {
       name: '',
       skuCode: '',
       hsnCode: '',
+      gstRate: '5',
       description: '',
       skuType: 'weekly',
       targetWeightPerSachet: '',
@@ -541,6 +543,7 @@ export default function SKUManagement() {
       shelfLifeDays: parseInt(formData.shelfLifeDays) || 30,
       sellingPrice: parseFloat(formData.sellingPrice) || 0,
       monthlySellingPrice: formData.monthlySellingPrice !== '' ? parseFloat(formData.monthlySellingPrice) : null,
+      gstRate: formData.gstRate !== '' ? parseFloat(formData.gstRate) : 5,
       mrp: formData.mrp !== '' ? parseFloat(formData.mrp) : null,
       processCosts: formData.processCosts || [],
     };
@@ -567,6 +570,7 @@ export default function SKUManagement() {
       name: sku.name,
       skuCode: sku.skuCode || generateSkuCode(sku.name),
       hsnCode: sku.hsnCode || '',
+      gstRate: sku.gstRate ?? 5,
       description: sku.description,
       skuType: sku.skuType || 'weekly',
       targetWeightPerSachet: sku.targetWeightPerSachet || '',
@@ -1130,6 +1134,21 @@ export default function SKUManagement() {
                     maxLength={10}
                   />
                   <p className="text-xs text-gray-500 mt-1">Used on GST invoices for this product. Check with your CA if unsure.</p>
+                </div>
+                <div>
+                  <label className="label">GST %</label>
+                  <select
+                    value={formData.gstRate}
+                    onChange={(e) => setFormData({ ...formData, gstRate: e.target.value })}
+                    className="input-field"
+                  >
+                    <option value="0">0%</option>
+                    <option value="5">5%</option>
+                    <option value="12">12%</option>
+                    <option value="18">18%</option>
+                    <option value="28">28%</option>
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">Selling Price already includes GST — this is only used to split it out for GST filing, never added on top.</p>
                 </div>
                 <div>
                   <label className="label">SKU Type <span className="text-red-500">*</span></label>
