@@ -1,20 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { Truck, RefreshCw, Clock, CheckCircle, AlertCircle, ExternalLink, MessageCircle } from 'lucide-react';
+import { Truck, RefreshCw, CheckCircle, ExternalLink, MessageCircle } from 'lucide-react';
 import { dbService } from '../../services/supabase';
 
-const ST_COURIER_URL = 'https://stcourier.com/track/shipment';
-
-// Tracking status categories
-const DELIVERY_KEYWORDS = ['delivered', 'delivery completed', 'received by', 'pod uploaded'];
-const IN_TRANSIT_KEYWORDS = ['in transit', 'out for delivery', 'dispatched', 'arrived at', 'departed'];
-
-function guessTrackingStatus(trackingInfo) {
-  if (!trackingInfo) return 'unknown';
-  const lower = (typeof trackingInfo === 'string' ? trackingInfo : '').toLowerCase();
-  if (DELIVERY_KEYWORDS.some(k => lower.includes(k))) return 'delivered';
-  if (IN_TRANSIT_KEYWORDS.some(k => lower.includes(k))) return 'in_transit';
-  return 'unknown';
-}
+// ST Courier's tracking page can't be pre-filled from outside their site —
+// their form does an AJAX call first (which just returns raw JSON) and then
+// a second page load that reads the result back out of a server-side
+// session, so a plain cross-site form POST only ever shows the JSON, not
+// the actual results. Simplest thing that's guaranteed correct: copy the
+// AWB to the clipboard and open their page — she pastes it in herself,
+// same as always, just without having to retype the number by hand.
+const openTrackingPage = (awb) => {
+  navigator.clipboard?.writeText(awb).catch(() => {});
+  window.open('https://stcourier.com/track/shipment', '_blank');
+};
 
 export default function TrackingChecker({ orders, onOrderUpdate, showToast }) {
   const [checking, setChecking] = useState(false);
@@ -22,9 +20,11 @@ export default function TrackingChecker({ orders, onOrderUpdate, showToast }) {
   const [lastChecked, setLastChecked] = useState(null);
   const [autoMode, setAutoMode] = useState(false);
 
-  // Orders that are dispatched/in_transit with tracking numbers
+  // Orders that are dispatched/collected/transit with tracking numbers —
+  // 'transit' is the actual pipeline status (OrderDetailView.jsx), not
+  // 'in_transit' — that mismatch meant transit orders never showed up here.
   const trackableOrders = (orders || []).filter(o =>
-    ['dispatched', 'in_transit'].includes(o.status) && o.tracking_number
+    ['collected', 'dispatched', 'transit'].includes(o.status) && o.tracking_number
   );
 
   // Orders that were delivered recently (within last 5 days) - for WhatsApp feedback
@@ -43,17 +43,11 @@ export default function TrackingChecker({ orders, onOrderUpdate, showToast }) {
     }
 
     setChecking(true);
-    const checkResults = [];
-
-    for (const order of trackableOrders) {
-      // We can't actually scrape ST Courier from frontend due CORS
-      // But we create a tracking link and provide a manual check mechanism
-      checkResults.push({
-        order,
-        trackingUrl: `${ST_COURIER_URL}?tracking=${order.tracking_number}`,
-        suggestedStatus: order.status, // Will be updated by user
-      });
-    }
+    // We can't automatically pull ST Courier's status from the frontend
+    // (their tracking page is a plain server-rendered form, not a public
+    // API) — this loads the list so she can check each one herself via the
+    // "Track" button and record what she sees with one tap.
+    const checkResults = trackableOrders.map(order => ({ order }));
 
     setResults(checkResults);
     setLastChecked(new Date());
@@ -62,12 +56,11 @@ export default function TrackingChecker({ orders, onOrderUpdate, showToast }) {
   };
 
   const handleMarkDelivered = async (order) => {
-    const updated = {
-      ...order,
+    const { error } = await dbService.updateSalesOrder({
+      id: order.id,
       status: 'delivered',
-      actual_delivery_date: new Date().toISOString().split('T')[0],
-    };
-    const { error } = await dbService.updateSalesOrder(updated);
+      actualDeliveryDate: new Date().toISOString().split('T')[0],
+    });
     if (error) {
       showToast('Error updating order', 'error');
       return;
@@ -76,6 +69,27 @@ export default function TrackingChecker({ orders, onOrderUpdate, showToast }) {
     // Update local results
     setResults(prev => prev.filter(r => r.order.id !== order.id));
     showToast(`${order.order_number} marked as Delivered!`, 'success');
+    if (onOrderUpdate) onOrderUpdate();
+  };
+
+  const handleMarkOutForDelivery = async (order) => {
+    const { error } = await dbService.updateSalesOrder({ id: order.id, status: 'transit' });
+    if (error) {
+      showToast('Error updating order', 'error');
+      return;
+    }
+    showToast(`${order.order_number} → Out for Delivery`, 'success');
+    if (onOrderUpdate) onOrderUpdate();
+  };
+
+  const handleFlagStuck = async (order) => {
+    const note = `⚠️ Checked ${new Date().toLocaleDateString('en-IN')} — not moving`;
+    const { error } = await dbService.updateSalesOrder({ id: order.id, internalNotes: note });
+    if (error) {
+      showToast('Error saving note', 'error');
+      return;
+    }
+    showToast(`${order.order_number} flagged for follow-up`, 'success');
     if (onOrderUpdate) onOrderUpdate();
   };
 
@@ -139,7 +153,7 @@ export default function TrackingChecker({ orders, onOrderUpdate, showToast }) {
       {results.length > 0 && (
         <div className="space-y-2">
           <h3 className="font-semibold text-gray-900 text-sm">Orders with Tracking ({results.length})</h3>
-          {results.map(({ order, trackingUrl }) => (
+          {results.map(({ order }) => (
             <div key={order.id} className="bg-white border border-gray-200 rounded-lg p-3">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
@@ -151,23 +165,36 @@ export default function TrackingChecker({ orders, onOrderUpdate, showToast }) {
                     <code className="text-xs bg-gray-100 px-2 py-0.5 rounded font-mono">{order.tracking_number}</code>
                     <span className="text-xs text-gray-400">{order.courier_name || 'ST Courier'}</span>
                   </div>
+                  {order.internal_notes && (
+                    <p className="text-xs text-red-600 mt-1">{order.internal_notes}</p>
+                  )}
                 </div>
-                <div className="flex items-center gap-1">
-                  <a
-                    href={trackingUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-1 px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded"
-                  >
-                    <ExternalLink className="w-3 h-3" /> Track
-                  </a>
-                  <button
-                    onClick={() => handleMarkDelivered(order)}
-                    className="flex items-center gap-1 px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700"
-                  >
-                    <CheckCircle className="w-3 h-3" /> Delivered
-                  </button>
-                </div>
+                <button
+                  onClick={() => { openTrackingPage(order.tracking_number); showToast(`${order.tracking_number} copied — paste it into the search box`, 'success'); }}
+                  className="flex items-center gap-1 px-2 py-1 text-xs text-indigo-600 hover:bg-indigo-50 rounded border border-indigo-200 whitespace-nowrap"
+                >
+                  <ExternalLink className="w-3 h-3" /> Check
+                </button>
+              </div>
+              <div className="flex gap-1.5 mt-2">
+                <button
+                  onClick={() => handleMarkDelivered(order)}
+                  className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-green-100 text-green-700 rounded text-xs font-medium hover:bg-green-200"
+                >
+                  🟢 Delivered
+                </button>
+                <button
+                  onClick={() => handleMarkOutForDelivery(order)}
+                  className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-yellow-100 text-yellow-700 rounded text-xs font-medium hover:bg-yellow-200"
+                >
+                  🟡 Out for Delivery
+                </button>
+                <button
+                  onClick={() => handleFlagStuck(order)}
+                  className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-red-100 text-red-700 rounded text-xs font-medium hover:bg-red-200"
+                >
+                  🔴 Stuck
+                </button>
               </div>
             </div>
           ))}
