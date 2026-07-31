@@ -9,7 +9,7 @@ import { dbService } from '../../services/supabase';
 // customer name on the slip is handwritten and too messy to read reliably,
 // so matching to the right order is a tap, not a guess.
 export default function TrackingScanner({ orders, onClose, onUpdate }) {
-  const { showToast } = useApp();
+  const { showToast, dispatch } = useApp();
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState(null);
   const [scannedCode, setScannedCode] = useState(null);
@@ -100,18 +100,32 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
   const handlePickOrder = async (order) => {
     if (!scannedCode || saving) return;
     setSaving(true);
-    const { error } = await dbService.updateSalesOrder({
+    const updatedOrder = {
       id: order.id,
       trackingNumber: scannedCode,
       courierName: order.courier_name || 'ST Courier',
       status: 'dispatched',
       dispatchDate: order.dispatch_date || new Date().toISOString().split('T')[0],
-    });
+    };
+    const { error } = await dbService.updateSalesOrder(updatedOrder);
     setSaving(false);
     if (error) {
       showToast('Error saving tracking number', 'error');
       return;
     }
+    // Keep shared app state in sync too — this scanner is opened from more
+    // than one page (Sales Orders, Quick Order), and not every caller does
+    // its own full reload afterward.
+    dispatch({
+      type: 'UPDATE_SALES_ORDER',
+      payload: {
+        ...order,
+        tracking_number: scannedCode,
+        courier_name: updatedOrder.courierName,
+        status: 'dispatched',
+        dispatch_date: updatedOrder.dispatchDate,
+      },
+    });
     setLinkedOrders(prev => ({ ...prev, [order.id]: scannedCode }));
     setScannedCode(null);
     showToast(`${order.order_number} → ${scannedCode}`, 'success');
