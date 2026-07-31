@@ -1280,17 +1280,16 @@ const _realDbService = {
       }
 
       if (!invoiceNumberValue) {
+        // Atomic per-year counter (DB function) — replaces the old
+        // "scan all invoices, take max + 1" approach, which could race when
+        // two invoices were created close together and produce a duplicate
+        // or skipped number. GST filing needs one unbroken sequence across
+        // every channel (WhatsApp/Instagram, Website import, Amazon import),
+        // so this must stay a single counter, never split per channel.
         const year = new Date().getFullYear();
-        const { data: allInv } = await supabase
-          .from('invoices')
-          .select('invoice_number')
-          .like('invoice_number', `INV-${year}-%`);
-        const numbers = (allInv || []).map(inv => {
-          const m = (inv.invoice_number || '').match(/INV-\d{4}-(\d{5})/);
-          return m ? parseInt(m[1], 10) : 0;
-        });
-        const next = (numbers.length > 0 ? Math.max(...numbers) : 0) + 1;
-        invoiceNumberValue = `INV-${year}-${String(next).padStart(5, '0')}`;
+        const { data: nextNum, error: seqError } = await supabase.rpc('next_invoice_number', { p_year: year });
+        if (seqError) throw seqError;
+        invoiceNumberValue = `INV-${year}-${String(nextNum).padStart(5, '0')}`;
       }
 
       const { data, error } = await supabase
