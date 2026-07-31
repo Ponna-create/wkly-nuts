@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
-import { X, Camera, CheckCircle, AlertCircle, Package } from 'lucide-react';
+import { X, Camera, Image as ImageIcon, CheckCircle, AlertCircle, Package } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { dbService } from '../../services/supabase';
 
@@ -15,9 +15,11 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
   const [scannedCode, setScannedCode] = useState(null);
   const [linkedOrders, setLinkedOrders] = useState({}); // orderId -> tracking number
   const [saving, setSaving] = useState(false);
+  const [readingFile, setReadingFile] = useState(false);
   const html5QrCodeRef = useRef(null);
   const lastScanTimeRef = useRef(0);
   const processingRef = useRef(false);
+  const fileInputRef = useRef(null);
 
   const unlinkedOrders = orders.filter(o => !linkedOrders[o.id]);
 
@@ -51,19 +53,48 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
     setScanning(false);
   };
 
-  const onScanSuccess = (decodedText) => {
-    const now = Date.now();
-    if (now - lastScanTimeRef.current < 2000) return;
-    if (processingRef.current) return;
-    lastScanTimeRef.current = now;
-
-    const code = decodedText.trim();
+  const applyDecodedCode = (rawText) => {
+    const code = rawText.trim();
     const alreadyLinked = Object.values(linkedOrders).includes(code);
     if (alreadyLinked) {
       showToast('This slip is already linked to an order', 'error');
       return;
     }
     setScannedCode(code);
+  };
+
+  const onScanSuccess = (decodedText) => {
+    const now = Date.now();
+    if (now - lastScanTimeRef.current < 2000) return;
+    if (processingRef.current) return;
+    lastScanTimeRef.current = now;
+    applyDecodedCode(decodedText);
+  };
+
+  // Reading an already-taken photo (gallery, photocopy scan, etc.) instead
+  // of live-scanning the physical slip — same barcode decoder, just fed a
+  // still image rather than a camera stream.
+  const handleFileSelected = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow picking the same file again later
+    if (!file) return;
+
+    setError(null);
+    setReadingFile(true);
+    if (scanning) await stopScanner();
+
+    try {
+      if (!html5QrCodeRef.current) {
+        html5QrCodeRef.current = new Html5Qrcode('tracking-scan-reader');
+      }
+      const decodedText = await html5QrCodeRef.current.scanFile(file, false);
+      applyDecodedCode(decodedText);
+    } catch (err) {
+      console.error('File scan error:', err);
+      setError("Couldn't find a barcode in that photo — try a clearer/closer photo, or scan live.");
+    } finally {
+      setReadingFile(false);
+    }
   };
 
   const handlePickOrder = async (order) => {
@@ -112,11 +143,22 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
             <div className="relative bg-black rounded-lg overflow-hidden" style={{ minHeight: '220px' }}>
               <div id="tracking-scan-reader" className="w-full" />
               {!scanning && (
-                <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
-                  <button onClick={startScanner}
-                    className="flex items-center gap-3 px-6 py-3 bg-teal-600 text-white rounded-lg hover:bg-teal-700 font-medium text-lg">
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-gray-900">
+                  <button onClick={startScanner} disabled={readingFile}
+                    className="flex items-center gap-3 px-6 py-3 bg-teal-600 text-white rounded-lg hover:bg-teal-700 font-medium text-lg disabled:opacity-50">
                     <Camera className="w-6 h-6" /> Start Camera
                   </button>
+                  <button onClick={() => fileInputRef.current?.click()} disabled={readingFile}
+                    className="flex items-center gap-2 px-4 py-2 bg-white text-gray-700 rounded-lg hover:bg-gray-100 font-medium text-sm disabled:opacity-50">
+                    <ImageIcon className="w-4 h-4" /> {readingFile ? 'Reading photo...' : 'Upload Photo'}
+                  </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleFileSelected}
+                    className="hidden"
+                  />
                 </div>
               )}
             </div>
