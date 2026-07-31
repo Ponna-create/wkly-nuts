@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
-import { X, Camera, Image as ImageIcon, Sparkles, CheckCircle, AlertCircle, Package } from 'lucide-react';
+import { X, Camera, Image as ImageIcon, CheckCircle, AlertCircle, Package } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { dbService } from '../../services/supabase';
 import { findBestOrderMatch } from '../../utils/ocrMatch';
@@ -186,7 +186,7 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
       setAiSuggestion(match);
     } catch (err) {
       console.error('AI scan error:', err);
-      setError('AI read failed — try again or scan the barcode instead.');
+      setError("Couldn't read that photo — try again or scan the barcode instead.");
     } finally {
       setOcrLoading(false);
     }
@@ -229,7 +229,7 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
                   </button>
                   <button onClick={() => aiFileInputRef.current?.click()} disabled={readingFile || ocrLoading}
                     className="flex items-center gap-2 px-4 py-2 bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-200 rounded-lg hover:bg-fuchsia-100 font-medium text-sm disabled:opacity-50">
-                    <Sparkles className="w-4 h-4" /> {ocrLoading ? 'Reading with AI...' : 'Read with AI (whole slip)'}
+                    <ImageIcon className="w-4 h-4" /> {ocrLoading ? 'Reading photo...' : 'Upload Photo (full slip)'}
                   </button>
                   <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileSelected} className="hidden" />
                   <input ref={aiFileInputRef} type="file" accept="image/*" onChange={handleAiFileSelected} className="hidden" />
@@ -249,7 +249,7 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
             <div className="space-y-3">
               <div className="p-3 bg-fuchsia-50 border border-fuchsia-200 rounded-lg">
                 <p className="text-xs text-fuchsia-600 font-medium flex items-center gap-1">
-                  <Sparkles className="w-3.5 h-3.5" /> AI BEST GUESS
+                  <CheckCircle className="w-3.5 h-3.5" /> SUGGESTED MATCH
                   {aiSuggestion.matchedVia === 'phone' && ' — matched by phone number'}
                   {aiSuggestion.matchedVia === 'name' && ` — ${Math.round(aiSuggestion.confidence * 100)}% name match`}
                 </p>
