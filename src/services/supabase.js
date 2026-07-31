@@ -1270,6 +1270,25 @@ const _realDbService = {
     }
   },
 
+  // Auditor's own GSTR-3B working file (June'26) numbers invoices as a
+  // single continuous count formatted "{n}/{MM}{YYYY}" — never resets per
+  // year, the month/year is just the period the invoice falls in. He asked
+  // to continue that same series going forward since we own the app; her
+  // June file runs an unbroken 10..52 with no gaps, so the DB sequence is
+  // seeded to continue at 53. This must stay ONE counter across every sales
+  // channel (WhatsApp/Instagram, Website import, Amazon import) — GST
+  // filing needs one unbroken sequence, not one per channel. Uses an atomic
+  // Postgres sequence (not a JS "scan all, take max+1") so two invoices
+  // created close together can never collide.
+  async getNextInvoiceNumber(forDate) {
+    const { data: nextNum, error } = await supabase.rpc('nextval', { name: 'invoice_number_seq' });
+    if (error) throw error;
+    const d = forDate ? new Date(forDate) : new Date();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    return `${nextNum}/${mm}${yyyy}`;
+  },
+
   async createInvoice(invoice) {
     if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
 
@@ -1280,16 +1299,7 @@ const _realDbService = {
       }
 
       if (!invoiceNumberValue) {
-        // Atomic per-year counter (DB function) — replaces the old
-        // "scan all invoices, take max + 1" approach, which could race when
-        // two invoices were created close together and produce a duplicate
-        // or skipped number. GST filing needs one unbroken sequence across
-        // every channel (WhatsApp/Instagram, Website import, Amazon import),
-        // so this must stay a single counter, never split per channel.
-        const year = new Date().getFullYear();
-        const { data: nextNum, error: seqError } = await supabase.rpc('next_invoice_number', { p_year: year });
-        if (seqError) throw seqError;
-        invoiceNumberValue = `INV-${year}-${String(nextNum).padStart(5, '0')}`;
+        invoiceNumberValue = await this.getNextInvoiceNumber(invoice.invoiceDate);
       }
 
       const { data, error } = await supabase

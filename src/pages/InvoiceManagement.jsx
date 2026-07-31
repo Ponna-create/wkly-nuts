@@ -378,36 +378,18 @@ export default function InvoiceManagement() {
       }
     }
 
-    // Generate invoice number if status is 'paid' and invoice number is not set
+    // Generate invoice number if status is 'paid' and invoice number is not set.
+    // Number itself comes from dbService.getNextInvoiceNumber() — a single
+    // atomic DB sequence shared with every other invoice-creation path in
+    // the app (order label-print, etc.) so numbering never splits or races.
     let invoiceNumber = editingInvoice?.invoiceNumber || null;
-    
+
     if (formData.status === 'paid' && (!invoiceNumber || invoiceNumber === 'N/A')) {
-      console.log('✅ Status is "paid" - Generating invoice number...');
-      
-      // Generate invoice number format: INV-YYYY-XXXXX
-      const year = new Date().getFullYear();
-      
-      // Get all existing invoices to find the highest number
       if (isSupabaseAvailable()) {
-        const allInvoicesRes = await dbService.getInvoices();
-        const existingNumbers = (allInvoicesRes.data || [])
-          .map(inv => inv.invoiceNumber || inv.invoice_number)
-          .filter(num => num && num.startsWith(`INV-${year}`));
-        
-        // Extract numbers and find the highest
-        const numbers = existingNumbers.map(num => {
-          const match = num.match(/INV-\d{4}-(\d{5})/);
-          return match ? parseInt(match[1], 10) : 0;
-        });
-        
-        const highestNumber = numbers.length > 0 ? Math.max(...numbers) : 0;
-        const nextNumber = highestNumber + 1;
-        invoiceNumber = `INV-${year}-${String(nextNumber).padStart(5, '0')}`;
-        
-        console.log('📋 Generated invoice number:', invoiceNumber);
+        invoiceNumber = await dbService.getNextInvoiceNumber(formData.invoiceDate);
       } else {
-        // For local storage, use a simpler approach
-        const invoiceCount = invoices.filter(inv => 
+        const year = new Date().getFullYear();
+        const invoiceCount = invoices.filter(inv =>
           inv.invoiceNumber && inv.invoiceNumber.startsWith(`INV-${year}`)
         ).length;
         invoiceNumber = `INV-${year}-${String(invoiceCount + 1).padStart(5, '0')}`;
@@ -673,66 +655,21 @@ export default function InvoiceManagement() {
                               currentInvoiceNumber === '';
       
       if (needsGeneration) {
-        console.log('🔢🔢🔢 Invoice number MUST be generated - starting generation process...');
-        const year = new Date().getFullYear();
-        
-        // Get accurate count from database if available
-        let invoiceCount = 1;
-        let generatedNumber = '';
-        let maxAttempts = 10; // Prevent infinite loop
-        let attempt = 0;
-        
+        // Same atomic DB sequence used everywhere else invoices get numbered
+        // — no more scanning existing invoices for a max+1 guess, which is
+        // what used to race and produce duplicate/skipped numbers.
+        let generatedNumber;
         if (isSupabaseAvailable()) {
-          try {
-            // Query database for all invoices with invoice numbers for this year
-            const allInvoicesRes = await dbService.getInvoices();
-            if (allInvoicesRes.data) {
-              const existingPaidInvoices = allInvoicesRes.data.filter(inv => {
-                const invNum = inv.invoiceNumber || inv.invoice_number;
-                return invNum && invNum !== 'N/A' && invNum !== null && invNum !== undefined && invNum.startsWith(`INV-${year}`);
-              });
-              
-              // Get the highest invoice number to avoid duplicates
-              const invoiceNumbers = existingPaidInvoices
-                .map(inv => {
-                  const invNum = inv.invoiceNumber || inv.invoice_number;
-                  const match = invNum.match(/INV-\d{4}-(\d+)/);
-                  return match ? parseInt(match[1], 10) : 0;
-                })
-                .filter(num => num > 0);
-              
-              invoiceCount = invoiceNumbers.length > 0 ? Math.max(...invoiceNumbers) + 1 : 1;
-              console.log('Found', existingPaidInvoices.length, 'existing invoices for year', year);
-              console.log('Highest invoice number:', invoiceCount - 1, 'Next will be:', invoiceCount);
-            }
-          } catch (error) {
-            console.error('Error counting invoices from database, using local count:', error);
-            // Fallback to local count
-            const existingPaidInvoices = invoices.filter(inv => {
-              const invNum = inv.invoiceNumber || inv.invoice_number;
-              return invNum && invNum !== 'N/A' && invNum !== null && invNum !== undefined && invNum.startsWith(`INV-${year}`);
-            });
-            invoiceCount = existingPaidInvoices.length + 1;
-          }
+          generatedNumber = await dbService.getNextInvoiceNumber(updatedInvoice.invoiceDate);
         } else {
-          // Fallback to local count
+          const year = new Date().getFullYear();
           const existingPaidInvoices = invoices.filter(inv => {
             const invNum = inv.invoiceNumber || inv.invoice_number;
-            return invNum && invNum !== 'N/A' && invNum !== null && invNum !== undefined && invNum.startsWith(`INV-${year}`);
+            return invNum && invNum !== 'N/A' && invNum.startsWith(`INV-${year}`);
           });
-          invoiceCount = existingPaidInvoices.length + 1;
+          generatedNumber = `INV-${year}-${String(existingPaidInvoices.length + 1).padStart(5, '0')}`;
         }
-        
-        // Generate unique invoice number
-        do {
-          generatedNumber = `INV-${year}-${String(invoiceCount).padStart(5, '0')}`;
-          attempt++;
-          invoiceCount++;
-        } while (attempt < maxAttempts && invoices.some(inv => {
-          const invNum = inv.invoiceNumber || inv.invoice_number;
-          return invNum === generatedNumber;
-        }));
-        
+
         updatedInvoice.invoiceNumber = generatedNumber;
         // Also set invoice_number for consistency
         updatedInvoice.invoice_number = generatedNumber;
@@ -903,19 +840,9 @@ export default function InvoiceManagement() {
             // Handle duplicate key error - invoice number already exists
             if (createResult.error.code === '23505' && createResult.error.message?.includes('invoice_number')) {
               console.error('❌ Duplicate invoice number detected! Regenerating...');
-              // Regenerate invoice number and try update instead
-              const year = new Date().getFullYear();
-              const allInvoicesRes2 = await dbService.getInvoices();
-              const existingNumbers = (allInvoicesRes2.data || [])
-                .map(inv => inv.invoiceNumber || inv.invoice_number)
-                .filter(num => num && num.startsWith(`INV-${year}`));
-              
-              // Find next available number
-              let newCount = 1;
-              while (existingNumbers.includes(`INV-${year}-${String(newCount).padStart(5, '0')}`)) {
-                newCount++;
-              }
-              updatedInvoice.invoiceNumber = `INV-${year}-${String(newCount).padStart(5, '0')}`;
+              // Only reachable for a manually-typed duplicate now — auto
+              // numbers come from an atomic sequence and can't collide.
+              updatedInvoice.invoiceNumber = await dbService.getNextInvoiceNumber(updatedInvoice.invoiceDate);
               console.log('Regenerated invoice number:', updatedInvoice.invoiceNumber);
               
               // Try to update existing invoice instead
