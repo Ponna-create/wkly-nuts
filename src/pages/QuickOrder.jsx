@@ -13,6 +13,7 @@ export default function QuickOrder() {
   const skus = state.skus || [];
 
   const [orderDate, setOrderDate] = useState(new Date().toISOString().split('T')[0]);
+  const [orderSource, setOrderSource] = useState('whatsapp');
   const [pasteText, setPasteText] = useState('');
   const [fields, setFields] = useState(EMPTY_FIELDS);
   const [phoneLookupStatus, setPhoneLookupStatus] = useState('idle'); // idle | searching | found | not_found
@@ -167,7 +168,7 @@ export default function QuickOrder() {
       customerId: customer.id,
       customerName: fields.name,
       orderDate,
-      orderSource: 'whatsapp',
+      orderSource,
       items,
       subtotal,
       gstRate,
@@ -233,15 +234,41 @@ export default function QuickOrder() {
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4 items-start">
           {/* Left: paste + fields + items */}
           <div className="space-y-4">
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase mb-1.5">Order Date</label>
-              <input
-                type="date"
-                value={orderDate}
-                onChange={(e) => setOrderDate(e.target.value)}
-                max={new Date().toISOString().split('T')[0]}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
-              />
+            <div className="flex flex-wrap gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1.5">Order Date</label>
+                <input
+                  type="date"
+                  value={orderDate}
+                  onChange={(e) => setOrderDate(e.target.value)}
+                  max={new Date().toISOString().split('T')[0]}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1.5">Source</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { value: 'whatsapp', label: '💬 WhatsApp' },
+                    { value: 'instagram', label: '📷 Instagram' },
+                    { value: 'website', label: '🌐 Website' },
+                    { value: 'walkin', label: '🚶 Walk-in' },
+                  ].map(opt => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setOrderSource(opt.value)}
+                      className={`px-2.5 py-2 rounded-lg text-xs font-medium border ${
+                        orderSource === opt.value
+                          ? 'border-teal-500 bg-teal-50 text-teal-700'
+                          : 'border-gray-300 bg-white text-gray-600'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
 
             <div>
