@@ -129,6 +129,17 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
     }
   };
 
+  // Label only — no invoice generated, no navigating away. Separate from
+  // handlePrintAndPack below since printing a label and generating an
+  // invoice used to always happen together, which was confusing (invoice
+  // PDF would open in a new tab the instant the label modal appeared).
+  const handlePrintLabelOnly = async () => {
+    setShowLabelPrinter(true);
+    if (currentOrder.status === 'confirmed') {
+      await handleStatusChange('packing');
+    }
+  };
+
   const handlePrintAndPack = async () => {
     setShowLabelPrinter(true);
     if (currentOrder.status === 'confirmed') {
@@ -736,8 +747,16 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
               WhatsApp
             </button>
             <button
-              onClick={handlePrintAndPack}
+              onClick={handlePrintLabelOnly}
               className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 font-medium text-sm"
+              title="Prints only the shipping label — no invoice"
+            >
+              <Printer className="w-4 h-4" />
+              Print Label
+            </button>
+            <button
+              onClick={handlePrintAndPack}
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium text-sm"
               title="Prints the shipping label, then opens the invoice PDF"
             >
               <Printer className="w-4 h-4" />

@@ -5,6 +5,7 @@ import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
 import { parseOrderPaste } from '../utils/orderPasteParser';
 import { generateA4LabelSheet } from '../utils/a4LabelSheet';
+import LabelPrinter from '../components/sales/LabelPrinter';
 
 const EMPTY_FIELDS = { name: '', phone: '', address: '', city: '', state: '', pincode: '' };
 
@@ -24,6 +25,7 @@ export default function QuickOrder() {
   const [shippingCharge, setShippingCharge] = useState(0);
   const [saving, setSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(null); // the last saved order, with phone attached for printing
+  const [showLabelPrinter, setShowLabelPrinter] = useState(false);
 
   // The SKU's own Selling Price (set in SKU Management) is the master price
   // for orders — Weekly and Monthly are separate fields there. Pricing
@@ -199,7 +201,7 @@ export default function QuickOrder() {
     resetForm();
   };
 
-  const handlePrintJustSaved = () => {
+  const handlePrintA4Sheet = () => {
     if (!justSaved) return;
     generateA4LabelSheet([justSaved]);
     showToast('Label downloaded — 1 label on an A4 sheet (5 slots left blank)', 'success');
@@ -224,12 +226,19 @@ export default function QuickOrder() {
             <Check className="w-4 h-4 flex-shrink-0" /> Order {justSaved.order_number} saved — ready for the next one
           </span>
           <div className="flex items-center gap-1 flex-shrink-0">
-            <button onClick={handlePrintJustSaved} className="flex items-center gap-1.5 px-3 py-1 bg-white text-green-700 rounded-md text-xs font-semibold hover:bg-green-50">
+            <button onClick={() => setShowLabelPrinter(true)} className="flex items-center gap-1.5 px-3 py-1 bg-white text-green-700 rounded-md text-xs font-semibold hover:bg-green-50">
               <Printer className="w-3.5 h-3.5" /> Print Label
+            </button>
+            <button onClick={handlePrintA4Sheet} className="flex items-center gap-1.5 px-3 py-1 bg-white text-green-700 rounded-md text-xs font-semibold hover:bg-green-50">
+              <Printer className="w-3.5 h-3.5" /> A4 Sheet
             </button>
             <button onClick={() => setJustSaved(null)} className="text-white/80 hover:text-white text-xs px-1.5">✕</button>
           </div>
         </div>
+      )}
+
+      {showLabelPrinter && justSaved && (
+        <LabelPrinter order={justSaved} onClose={() => setShowLabelPrinter(false)} />
       )}
 
       <div className="flex-1 overflow-y-auto px-4 py-4 pb-32">
