@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Check, Minus, Plus, Trash2, Loader2, AlertTriangle, Printer } from 'lucide-react';
 import { useApp } from '../context/AppContext';
@@ -66,9 +66,15 @@ export default function QuickOrder() {
     if (parsed.phone) runPhoneLookup(parsed.phone);
   };
 
+  const phoneLookupTimer = useRef(null);
   const handleFieldChange = (key, val) => {
     setFields(prev => ({ ...prev, [key]: val }));
-    if (key === 'phone') runPhoneLookup(val);
+    if (key === 'phone') {
+      // Wait for her to stop typing before hitting the DB — otherwise every
+      // digit of a 10-digit number fires its own lookup call.
+      clearTimeout(phoneLookupTimer.current);
+      phoneLookupTimer.current = setTimeout(() => runPhoneLookup(val), 400);
+    }
   };
 
   const addItem = (sku, packType) => {

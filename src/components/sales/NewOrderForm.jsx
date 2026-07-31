@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, Plus, Trash2, AlertTriangle, Phone, CheckCircle } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { dbService } from '../../services/supabase';
@@ -88,31 +88,37 @@ export default function NewOrderForm({ onClose }) {
   }, [formData.items, formData.gstRate, formData.discountPercent, formData.discountAmount, formData.shippingCharge, formData.paymentStatus]);
 
   // Phone-first customer lookup — type the mobile number, we find (or offer to create) the customer
-  const handlePhoneInputChange = async (val) => {
+  const phoneLookupTimer = useRef(null);
+  const handlePhoneInputChange = (val) => {
     setPhoneInput(val);
     setSelectedCustomer(null);
     setFormData(prev => ({ ...prev, customerName: '', customerId: undefined, shippingAddress: '' }));
 
     const digits = val.replace(/[^0-9]/g, '');
+    clearTimeout(phoneLookupTimer.current);
     if (digits.length < 10) {
       setPhoneLookupStatus('idle');
       return;
     }
 
     setPhoneLookupStatus('searching');
-    const found = await dbService.findCustomerByPhone(digits);
-    if (found) {
-      setSelectedCustomer(found);
-      setFormData(prev => ({
-        ...prev,
-        customerName: found.name,
-        customerId: found.id,
-        shippingAddress: found.address || '',
-      }));
-      setPhoneLookupStatus('found');
-    } else {
-      setPhoneLookupStatus('not_found');
-    }
+    // Wait for her to stop typing before hitting the DB — otherwise every
+    // digit of a 10-digit number fires its own lookup call.
+    phoneLookupTimer.current = setTimeout(async () => {
+      const found = await dbService.findCustomerByPhone(digits);
+      if (found) {
+        setSelectedCustomer(found);
+        setFormData(prev => ({
+          ...prev,
+          customerName: found.name,
+          customerId: found.id,
+          shippingAddress: found.address || '',
+        }));
+        setPhoneLookupStatus('found');
+      } else {
+        setPhoneLookupStatus('not_found');
+      }
+    }, 400);
   };
 
   const handleChangeCustomer = () => {
@@ -348,14 +354,17 @@ export default function NewOrderForm({ onClose }) {
                   type="tel"
                   placeholder="Phone *"
                   value={newCustomer.phone}
-                  onChange={async (e) => {
+                  onChange={(e) => {
                     const val = e.target.value;
                     setNewCustomer(prev => ({ ...prev, phone: val }));
                     setPhoneMatch(null);
                     const digits = val.replace(/[^0-9]/g, '');
+                    clearTimeout(phoneLookupTimer.current);
                     if (digits.length >= 10) {
-                      const found = await dbService.findCustomerByPhone(digits);
-                      if (found) setPhoneMatch(found);
+                      phoneLookupTimer.current = setTimeout(async () => {
+                        const found = await dbService.findCustomerByPhone(digits);
+                        if (found) setPhoneMatch(found);
+                      }, 400);
                     }
                   }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"

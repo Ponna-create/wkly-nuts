@@ -1089,11 +1089,19 @@ const _realDbService = {
     try {
       const phone = String(customer.phone || '').replace(/[^0-9]/g, '').slice(-10);
 
-      // Try to find by phone first — compare cleaned digits on both sides
-      // (some stored numbers have spaces/dashes that break a plain LIKE match)
+      // Try to find by phone first. Every phone is normalized to clean
+      // digits on write, so an exact match covers virtually every case and
+      // stays fast (indexed) regardless of table size — only fall back to
+      // fetching everything if that somehow misses (e.g. a legacy row that
+      // slipped through before normalization existed).
       if (phone.length === 10) {
-        const { data: allCustomers } = await supabase.from('customers').select('*');
-        const existing = (allCustomers || []).find(c => (c.phone || '').replace(/[^0-9]/g, '').slice(-10) === phone) || null;
+        let existing = null;
+        const { data: exact } = await supabase.from('customers').select('*').eq('phone', phone).limit(1).maybeSingle();
+        existing = exact || null;
+        if (!existing) {
+          const { data: allCustomers } = await supabase.from('customers').select('*');
+          existing = (allCustomers || []).find(c => (c.phone || '').replace(/[^0-9]/g, '').slice(-10) === phone) || null;
+        }
 
         if (existing) {
           // Update address/email if the new data has more info
@@ -3499,8 +3507,12 @@ const _realDbService = {
     try {
       const cleaned = phone.replace(/\D/g, '').slice(-10);
       if (cleaned.length < 10) return null;
-      // Compare cleaned digits on both sides — some stored numbers have spaces/
-      // dashes (e.g. " 84381 13437"), which breaks a plain LIKE substring match.
+      // Every phone is normalized to clean digits on write, so an exact
+      // match is fast (indexed) and covers virtually every case. Only fall
+      // back to fetching everything (and fuzzy-matching spaces/dashes) if
+      // that misses — a legacy row that slipped through before normalization.
+      const { data: exact } = await supabase.from('customers').select('*').eq('phone', cleaned).limit(1).maybeSingle();
+      if (exact) return exact;
       const { data } = await supabase.from('customers').select('*');
       return (data || []).find(c => (c.phone || '').replace(/\D/g, '').slice(-10) === cleaned) || null;
     } catch { return null; }
