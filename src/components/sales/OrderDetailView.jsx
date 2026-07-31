@@ -21,6 +21,9 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
   const [trackingInput, setTrackingInput] = useState(order.tracking_number || '');
   const [courierInput, setCourierInput] = useState(order.courier_name || 'ST Courier');
   const [savingTracking, setSavingTracking] = useState(false);
+  const [editingOrder, setEditingOrder] = useState(false);
+  const [editForm, setEditForm] = useState(null);
+  const [savingOrder, setSavingOrder] = useState(false);
 
   // Sync with parent order prop when it changes (e.g., after BulkTrackingEntry updates)
   useEffect(() => {
@@ -184,6 +187,67 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
     setSavingTracking(false);
   };
 
+  // Order edit — fix a mistyped address/pincode or a wrong item/qty/price
+  // after the order was already saved.
+  const startEditOrder = () => {
+    setEditForm({
+      customer_name: currentOrder.customer_name || '',
+      shipping_address: currentOrder.shipping_address || '',
+      shipping_charge: currentOrder.shipping_charge || 0,
+      items: (currentOrder.items || []).map(i => ({ ...i })),
+    });
+    setEditingOrder(true);
+  };
+
+  const updateEditItem = (idx, key, val) => {
+    setEditForm(prev => {
+      const items = prev.items.map((it, i) => {
+        if (i !== idx) return it;
+        const quantity = key === 'quantity' ? parseFloat(val) || 0 : parseFloat(it.quantity) || 0;
+        const unitPrice = key === 'unit_price' ? parseFloat(val) || 0 : parseFloat(it.unit_price ?? it.unitPrice) || 0;
+        return { ...it, quantity, unit_price: unitPrice, total: quantity * unitPrice };
+      });
+      return { ...prev, items };
+    });
+  };
+
+  const removeEditItem = (idx) => {
+    setEditForm(prev => ({ ...prev, items: prev.items.filter((_, i) => i !== idx) }));
+  };
+
+  const handleSaveOrderEdit = async () => {
+    setSavingOrder(true);
+    const subtotal = editForm.items.reduce((s, i) => s + (parseFloat(i.total) || 0), 0);
+    const gstRate = currentOrder.gst_rate || 5;
+    const gstAmount = subtotal * gstRate / 100;
+    const discount = currentOrder.discount_amount || 0;
+    const shippingCharge = parseFloat(editForm.shipping_charge) || 0;
+    const totalAmount = subtotal + gstAmount - discount + shippingCharge;
+
+    const updatedOrder = {
+      ...currentOrder,
+      customer_name: editForm.customer_name,
+      shipping_address: editForm.shipping_address,
+      items: editForm.items,
+      shipping_charge: shippingCharge,
+      subtotal,
+      gst_amount: gstAmount,
+      total_amount: totalAmount,
+    };
+
+    const { error } = await dbService.updateSalesOrder(updatedOrder);
+    if (error) {
+      showToast('Error saving changes', 'error');
+    } else {
+      setCurrentOrder(updatedOrder);
+      dispatch({ type: 'UPDATE_SALES_ORDER', payload: updatedOrder });
+      showToast('Order updated', 'success');
+      setEditingOrder(false);
+      onUpdate();
+    }
+    setSavingOrder(false);
+  };
+
   // Generate Invoice from Order
   const handleGenerateInvoice = async () => {
     // If invoice already linked, try to show it
@@ -329,19 +393,49 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
           )}
 
           {/* Customer */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <p className="text-xs font-semibold text-gray-500 uppercase">Customer</p>
-              <p className="text-lg font-bold text-gray-900">{currentOrder.customer_name}</p>
-              {currentOrder.phone && <p className="text-sm text-gray-600">{currentOrder.phone}</p>}
+          <div className="flex items-start justify-between">
+            <div className="grid grid-cols-2 gap-4 flex-1">
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase">Customer</p>
+                {editingOrder ? (
+                  <input
+                    type="text"
+                    value={editForm.customer_name}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, customer_name: e.target.value }))}
+                    className="w-full mt-1 px-2 py-1 border border-gray-300 rounded text-sm font-medium"
+                  />
+                ) : (
+                  <p className="text-lg font-bold text-gray-900">{currentOrder.customer_name}</p>
+                )}
+                {currentOrder.phone && <p className="text-sm text-gray-600">{currentOrder.phone}</p>}
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase">Source</p>
+                <p className="text-lg font-bold text-gray-900 capitalize">{currentOrder.order_source}</p>
+              </div>
             </div>
-            <div>
-              <p className="text-xs font-semibold text-gray-500 uppercase">Source</p>
-              <p className="text-lg font-bold text-gray-900 capitalize">{currentOrder.order_source}</p>
-            </div>
+            {!editingOrder && (
+              <button
+                onClick={startEditOrder}
+                className="flex items-center gap-1 text-xs text-teal-600 hover:text-teal-700 font-medium whitespace-nowrap ml-2"
+              >
+                <Edit2 className="w-3 h-3" />
+                Edit Order
+              </button>
+            )}
           </div>
 
-          {currentOrder.shipping_address && (
+          {editingOrder ? (
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase">Shipping Address</p>
+              <textarea
+                value={editForm.shipping_address}
+                onChange={(e) => setEditForm(prev => ({ ...prev, shipping_address: e.target.value }))}
+                rows={3}
+                className="w-full mt-1 px-2 py-1 border border-gray-300 rounded text-sm"
+              />
+            </div>
+          ) : currentOrder.shipping_address && (
             <div>
               <p className="text-xs font-semibold text-gray-500 uppercase">Shipping Address</p>
               <p className="text-sm text-gray-700 mt-1">{currentOrder.shipping_address}</p>
@@ -351,7 +445,72 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
           {/* Items */}
           <div className="space-y-3">
             <h3 className="font-bold text-gray-900">Items</h3>
-            {currentOrder.items && currentOrder.items.length > 0 ? (
+            {editingOrder ? (
+              <div className="space-y-2">
+                {editForm.items.map((item, idx) => (
+                  <div key={idx} className="flex items-center justify-between gap-2 p-3 bg-gray-50 rounded-lg">
+                    <div className="flex-1">
+                      <p className="font-medium text-gray-900">{item.sku_name || item.skuName}</p>
+                      <p className="text-sm text-gray-600 capitalize">{item.pack_type || item.packType} Pack</p>
+                    </div>
+                    <input
+                      type="number"
+                      min="1"
+                      value={item.quantity}
+                      onChange={(e) => updateEditItem(idx, 'quantity', e.target.value)}
+                      className="w-14 px-2 py-1 border border-gray-300 rounded text-sm text-center"
+                    />
+                    <div className="flex items-center">
+                      <span className="text-sm text-gray-500 mr-1">₹</span>
+                      <input
+                        type="number"
+                        min="0"
+                        value={item.unit_price ?? item.unitPrice ?? 0}
+                        onChange={(e) => updateEditItem(idx, 'unit_price', e.target.value)}
+                        className="w-20 px-2 py-1 border border-gray-300 rounded text-sm text-right"
+                      />
+                    </div>
+                    <button
+                      onClick={() => removeEditItem(idx)}
+                      className="p-1 text-red-500 hover:bg-red-50 rounded"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+                {editForm.items.length === 0 && (
+                  <p className="text-gray-500 text-sm">All items removed — order will save with no items.</p>
+                )}
+                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <span className="text-sm text-gray-600">Shipping charge</span>
+                  <div className="flex items-center">
+                    <span className="text-sm text-gray-500 mr-1">₹</span>
+                    <input
+                      type="number"
+                      value={editForm.shipping_charge}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, shipping_charge: e.target.value }))}
+                      className="w-20 px-2 py-1 border border-gray-300 rounded text-sm text-right"
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <button
+                    onClick={handleSaveOrderEdit}
+                    disabled={savingOrder}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-teal-600 text-white rounded-lg text-sm hover:bg-teal-700 disabled:opacity-50"
+                  >
+                    {savingOrder ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                    Save Changes
+                  </button>
+                  <button
+                    onClick={() => setEditingOrder(false)}
+                    className="px-3 py-1.5 text-gray-600 hover:bg-gray-200 rounded-lg text-sm"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : currentOrder.items && currentOrder.items.length > 0 ? (
               <div className="space-y-2">
                 {currentOrder.items.map((item, idx) => (
                   <div key={idx} className="flex justify-between p-3 bg-gray-50 rounded-lg">
