@@ -5,6 +5,7 @@ import { dbService } from '../services/supabase';
 import NewOrderForm from '../components/sales/NewOrderForm';
 import OrderDetailView from '../components/sales/OrderDetailView';
 import BulkTrackingEntry from '../components/sales/BulkTrackingEntry';
+import TrackingScanner from '../components/sales/TrackingScanner';
 import BulkWhatsAppSend from '../components/sales/BulkWhatsAppSend';
 import QRScanner from '../components/sales/QRScanner';
 import ZohoImport from '../components/sales/ZohoImport';
@@ -21,6 +22,7 @@ export default function SalesOrders() {
   const [showNewOrderForm, setShowNewOrderForm] = useState(false);
   const [showDetailView, setShowDetailView] = useState(false);
   const [showTrackingEntry, setShowTrackingEntry] = useState(false);
+  const [showTrackingScanner, setShowTrackingScanner] = useState(false);
   const [showQRScanner, setShowQRScanner] = useState(false);
   const [showZohoImport, setShowZohoImport] = useState(false);
   const [showTrackingImport, setShowTrackingImport] = useState(false);
@@ -171,6 +173,14 @@ export default function SalesOrders() {
           >
             <Zap className="w-4 h-4" />
             Tracking
+          </button>
+          <button
+            onClick={() => setShowTrackingScanner(true)}
+            className="flex items-center gap-2 px-3 py-2 bg-fuchsia-600 text-white rounded-lg hover:bg-fuchsia-700 transition text-sm font-medium"
+            title="Scan the barcode on courier slips to set tracking numbers"
+          >
+            <Camera className="w-4 h-4" />
+            Scan Slips
           </button>
           <button
             onClick={() => setShowBulkWhatsApp(true)}
@@ -424,6 +434,14 @@ export default function SalesOrders() {
             setShowTrackingEntry(false);
             loadOrders();
           }}
+          onUpdate={() => loadOrders()}
+        />
+      )}
+
+      {showTrackingScanner && (
+        <TrackingScanner
+          orders={orders.filter(o => o.status === 'collected')}
+          onClose={() => setShowTrackingScanner(false)}
           onUpdate={() => loadOrders()}
         />
       )}
