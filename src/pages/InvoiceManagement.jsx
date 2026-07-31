@@ -1875,7 +1875,7 @@ export default function InvoiceManagement() {
           const row = [
             inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString('en-IN') : '',
             inv.invoiceNumber || '', customer?.name || '', customer?.gstin || '',
-            item.skuName || 'Unknown', getHSN(item.skuName), qty, taxable.toFixed(2),
+            item.skuName || 'Unknown', item.hsnCode || getHSN(item.skuName), qty, taxable.toFixed(2),
             cgst.toFixed(2), sgst.toFixed(2), igst.toFixed(2), tax.toFixed(2), (taxable + tax).toFixed(2), channel
           ].map(c => { const s = String(c || ''); return s.includes(',') ? `"${s}"` : s; });
           csvRows.push(row.join(','));
