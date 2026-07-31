@@ -76,5 +76,20 @@ export function parseAddress(text) {
     result.state = CITY_STATE[foundCity.toLowerCase()];
   }
 
+  // Old-style postal division numbers ("Trichy-4", "Chennai-11") predate the
+  // 6-digit PIN system but people (especially long-time residents) still
+  // write addresses this way. Deliberately NOT converted into a guessed PIN
+  // here — getting even one digit wrong can misroute a package, which is
+  // worse than leaving it blank. Just flagged so the warning shown to
+  // whoever's placing the order can say *why* it's missing and what to ask
+  // the customer for, instead of a generic "no pincode found".
+  if (!pincode) {
+    const oldStyleMatch = text.match(/\b([A-Za-z]+)\s*-\s*(\d{1,3})\b/);
+    if (oldStyleMatch) {
+      const cityMatch = CITIES.find(c => c.toLowerCase() === oldStyleMatch[1].toLowerCase());
+      if (cityMatch) result.oldStylePostalCode = `${cityMatch}-${oldStyleMatch[2]}`;
+    }
+  }
+
   return result;
 }

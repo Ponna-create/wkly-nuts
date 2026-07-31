@@ -8,7 +8,7 @@ import { generateA4LabelSheet } from '../utils/a4LabelSheet';
 import LabelPrinter from '../components/sales/LabelPrinter';
 import { buildInvoiceDataFromOrder } from '../utils/invoiceFromOrder';
 
-const EMPTY_FIELDS = { name: '', phone: '', address: '', city: '', state: '', pincode: '' };
+const EMPTY_FIELDS = { name: '', phone: '', address: '', city: '', state: '', pincode: '', oldStylePostalCode: '' };
 
 export default function QuickOrder() {
   const { state, dispatch, showToast } = useApp();
@@ -395,7 +395,13 @@ export default function QuickOrder() {
                   placeholder="Pincode"
                   className={`w-full px-3 py-2 border rounded-lg text-sm ${pincodeMissing ? 'border-amber-400 bg-amber-50' : 'border-gray-300'}`}
                 />
-                {pincodeMissing && <p className="text-xs text-amber-600 mt-0.5">No pincode found — add it for the shipping label</p>}
+                {pincodeMissing && (
+                  <p className="text-xs text-amber-600 mt-0.5">
+                    {fields.oldStylePostalCode
+                      ? `"${fields.oldStylePostalCode}" is an old-style code, not a 6-digit PIN — ask the customer for their current pincode`
+                      : 'No pincode found — add it for the shipping label'}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -491,7 +497,7 @@ export default function QuickOrder() {
                   {[fields.city, fields.state].filter(Boolean).join(', ')}
                   {fields.city || fields.state ? ' - ' : ''}
                   <span className={pincodeMissing ? 'text-amber-600 font-medium' : ''}>
-                    {fields.pincode.trim() || '⚠ pincode missing'}
+                    {fields.pincode.trim() || (fields.oldStylePostalCode ? `⚠ old-style code (${fields.oldStylePostalCode}), ask for real PIN` : '⚠ pincode missing')}
                   </span>
                 </p>
                 <p className={`text-xs pt-1 ${phoneInvalid ? 'text-red-600 font-medium' : 'text-gray-700'}`}>

@@ -80,5 +80,6 @@ export function parseOrderPaste(text) {
     city: addr.city || '',
     state: addr.state || '',
     pincode: addr.pincode || '',
+    oldStylePostalCode: addr.oldStylePostalCode || '',
   };
 }
