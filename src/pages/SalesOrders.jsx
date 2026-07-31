@@ -12,6 +12,7 @@ import TrackingCSVImport from '../components/sales/TrackingCSVImport';
 import TrackingChecker from '../components/sales/TrackingChecker';
 import BulkLabelPrint from '../components/sales/BulkLabelPrint';
 import A4LabelSheet from '../components/sales/A4LabelSheet';
+import { fillTemplate, loadTemplates } from '../components/sales/WhatsAppSender';
 
 export default function SalesOrders() {
   const { state, dispatch, showToast } = useApp();
@@ -107,6 +108,20 @@ export default function SalesOrders() {
   const handleViewOrder = (order) => {
     setSelectedOrder(order);
     setShowDetailView(true);
+  };
+
+  // One tap from the list — opens WhatsApp with the tracking message
+  // pre-filled, she just taps Send in WhatsApp itself. wa.me links can't
+  // send with zero taps (WhatsApp doesn't allow that from a plain link),
+  // so this is as close to 1-click as it gets without the paid Business API.
+  const handleSendTrackingWhatsApp = (order) => {
+    const templates = loadTemplates();
+    const template = templates.dispatched?.template || templates.tracking_update?.template;
+    if (!template) return;
+    const message = fillTemplate(template, order);
+    const phone = order.phone?.replace(/[^0-9]/g, '') || '';
+    const formattedPhone = phone.startsWith('91') ? phone : `91${phone}`;
+    window.open(`https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`, '_blank');
   };
 
   const handleDeleteOrder = async (orderId) => {
@@ -337,6 +352,15 @@ export default function SalesOrders() {
                       <td className="px-4 py-3 text-sm text-gray-600">{order.order_date}</td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-1">
+                          {order.tracking_number && order.phone && (
+                            <button
+                              onClick={() => handleSendTrackingWhatsApp(order)}
+                              className="p-1.5 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded transition"
+                              title="Send tracking via WhatsApp"
+                            >
+                              <MessageCircle className="w-4 h-4" />
+                            </button>
+                          )}
                           <button
                             onClick={() => handleViewOrder(order)}
                             className="p-1.5 text-gray-600 hover:text-teal-600 hover:bg-teal-50 rounded transition"

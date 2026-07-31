@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Check, Minus, Plus, Trash2, Loader2, AlertTriangle, Printer } from 'lucide-react';
 import { useApp } from '../context/AppContext';
@@ -34,6 +34,23 @@ export default function QuickOrder() {
   const getPricingForSku = useCallback((sku, packType) => {
     return (packType === 'monthly' ? sku.monthlySellingPrice : sku.sellingPrice) || 0;
   }, []);
+
+  // Repeat-customer context — pulled from orders already loaded app-wide,
+  // no extra query needed. Counts this as their next order (previous + 1)
+  // so it reads "3rd order" the moment she's placing their 3rd, not after.
+  const repeatStats = useMemo(() => {
+    if (!selectedCustomer) return null;
+    const prev = (state.salesOrders || []).filter(o => String(o.customer_id) === String(selectedCustomer.id));
+    if (prev.length === 0) return null;
+    const totalSpent = prev.reduce((s, o) => s + (o.total_amount || 0), 0);
+    return { orderNumber: prev.length + 1, totalSpent };
+  }, [selectedCustomer, state.salesOrders]);
+
+  const ordinal = (n) => {
+    const s = ['th', 'st', 'nd', 'rd'];
+    const v = n % 100;
+    return n + (s[(v - 20) % 10] || s[v] || s[0]);
+  };
 
   const runPhoneLookup = async (phone) => {
     const digits = (phone || '').replace(/\D/g, '');
@@ -231,6 +248,37 @@ export default function QuickOrder() {
     showToast('Label downloaded — 1 label on an A4 sheet (5 slots left blank)', 'success');
   };
 
+  // Batch print — process a stack of orders back-to-back via paste + Save
+  // (the form already clears itself after each save), then print everyone's
+  // labels on one A4 sheet at the end instead of one at a time.
+  const todaysOrders = useMemo(() => {
+    const today = new Date().toISOString().split('T')[0];
+    return (state.salesOrders || []).filter(o => o.order_date === today);
+  }, [state.salesOrders]);
+
+  const handlePrintTodaysLabels = async () => {
+    if (todaysOrders.length === 0) {
+      showToast("No orders for today yet", 'error');
+      return;
+    }
+    generateA4LabelSheet(todaysOrders);
+    showToast(`Printed ${todaysOrders.length} label(s) for today's orders`, 'success');
+    // Same as single-order printing — make sure every one of these has an
+    // invoice record for GST filing, not just the ones already printed individually.
+    for (const o of todaysOrders) {
+      if (o.invoice_id) continue;
+      try {
+        const invoiceData = buildInvoiceDataFromOrder(o, 'Auto-generated on label print', skus);
+        const { data: autoInvoice, error } = await dbService.createInvoice(invoiceData);
+        if (error || !autoInvoice) continue;
+        await dbService.updateSalesOrder({ id: o.id, invoice_id: autoInvoice.id });
+        dispatch({ type: 'ADD_INVOICE', payload: autoInvoice });
+      } catch (invErr) {
+        console.warn('Auto-invoice failed for', o.order_number, invErr);
+      }
+    }
+  };
+
   const packOptions = ['weekly', 'monthly'];
 
   return (
@@ -241,7 +289,13 @@ export default function QuickOrder() {
           <ArrowLeft className="w-4 h-4" /> Dashboard
         </Link>
         <h1 className="text-base font-bold text-gray-900">Quick Order</h1>
-        <div className="w-20" />
+        <button
+          onClick={handlePrintTodaysLabels}
+          className="flex items-center gap-1 text-xs font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-md px-2 py-1.5 whitespace-nowrap"
+          title="Print all of today's orders as A4 label sheets"
+        >
+          <Printer className="w-3.5 h-3.5" /> Today ({todaysOrders.length})
+        </button>
       </div>
 
       {justSaved && (
@@ -368,6 +422,11 @@ export default function QuickOrder() {
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-amber-600">New customer</span>
                 )}
                 {phoneInvalid && <p className="text-xs text-red-600 mt-0.5">Not a valid 10-digit number</p>}
+                {repeatStats && (
+                  <p className="text-xs font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-md px-2 py-1 mt-1.5 inline-block">
+                    🔁 Repeat customer — {ordinal(repeatStats.orderNumber)} order · ₹{repeatStats.totalSpent.toFixed(0)} lifetime
+                  </p>
+                )}
               </div>
               <textarea
                 value={fields.address}
