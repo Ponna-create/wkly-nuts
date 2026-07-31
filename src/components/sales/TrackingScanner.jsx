@@ -26,11 +26,13 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
   const [readingFile, setReadingFile] = useState(false);
   const [ocrLoading, setOcrLoading] = useState(false);
   const [aiSuggestion, setAiSuggestion] = useState(null); // { order, confidence, matchedVia, trackingNumber }
+  const [queueProgress, setQueueProgress] = useState(null); // { current, total } while working through a multi-photo upload
   const html5QrCodeRef = useRef(null);
   const lastScanTimeRef = useRef(0);
   const processingRef = useRef(false);
   const fileInputRef = useRef(null);
   const aiFileInputRef = useRef(null);
+  const queueRef = useRef({ files: [], mode: null }); // remaining files in a multi-photo upload
 
   const unlinkedOrders = orders.filter(o => !linkedOrders[o.id]);
 
@@ -69,6 +71,7 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
     const alreadyLinked = Object.values(linkedOrders).includes(code);
     if (alreadyLinked) {
       showToast('This slip is already linked to an order', 'error');
+      if (queueRef.current.files.length > 0 || queueProgress) advanceQueue();
       return;
     }
     setScannedCode(code);
@@ -84,16 +87,20 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
 
   // Reading an already-taken photo (gallery, photocopy scan, etc.) instead
   // of live-scanning the physical slip — same barcode decoder, just fed a
-  // still image rather than a camera stream.
-  const handleFileSelected = async (e) => {
-    const file = e.target.files?.[0];
-    e.target.value = ''; // allow picking the same file again later
-    if (!file) return;
+  // still image rather than a camera stream. Multiple files selected at
+  // once are processed one at a time via the queue below, so a whole
+  // day's stack of slip photos can go in one pick.
+  const handleFileSelected = (e) => {
+    const files = e.target.files;
+    e.target.value = ''; // allow picking the same file(s) again later
+    if (!files || files.length === 0) return;
+    startQueue(files, 'barcode');
+  };
 
+  const processBarcodeFile = async (file) => {
     setError(null);
     setReadingFile(true);
     if (scanning) await stopScanner();
-
     try {
       if (!html5QrCodeRef.current) {
         html5QrCodeRef.current = new Html5Qrcode('tracking-scan-reader');
@@ -102,10 +109,40 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
       applyDecodedCode(decodedText);
     } catch (err) {
       console.error('File scan error:', err);
-      setError("Couldn't find a barcode in that photo — try a clearer/closer photo, or scan live.");
+      if (queueRef.current.files.length > 0 || queueProgress) {
+        showToast("Couldn't find a barcode in one photo — skipped it", 'error');
+        advanceQueue();
+      } else {
+        setError("Couldn't find a barcode in that photo — try a clearer/closer photo, or scan live.");
+      }
     } finally {
       setReadingFile(false);
     }
+  };
+
+  // Drives both upload paths through a shared queue so a batch of photos
+  // (picked all at once) gets processed one at a time — each one still
+  // pauses on the same confirm/pick-order step as a single upload, so
+  // nothing gets linked without her tapping it.
+  const startQueue = (fileList, mode) => {
+    const files = Array.from(fileList);
+    queueRef.current = { files, mode };
+    setQueueProgress({ current: 1, total: files.length });
+    advanceQueue();
+  };
+
+  const advanceQueue = () => {
+    const { files, mode } = queueRef.current;
+    if (files.length === 0) {
+      queueRef.current = { files: [], mode: null };
+      setQueueProgress(null);
+      return;
+    }
+    const [file, ...rest] = files;
+    queueRef.current = { files: rest, mode };
+    setQueueProgress(prev => (prev ? { current: prev.total - rest.length, total: prev.total } : null));
+    if (mode === 'barcode') processBarcodeFile(file);
+    else processAiFile(file);
   };
 
   const linkOrder = async (order, code) => {
@@ -141,6 +178,9 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
     setScannedCode(null);
     setAiSuggestion(null);
     showToast(`${order.order_number} → ${code}`, 'success');
+    // Mid-batch — move straight to the next photo instead of waiting on her
+    // to tap an upload button again.
+    if (queueRef.current.files.length > 0 || queueProgress) advanceQueue();
   };
 
   const handlePickOrder = (order) => linkOrder(order, scannedCode);
@@ -148,16 +188,26 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
   // AI photo read (Google Cloud Vision OCR, server-side) — reads whatever
   // text is on the slip and guesses the order via phone number (high
   // confidence) or a fuzzy name match (shown as a suggestion, never
-  // auto-committed — she still taps Confirm).
-  const handleAiFileSelected = async (e) => {
-    const file = e.target.files?.[0];
+  // auto-committed — she still taps Confirm). Multiple files at once run
+  // through the same queue as the barcode upload above.
+  const handleAiFileSelected = (e) => {
+    const files = e.target.files;
     e.target.value = '';
-    if (!file) return;
+    if (!files || files.length === 0) return;
+    startQueue(files, 'ai');
+  };
 
+  const processAiFile = async (file) => {
     setError(null);
     setAiSuggestion(null);
     setOcrLoading(true);
     if (scanning) await stopScanner();
+
+    const inBatch = queueRef.current.files.length > 0 || queueProgress;
+    const skip = (msg) => {
+      if (inBatch) { showToast(msg, 'error'); advanceQueue(); }
+      else setError(msg);
+    };
 
     try {
       const base64 = await fileToBase64(file);
@@ -168,13 +218,13 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
       });
       const data = await res.json();
       if (!res.ok || !data.text) {
-        setError("Couldn't read any text in that photo — try a clearer photo, or scan the barcode instead.");
+        skip("Couldn't read any text in one photo — skipped");
         return;
       }
 
       const match = findBestOrderMatch(data.text, unlinkedOrders);
       if (!match.trackingNumber) {
-        setError("Found text but no tracking number in it — try a clearer/closer photo of the barcode area.");
+        skip('No tracking number found in one photo — skipped');
         return;
       }
       if (!match.order) {
@@ -186,7 +236,7 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
       setAiSuggestion(match);
     } catch (err) {
       console.error('AI scan error:', err);
-      setError("Couldn't read that photo — try again or scan the barcode instead.");
+      skip('AI read failed for one photo — skipped');
     } finally {
       setOcrLoading(false);
     }
@@ -214,6 +264,12 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
         </div>
 
         <div className="p-4 space-y-4">
+          {queueProgress && (
+            <div className="p-2 bg-blue-50 border border-blue-200 rounded-lg text-center text-sm text-blue-700 font-medium">
+              Processing photo {queueProgress.current} of {queueProgress.total}
+            </div>
+          )}
+
           {!scannedCode && !aiSuggestion && (
             <div className="relative bg-black rounded-lg overflow-hidden" style={{ minHeight: '220px' }}>
               <div id="tracking-scan-reader" className="w-full" />
@@ -225,14 +281,15 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
                   </button>
                   <button onClick={() => fileInputRef.current?.click()} disabled={readingFile || ocrLoading}
                     className="flex items-center gap-2 px-4 py-2 bg-white text-gray-700 rounded-lg hover:bg-gray-100 font-medium text-sm disabled:opacity-50">
-                    <ImageIcon className="w-4 h-4" /> {readingFile ? 'Reading photo...' : 'Upload Photo (barcode)'}
+                    <ImageIcon className="w-4 h-4" /> {readingFile ? 'Reading photo...' : 'Upload Photos (barcode)'}
                   </button>
                   <button onClick={() => aiFileInputRef.current?.click()} disabled={readingFile || ocrLoading}
                     className="flex items-center gap-2 px-4 py-2 bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-200 rounded-lg hover:bg-fuchsia-100 font-medium text-sm disabled:opacity-50">
-                    <ImageIcon className="w-4 h-4" /> {ocrLoading ? 'Reading photo...' : 'Upload Photo (full slip)'}
+                    <ImageIcon className="w-4 h-4" /> {ocrLoading ? 'Reading photo...' : 'Upload Photos (full slip)'}
                   </button>
-                  <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileSelected} className="hidden" />
-                  <input ref={aiFileInputRef} type="file" accept="image/*" onChange={handleAiFileSelected} className="hidden" />
+                  <p className="text-xs text-gray-400">Tip: select multiple photos at once to go through a whole stack</p>
+                  <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleFileSelected} className="hidden" />
+                  <input ref={aiFileInputRef} type="file" accept="image/*" multiple onChange={handleAiFileSelected} className="hidden" />
                 </div>
               )}
             </div>
@@ -300,10 +357,13 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
                 </div>
               )}
               <button
-                onClick={() => setScannedCode(null)}
+                onClick={() => {
+                  setScannedCode(null);
+                  if (queueRef.current.files.length > 0 || queueProgress) advanceQueue();
+                }}
                 className="w-full px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg border border-gray-300"
               >
-                Rescan this slip
+                {queueProgress ? 'Skip this photo' : 'Rescan this slip'}
               </button>
             </div>
           ) : (
