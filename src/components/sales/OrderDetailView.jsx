@@ -129,15 +129,18 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
     }
   };
 
-  // Label only — no invoice generated, no navigating away. Separate from
-  // handlePrintAndPack below since printing a label and generating an
-  // invoice used to always happen together, which was confusing (invoice
-  // PDF would open in a new tab the instant the label modal appeared).
+  // Label only — the invoice record is still created & linked in the
+  // background (it has to exist for GST filing regardless), it just isn't
+  // opened/printed here. Separate from handlePrintAndPack below since the
+  // two used to always happen together, which was confusing (invoice PDF
+  // would open in a new tab the instant the label modal appeared).
   const handlePrintLabelOnly = async () => {
     setShowLabelPrinter(true);
     if (currentOrder.status === 'confirmed') {
       await handleStatusChange('packing');
     }
+    await ensureInvoiceForOrder(currentOrder);
+    onUpdate();
   };
 
   const handlePrintAndPack = async () => {

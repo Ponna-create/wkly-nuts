@@ -6,6 +6,7 @@ import { dbService } from '../services/supabase';
 import { parseOrderPaste } from '../utils/orderPasteParser';
 import { generateA4LabelSheet } from '../utils/a4LabelSheet';
 import LabelPrinter from '../components/sales/LabelPrinter';
+import { buildInvoiceDataFromOrder } from '../utils/invoiceFromOrder';
 
 const EMPTY_FIELDS = { name: '', phone: '', address: '', city: '', state: '', pincode: '' };
 
@@ -201,9 +202,32 @@ export default function QuickOrder() {
     resetForm();
   };
 
+  // The invoice record has to exist for GST filing regardless of whether
+  // she's actually printing it right now — create & link it quietly the
+  // first time a label is printed for this order.
+  const ensureInvoiceForJustSaved = async () => {
+    if (!justSaved || justSaved.invoice_id) return;
+    try {
+      const invoiceData = buildInvoiceDataFromOrder(justSaved, 'Auto-generated on label print', skus);
+      const { data: autoInvoice, error } = await dbService.createInvoice(invoiceData);
+      if (error || !autoInvoice) return;
+      await dbService.updateSalesOrder({ id: justSaved.id, invoice_id: autoInvoice.id });
+      dispatch({ type: 'ADD_INVOICE', payload: autoInvoice });
+      setJustSaved(prev => prev && prev.id === justSaved.id ? { ...prev, invoice_id: autoInvoice.id } : prev);
+    } catch (invErr) {
+      console.warn('Auto-invoice failed:', invErr);
+    }
+  };
+
+  const handlePrintLabel = () => {
+    setShowLabelPrinter(true);
+    ensureInvoiceForJustSaved();
+  };
+
   const handlePrintA4Sheet = () => {
     if (!justSaved) return;
     generateA4LabelSheet([justSaved]);
+    ensureInvoiceForJustSaved();
     showToast('Label downloaded — 1 label on an A4 sheet (5 slots left blank)', 'success');
   };
 
@@ -226,7 +250,7 @@ export default function QuickOrder() {
             <Check className="w-4 h-4 flex-shrink-0" /> Order {justSaved.order_number} saved — ready for the next one
           </span>
           <div className="flex items-center gap-1 flex-shrink-0">
-            <button onClick={() => setShowLabelPrinter(true)} className="flex items-center gap-1.5 px-3 py-1 bg-white text-green-700 rounded-md text-xs font-semibold hover:bg-green-50">
+            <button onClick={handlePrintLabel} className="flex items-center gap-1.5 px-3 py-1 bg-white text-green-700 rounded-md text-xs font-semibold hover:bg-green-50">
               <Printer className="w-3.5 h-3.5" /> Print Label
             </button>
             <button onClick={handlePrintA4Sheet} className="flex items-center gap-1.5 px-3 py-1 bg-white text-green-700 rounded-md text-xs font-semibold hover:bg-green-50">
