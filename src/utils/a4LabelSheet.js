@@ -68,9 +68,14 @@ function drawLabel(doc, x, y, w, h, order, business) {
   addrLines(business.registeredAddress || 'Chennai, Tamil Nadu', 9);
   phoneLine(business.phone, 9.5);
 
-  // Order block — sits right after From ends, not pinned to a fixed offset,
-  // so a longer address can't make it collide with the text above.
-  const orderTop = cy - 1.5;
+  // Order block — pinned to a fixed offset from the top of the label so
+  // every label on the sheet lines up at the same height (a short address
+  // used to leave this floating much higher than a long one, making the
+  // whole sheet look unaligned). Only overridden — pushed further down —
+  // for an address long enough that the fixed position would actually
+  // collide with it; that's the rare case, not the common one.
+  const FIXED_ORDER_OFFSET = 69;
+  const orderTop = Math.max(cy - 1.5, y + FIXED_ORDER_OFFSET);
   doc.setDrawColor(0, 0, 0); doc.setLineWidth(0.3);
   doc.line(x + pad, orderTop, x + w - pad, orderTop);
 
