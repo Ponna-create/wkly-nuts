@@ -31,7 +31,7 @@ function drawLabel(doc, x, y, w, h, order, business) {
   const blockLabel = (text) => {
     doc.setFont(undefined, 'bold'); doc.setFontSize(7); doc.setTextColor(85, 85, 85);
     doc.text(text.toUpperCase(), x + pad, cy);
-    cy += 4;
+    cy += 5.5;
   };
   const nameLine = (text, size) => {
     doc.setFont(undefined, 'bold'); doc.setFontSize(size); doc.setTextColor(17, 17, 17);
