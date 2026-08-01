@@ -91,9 +91,12 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
   // once are processed one at a time via the queue below, so a whole
   // day's stack of slip photos can go in one pick.
   const handleFileSelected = (e) => {
-    const files = e.target.files;
+    // Snapshot the files as a plain array BEFORE clearing the input — .value
+    // = '' resets the input's live FileList too (same object reference, not
+    // a copy), so clearing first silently emptied the whole batch.
+    const files = Array.from(e.target.files || []);
     e.target.value = ''; // allow picking the same file(s) again later
-    if (!files || files.length === 0) return;
+    if (files.length === 0) return;
     startQueue(files, 'barcode');
   };
 
@@ -191,9 +194,9 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
   // auto-committed — she still taps Confirm). Multiple files at once run
   // through the same queue as the barcode upload above.
   const handleAiFileSelected = (e) => {
-    const files = e.target.files;
+    const files = Array.from(e.target.files || []);
     e.target.value = '';
-    if (!files || files.length === 0) return;
+    if (files.length === 0) return;
     startQueue(files, 'ai');
   };
 
