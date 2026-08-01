@@ -1,4 +1,8 @@
-// App settings utility - stored in localStorage, synced across pages
+// App settings utility - stored in localStorage, synced across pages (but
+// NOT across devices — see syncBusinessInfoFromCloud below for the piece
+// that actually crosses devices).
+import { dbService } from '../services/supabase';
+
 const SETTINGS_KEY = 'wklyNutsSettings';
 
 export const getSettings = () => {
@@ -33,6 +37,13 @@ export const setChannelFee = (channel, pct) => {
 // Business info used on invoices & shipping labels (GSTIN, registered/return
 // address). Kept fully editable here — not hardcoded — so it can be added,
 // changed, or cleared any time without a code change.
+//
+// Read/write themselves stay synchronous (localStorage) since label/invoice
+// PDF generation needs this instantly, not after an await. Cross-device sync
+// happens two ways: setBusinessInfo also fire-and-forget pushes to Supabase,
+// and syncBusinessInfoFromCloud pulls the latest value into localStorage
+// once at app boot (called from AppContext) so a second device picks up
+// changes made on the first the next time it loads.
 export const getBusinessInfo = () => getSetting('businessInfo', {
   companyName: 'WKLY Nuts',
   gstin: '',
@@ -40,7 +51,19 @@ export const getBusinessInfo = () => getSetting('businessInfo', {
   returnAddress: '',
   phone: '',
 });
-export const setBusinessInfo = (info) => setSetting('businessInfo', info);
+export const setBusinessInfo = (info) => {
+  setSetting('businessInfo', info);
+  dbService.setAppSetting('businessInfo', info).catch(() => {});
+};
+
+export const syncBusinessInfoFromCloud = async () => {
+  try {
+    const { data } = await dbService.getAppSetting('businessInfo');
+    if (data) setSetting('businessInfo', data);
+  } catch (err) {
+    console.warn('Could not sync business info from cloud:', err);
+  }
+};
 
 // Channels manually added on the Omni Channels page that don't have any real
 // orders yet — without this they'd have nowhere to persist and "Add Channel"

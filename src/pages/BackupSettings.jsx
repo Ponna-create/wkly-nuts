@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Database, Download, Upload, Check, AlertCircle, AlertTriangle, Clock, HardDrive, Loader2, RefreshCw, Settings, Wifi, WifiOff, Building2, Save } from 'lucide-react';
 import { dbService } from '../services/supabase';
 import { useApp } from '../context/AppContext';
-import { getDbMode, setDbMode, getBusinessInfo, setBusinessInfo } from '../utils/settings';
+import { getDbMode, setDbMode, getBusinessInfo, setBusinessInfo, syncBusinessInfoFromCloud } from '../utils/settings';
 
 export default function BackupSettings() {
   const { showToast, useDatabase } = useApp();
@@ -17,6 +17,18 @@ export default function BackupSettings() {
   const [sameAsRegistered, setSameAsRegistered] = useState(
     !!getBusinessInfo().registeredAddress && getBusinessInfo().registeredAddress === getBusinessInfo().returnAddress
   );
+
+  // Belt-and-suspenders re-sync on this page specifically — the app-boot
+  // sync in AppContext should already cover this, but landing here directly
+  // (deep link, page refresh) shouldn't risk showing a stale value from
+  // whatever device saved last.
+  useEffect(() => {
+    syncBusinessInfoFromCloud().then(() => {
+      const fresh = getBusinessInfo();
+      setBusinessInfoState(fresh);
+      setSameAsRegistered(!!fresh.registeredAddress && fresh.registeredAddress === fresh.returnAddress);
+    });
+  }, []);
 
   // ==========================================
   // BUSINESS INFO (GSTIN, addresses) — used on invoices & shipping labels

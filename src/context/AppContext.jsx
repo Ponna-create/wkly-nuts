@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useReducer, useCallback, useEffect, useState } from 'react';
 import { dbService, isSupabaseAvailable } from '../services/supabase';
-import { getDbMode } from '../utils/settings';
+import { getDbMode, syncBusinessInfoFromCloud } from '../utils/settings';
 
 const AppContext = createContext();
 
@@ -462,7 +462,13 @@ export function AppProvider({ children }) {
       if (isSupabaseAvailable()) {
         try {
           setUseDatabase(true);
-          const [vendorsRes, skusRes, pricingRes, targetsRes, customersRes, invoicesRes, inventoryRes, ingredientsRes, salesOrdersRes, expensesRes, purchaseOrdersRes, documentsRes, productionRunsRes] = await Promise.all([
+          // Pull business info (company name, GSTIN, phone, address) down
+          // from the cloud before anything renders — it's read synchronously
+          // from localStorage elsewhere (label/invoice PDFs), so it has to
+          // land there before load finishes, otherwise a second device
+          // never sees changes made on the first one.
+          const [, vendorsRes, skusRes, pricingRes, targetsRes, customersRes, invoicesRes, inventoryRes, ingredientsRes, salesOrdersRes, expensesRes, purchaseOrdersRes, documentsRes, productionRunsRes] = await Promise.all([
+            syncBusinessInfoFromCloud(),
             dbService.getVendors(),
             dbService.getSKUs(),
             dbService.getPricingStrategies(),

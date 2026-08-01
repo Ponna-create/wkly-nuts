@@ -526,6 +526,34 @@ const _realDbService = {
   // ==========================================
   // STAFF (people paid for work)
   // ==========================================
+  // Small cross-device settings store (business info, etc.) — anything
+  // saved here is visible from any device, unlike localStorage which is
+  // per-browser and was the cause of business info not showing up on her
+  // wife's phone after being edited on her own computer.
+  async getAppSetting(key) {
+    if (!isSupabaseAvailable()) return { data: null, error: null };
+    try {
+      const { data, error } = await supabase.from('app_settings').select('value').eq('key', key).maybeSingle();
+      if (error) throw error;
+      return { data: data?.value ?? null, error: null };
+    } catch (error) {
+      console.error('Error fetching app setting:', error);
+      return { data: null, error };
+    }
+  },
+
+  async setAppSetting(key, value) {
+    if (!isSupabaseAvailable()) return { error: new Error('Supabase not configured') };
+    try {
+      const { error } = await supabase.from('app_settings').upsert({ key, value, updated_at: new Date().toISOString() });
+      if (error) throw error;
+      return { error: null };
+    } catch (error) {
+      console.error('Error saving app setting:', error);
+      return { error };
+    }
+  },
+
   async getStaff() {
     if (!isSupabaseAvailable()) return { data: [], error: null };
     try {
