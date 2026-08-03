@@ -1,18 +1,23 @@
 import React, { useState, useMemo } from 'react';
-import { X, MessageCircle, RefreshCw, Search } from 'lucide-react';
+import { X, MessageCircle, ExternalLink, Search } from 'lucide-react';
 import { dbService } from '../../services/supabase';
 import { fillTemplate, loadTemplates } from './WhatsAppSender';
-import { fetchCourierStatus } from '../../utils/courierStatusApi';
+
+// ST Courier's tracking page can't be pre-filled via URL (their form does a
+// server-side AJAX round trip, not a plain GET) — so the closest thing to
+// "one click" is copying the AWB and opening their page for her to paste in.
+const ST_COURIER_TRACKING_URL = 'https://stcourier.com/track/shipment';
+const openTrackingPage = (awb) => {
+  navigator.clipboard?.writeText(awb).catch(() => {});
+  window.open(ST_COURIER_TRACKING_URL, '_blank');
+};
 
 // One row per courier-tracked order — everything the slip scan (Scan Slips)
 // already extracted and matched, laid out as a list instead of buried in
-// the Sales Orders table. The Status column is a stand-in until a real
-// courier tracking API is wired up (see utils/courierStatusApi.js) — for
-// now it shows the pipeline status she's already set, with quick buttons
-// to update it herself.
+// the Sales Orders table. No live status API — she checks ST Courier's site
+// herself via the Track button and updates the status here with one tap.
 export default function CourierDashboard({ orders, onClose, onUpdate, showToast }) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [checkingId, setCheckingId] = useState(null);
 
   const trackedOrders = useMemo(() => {
     const list = (orders || []).filter(o => o.tracking_number);
@@ -46,11 +51,9 @@ export default function CourierDashboard({ orders, onClose, onUpdate, showToast 
     window.open(`https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`, '_blank');
   };
 
-  const handleCheckStatus = async (order) => {
-    setCheckingId(order.id);
-    const result = await fetchCourierStatus(order.tracking_number, order.courier_name);
-    setCheckingId(null);
-    showToast(result.status || result.note, result.status ? 'success' : 'info');
+  const handleTrackClick = (order) => {
+    openTrackingPage(order.tracking_number);
+    showToast(`${order.tracking_number} copied — paste it into ST Courier's search box`, 'success');
   };
 
   const handleQuickStatus = async (order, status) => {
@@ -127,12 +130,11 @@ export default function CourierDashboard({ orders, onClose, onUpdate, showToast 
                             <MessageCircle className="w-3.5 h-3.5" />
                           </button>
                           <button
-                            onClick={() => handleCheckStatus(o)}
-                            disabled={checkingId === o.id}
-                            title="Check live courier status (needs API key)"
-                            className="p-1.5 bg-gray-50 text-gray-600 border border-gray-200 rounded hover:bg-gray-100 disabled:opacity-50"
+                            onClick={() => handleTrackClick(o)}
+                            title="Copy tracking # and open ST Courier's tracking page"
+                            className="flex items-center gap-1 px-2 py-1 text-xs bg-indigo-50 text-indigo-700 border border-indigo-200 rounded hover:bg-indigo-100 whitespace-nowrap"
                           >
-                            <RefreshCw className={`w-3.5 h-3.5 ${checkingId === o.id ? 'animate-spin' : ''}`} />
+                            <ExternalLink className="w-3.5 h-3.5" /> Track
                           </button>
                           {o.status !== 'delivered' && (
                             <button
