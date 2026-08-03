@@ -24,6 +24,33 @@ export function extractTrackingFromText(text) {
   return candidates[0] || null;
 }
 
+// Courier slip's own printed/handwritten date (DD/MM or DD/MM/YY next to
+// "DATE") — kept separate from order_date/dispatch_date since it's what the
+// courier actually wrote down, not what we recorded in-app.
+export function extractSlipDateFromText(text) {
+  const match = text.match(/DATE[^\d]{0,6}(\d{1,2})[\/\-.](\d{1,2})(?:[\/\-.](\d{2,4}))?/i);
+  if (!match) return null;
+  const [, d, m, y] = match;
+  const day = d.padStart(2, '0');
+  const month = m.padStart(2, '0');
+  if (Number(day) > 31 || Number(month) > 12) return null;
+  let year = y ? (y.length === 2 ? `20${y}` : y) : String(new Date().getFullYear());
+  return `${year}-${month}-${day}`;
+}
+
+// Weight in KG, printed just above/near the "KG." label on ST Courier slips.
+export function extractWeightFromText(text) {
+  const match = text.match(/(\d+(?:[.,]\d+)?)\s*KG/i);
+  return match ? parseFloat(match[1].replace(',', '.')) : null;
+}
+
+// Cash/Credit amount box on the slip — the shipping charge the courier
+// collected, not necessarily what we charged the customer in-app.
+export function extractAmountFromText(text) {
+  const match = text.match(/(?:Cash|Credit)[^\d]{0,4}(\d{2,5})/i) || text.match(/₹\s?(\d{2,5})/);
+  return match ? parseFloat(match[1]) : null;
+}
+
 // Normalized Levenshtein similarity, 0 (no match) to 1 (identical).
 function similarity(a, b) {
   const s1 = (a || '').toLowerCase().trim();
@@ -46,14 +73,20 @@ function similarity(a, b) {
 }
 
 // Best guess at which order a slip belongs to. Tries phone first (high
-// confidence — a phone number is unique); falls back to fuzzy name matching
-// against the OCR'd text (lower confidence, always shown as "confirm this?").
+// confidence — a phone number is unique); falls back to fuzzy name matching,
+// boosted by a pincode hit (both signals present on the order already, no
+// need to re-key them off the slip) against the OCR'd text.
 export function findBestOrderMatch(ocrText, candidateOrders) {
   const trackingNumber = extractTrackingFromText(ocrText);
+  const slipDate = extractSlipDateFromText(ocrText);
+  const weight = extractWeightFromText(ocrText);
+  const amount = extractAmountFromText(ocrText);
+  const extracted = { trackingNumber, slipDate, weight, amount };
+
   const phone = extractPhoneFromText(ocrText);
   if (phone) {
     const match = candidateOrders.find(o => (o.phone || '').replace(/\D/g, '').slice(-10) === phone);
-    if (match) return { order: match, confidence: 1, matchedVia: 'phone', trackingNumber };
+    if (match) return { order: match, confidence: 1, matchedVia: 'phone', ...extracted };
   }
 
   const lowerText = ocrText.toLowerCase();
@@ -64,14 +97,22 @@ export function findBestOrderMatch(ocrText, candidateOrders) {
     // Direct substring hit (name appears verbatim somewhere in the OCR text)
     // beats fuzzy scoring — common for cleanly printed names.
     const directHit = lowerText.includes(name.toLowerCase());
-    const score = directHit ? 1 : similarity(name, extractLikelyNameLine(ocrText));
+    let score = directHit ? 1 : similarity(name, extractLikelyNameLine(ocrText));
+    // Pincode already on the order (from the customer record) appearing
+    // anywhere in the OCR text is a strong secondary signal — bump a
+    // decent name match up to auto-link territory instead of making her
+    // confirm something that's actually a solid match.
+    const pincode = String(order.shipping_pincode || order.pincode || '').trim();
+    if (pincode && pincode.length >= 5 && ocrText.includes(pincode)) {
+      score = Math.min(1, score + 0.25);
+    }
     if (!best || score > best.score) best = { order, score };
   }
 
   if (best && best.score >= 0.6) {
-    return { order: best.order, confidence: best.score, matchedVia: 'name', trackingNumber };
+    return { order: best.order, confidence: best.score, matchedVia: 'name', ...extracted };
   }
-  return { order: null, confidence: 0, matchedVia: null, trackingNumber };
+  return { order: null, confidence: 0, matchedVia: null, ...extracted };
 }
 
 // Heuristic: the "To" name on these slips is usually a short line (1-3

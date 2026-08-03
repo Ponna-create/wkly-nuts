@@ -148,7 +148,7 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
     else processAiFile(file);
   };
 
-  const linkOrder = async (order, code) => {
+  const linkOrder = async (order, code, extracted = {}) => {
     if (!code || saving) return;
     setSaving(true);
     const updatedOrder = {
@@ -157,6 +157,9 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
       courierName: order.courier_name || 'ST Courier',
       status: 'dispatched',
       dispatchDate: order.dispatch_date || new Date().toISOString().split('T')[0],
+      ...(extracted.weight != null && { shippingWeight: extracted.weight }),
+      ...(extracted.amount != null && { courierAmount: extracted.amount }),
+      ...(extracted.slipDate && { courierSlipDate: extracted.slipDate }),
     };
     const { error } = await dbService.updateSalesOrder(updatedOrder);
     setSaving(false);
@@ -175,6 +178,9 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
         courier_name: updatedOrder.courierName,
         status: 'dispatched',
         dispatch_date: updatedOrder.dispatchDate,
+        ...(updatedOrder.shippingWeight != null && { shipping_weight: updatedOrder.shippingWeight }),
+        ...(updatedOrder.courierAmount != null && { courier_amount: updatedOrder.courierAmount }),
+        ...(updatedOrder.courierSlipDate && { courier_slip_date: updatedOrder.courierSlipDate }),
       },
     });
     setLinkedOrders(prev => ({ ...prev, [order.id]: code }));
@@ -189,10 +195,11 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
   const handlePickOrder = (order) => linkOrder(order, scannedCode);
 
   // AI photo read (Google Cloud Vision OCR, server-side) — reads whatever
-  // text is on the slip and guesses the order via phone number (high
-  // confidence) or a fuzzy name match (shown as a suggestion, never
-  // auto-committed — she still taps Confirm). Multiple files at once run
-  // through the same queue as the barcode upload above.
+  // text is on the slip and guesses the order via phone number or a
+  // pincode-boosted name match. A confident match (phone, or name score
+  // >= 0.85) links straight away — no tap needed; only a genuinely
+  // uncertain guess stops and asks her to confirm. Multiple files at once
+  // run through the same queue as the barcode upload above.
   const handleAiFileSelected = (e) => {
     const files = Array.from(e.target.files || []);
     e.target.value = '';
@@ -234,6 +241,10 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
         // Got a tracking number but no confident order match — fall through
         // to the normal manual picker with this number pre-filled.
         applyDecodedCode(match.trackingNumber);
+        return;
+      }
+      if (match.matchedVia === 'phone' || match.confidence >= 0.85) {
+        linkOrder(match.order, match.trackingNumber, match);
         return;
       }
       setAiSuggestion(match);
@@ -319,7 +330,7 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
               </div>
               <div className="flex gap-2">
                 <button
-                  onClick={() => linkOrder(aiSuggestion.order, aiSuggestion.trackingNumber)}
+                  onClick={() => linkOrder(aiSuggestion.order, aiSuggestion.trackingNumber, aiSuggestion)}
                   disabled={saving}
                   className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 bg-teal-600 text-white rounded-lg hover:bg-teal-700 font-medium disabled:opacity-50"
                 >

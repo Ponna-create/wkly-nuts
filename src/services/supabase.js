@@ -2175,6 +2175,8 @@ const _realDbService = {
         phone: o.phone || o.customers?.phone || null,
         customer_name: o.customer_name || o.customers?.name || '',
         shipping_city: o.shipping_city || o.customers?.city || null,
+        shipping_state: o.customers?.state || null,
+        shipping_pincode: o.customers?.pincode || null,
       }));
 
       return { data: enriched, error: null };
@@ -2324,6 +2326,8 @@ const _realDbService = {
         ['estimated_delivery_date', 'estimatedDeliveryDate', 'estimated_delivery_date'],
         ['actual_delivery_date', 'actualDeliveryDate', 'actual_delivery_date'],
         ['shipping_weight', 'shippingWeight', 'shipping_weight'],
+        ['courier_amount', 'courierAmount', 'courier_amount'],
+        ['courier_slip_date', 'courierSlipDate', 'courier_slip_date'],
         ['qr_code_data', 'qrCodeData', 'qr_code_data'],
         ['invoice_id', 'invoiceId', 'invoice_id'],
         ['feedback_sent', 'feedbackSent', 'feedback_sent'],

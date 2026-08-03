@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Eye, Trash2, Zap, Camera, FileSpreadsheet, MessageCircle, Truck, Printer, LayoutGrid } from 'lucide-react';
+import { Plus, Search, Eye, Trash2, Zap, Camera, FileSpreadsheet, MessageCircle, Truck, Printer, LayoutGrid, ClipboardList } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
 import NewOrderForm from '../components/sales/NewOrderForm';
@@ -13,6 +13,7 @@ import TrackingCSVImport from '../components/sales/TrackingCSVImport';
 import TrackingChecker from '../components/sales/TrackingChecker';
 import BulkLabelPrint from '../components/sales/BulkLabelPrint';
 import A4LabelSheet from '../components/sales/A4LabelSheet';
+import CourierDashboard from '../components/sales/CourierDashboard';
 import { fillTemplate, loadTemplates } from '../components/sales/WhatsAppSender';
 
 export default function SalesOrders() {
@@ -30,6 +31,7 @@ export default function SalesOrders() {
   const [showTrackingChecker, setShowTrackingChecker] = useState(false);
   const [showBulkLabelPrint, setShowBulkLabelPrint] = useState(false);
   const [showA4LabelSheet, setShowA4LabelSheet] = useState(false);
+  const [showCourierDashboard, setShowCourierDashboard] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [filterStatus, setFilterStatus] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
@@ -181,6 +183,14 @@ export default function SalesOrders() {
           >
             <Camera className="w-4 h-4" />
             Scan Slips
+          </button>
+          <button
+            onClick={() => setShowCourierDashboard(true)}
+            className="flex items-center gap-2 px-3 py-2 bg-fuchsia-100 text-fuchsia-700 rounded-lg hover:bg-fuchsia-200 transition text-sm font-medium"
+            title="See all courier-tracked orders in one list — name, date, weight, amount, tracking #, WhatsApp, status"
+          >
+            <ClipboardList className="w-4 h-4" />
+            Courier Dashboard
           </button>
           <button
             onClick={() => setShowBulkWhatsApp(true)}
@@ -443,6 +453,15 @@ export default function SalesOrders() {
           orders={orders.filter(o => o.status === 'collected')}
           onClose={() => setShowTrackingScanner(false)}
           onUpdate={() => loadOrders()}
+        />
+      )}
+
+      {showCourierDashboard && (
+        <CourierDashboard
+          orders={orders}
+          onClose={() => setShowCourierDashboard(false)}
+          onUpdate={() => loadOrders()}
+          showToast={showToast}
         />
       )}
 
