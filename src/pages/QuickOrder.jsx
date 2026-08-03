@@ -252,19 +252,21 @@ export default function QuickOrder() {
 
   // Batch print — process a stack of orders back-to-back via paste + Save
   // (the form already clears itself after each save), then print everyone's
-  // labels on one A4 sheet at the end instead of one at a time.
+  // labels on one A4 sheet at the end instead of one at a time. Filters by
+  // the Order Date field's current value (not the real calendar date) so
+  // backdating an order (e.g. entering it a day late) still lets it be
+  // batch-printed under that date instead of only "real today".
   const todaysOrders = useMemo(() => {
-    const today = new Date().toISOString().split('T')[0];
-    return (state.salesOrders || []).filter(o => o.order_date === today);
-  }, [state.salesOrders]);
+    return (state.salesOrders || []).filter(o => o.order_date === orderDate);
+  }, [state.salesOrders, orderDate]);
 
   const handlePrintTodaysLabels = async () => {
     if (todaysOrders.length === 0) {
-      showToast("No orders for today yet", 'error');
+      showToast("No orders for the selected date yet", 'error');
       return;
     }
     generateA4LabelSheet(todaysOrders);
-    showToast(`Printed ${todaysOrders.length} label(s) for today's orders`, 'success');
+    showToast(`Printed ${todaysOrders.length} label(s) for ${orderDate}`, 'success');
     // Same as single-order printing — make sure every one of these has an
     // invoice record for GST filing, not just the ones already printed individually.
     for (const o of todaysOrders) {
@@ -302,9 +304,9 @@ export default function QuickOrder() {
           <button
             onClick={handlePrintTodaysLabels}
             className="flex items-center gap-1 text-xs font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-md px-2 py-1.5 whitespace-nowrap"
-            title="Print all of today's orders as A4 label sheets"
+            title={`Print all orders dated ${orderDate} as A4 label sheets`}
           >
-            <Printer className="w-3.5 h-3.5" /> Today ({todaysOrders.length})
+            <Printer className="w-3.5 h-3.5" /> {orderDate === new Date().toISOString().split('T')[0] ? 'Today' : orderDate} ({todaysOrders.length})
           </button>
         </div>
       </div>
