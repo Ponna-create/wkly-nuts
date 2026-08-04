@@ -57,7 +57,11 @@ export default async function handler(req, res) {
 
   try {
     const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+      // "-latest" alias always points at the current recommended Flash
+      // model, so this doesn't silently break again the next time Google
+      // retires a model version (gemini-2.0-flash, used here originally,
+      // was retired March 2026).
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
