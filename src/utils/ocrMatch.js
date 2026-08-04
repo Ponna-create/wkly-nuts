@@ -72,39 +72,44 @@ function similarity(a, b) {
   return 1 - distance / Math.max(m, n);
 }
 
-// Best guess at which order a slip belongs to. Tries phone first (high
-// confidence — a phone number is unique); falls back to fuzzy name matching,
-// boosted by a pincode hit (both signals present on the order already, no
-// need to re-key them off the slip) against the OCR'd text.
-export function findBestOrderMatch(ocrText, candidateOrders) {
-  const trackingNumber = extractTrackingFromText(ocrText);
-  const slipDate = extractSlipDateFromText(ocrText);
-  const weight = extractWeightFromText(ocrText);
-  const amount = extractAmountFromText(ocrText);
-  const guessedName = extractLikelyNameLine(ocrText);
+// Best guess at which order a slip belongs to. `slip` is the structured
+// object returned by api/scan-slip.js (Gemini-read fields: trackingNumber,
+// customerName, phone, weight, amount, date, rawText) — those fields are
+// used directly since Gemini already read them in context, with the old
+// regex extractors only as a fallback for whatever it left null. Tries
+// phone first (high confidence — a phone number is unique); falls back to
+// fuzzy name matching, boosted by a pincode hit against the raw text.
+export function findBestOrderMatch(slip, candidateOrders) {
+  const text = slip.text || slip.rawText || '';
+  const trackingNumber = slip.trackingNumber || extractTrackingFromText(text);
+  const slipDate = slip.date || extractSlipDateFromText(text);
+  const weight = slip.weight ?? extractWeightFromText(text);
+  const amount = slip.amount ?? extractAmountFromText(text);
+  const guessedName = slip.customerName || extractLikelyNameLine(text);
   const extracted = { trackingNumber, slipDate, weight, amount, guessedName };
 
-  const phone = extractPhoneFromText(ocrText);
-  if (phone) {
+  const rawPhone = slip.phone || extractPhoneFromText(text);
+  const phone = rawPhone ? String(rawPhone).replace(/\D/g, '').slice(-10) : null;
+  if (phone && phone.length === 10) {
     const match = candidateOrders.find(o => (o.phone || '').replace(/\D/g, '').slice(-10) === phone);
     if (match) return { order: match, confidence: 1, matchedVia: 'phone', bestCandidate: match, ...extracted };
   }
 
-  const lowerText = ocrText.toLowerCase();
+  const lowerText = text.toLowerCase();
   let best = null;
   for (const order of candidateOrders) {
     const name = order.customer_name || '';
-    if (!name) continue;
-    // Direct substring hit (name appears verbatim somewhere in the OCR text)
-    // beats fuzzy scoring — common for cleanly printed names.
-    const directHit = lowerText.includes(name.toLowerCase());
+    if (!name || !guessedName) continue;
+    // Direct hit (name appears verbatim, or matches the read name exactly)
+    // beats fuzzy scoring — common when Gemini reads the name cleanly.
+    const directHit = guessedName.toLowerCase() === name.toLowerCase() || lowerText.includes(name.toLowerCase());
     let score = directHit ? 1 : similarity(name, guessedName);
     // Pincode already on the order (from the customer record) appearing
-    // anywhere in the OCR text is a strong secondary signal — bump a
+    // anywhere in the raw text is a strong secondary signal — bump a
     // decent name match up to auto-link territory instead of making her
     // confirm something that's actually a solid match.
     const pincode = String(order.shipping_pincode || order.pincode || '').trim();
-    if (pincode && pincode.length >= 5 && ocrText.includes(pincode)) {
+    if (pincode && pincode.length >= 5 && text.includes(pincode)) {
       score = Math.min(1, score + 0.25);
     }
     if (!best || score > best.score) best = { order, score };
@@ -112,8 +117,8 @@ export function findBestOrderMatch(ocrText, candidateOrders) {
 
   // bestCandidate is returned even below the confirm threshold — the review
   // list still shows "closest guess: X (32%)" so she can tell at a glance
-  // whether it's a bad OCR read or genuinely not in the order list, instead
-  // of just "no match" with nothing to go on.
+  // whether it's a bad read or genuinely not in the order list, instead of
+  // just "no match" with nothing to go on.
   if (best && best.score >= 0.6) {
     return { order: best.order, confidence: best.score, matchedVia: 'name', bestCandidate: best.order, ...extracted };
   }

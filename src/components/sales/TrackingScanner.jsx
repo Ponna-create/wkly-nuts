@@ -181,13 +181,13 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
           body: JSON.stringify({ image: base64 }),
         });
         const data = await res.json();
-        if (!res.ok || !data.text) {
-          newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, reason: "Couldn't read any text in this photo" });
+        if (!res.ok || (!data.trackingNumber && !data.customerName && !data.rawText)) {
+          newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, reason: "Couldn't read anything in this photo" });
           continue;
         }
 
         const pool = orders.filter(o => !linkedIds.has(String(o.id)));
-        const match = findBestOrderMatch(data.text, pool);
+        const match = findBestOrderMatch(data, pool);
 
         if (!match.trackingNumber) {
           newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, guessedName: match.guessedName, reason: 'No tracking number found in this photo' });
