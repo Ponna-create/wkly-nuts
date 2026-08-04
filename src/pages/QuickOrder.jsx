@@ -313,7 +313,7 @@ export default function QuickOrder() {
 
       {showTrackingScanner && (
         <TrackingScanner
-          orders={(state.salesOrders || []).filter(o => o.status === 'collected')}
+          orders={(state.salesOrders || []).filter(o => !o.tracking_number && !['dispatched', 'transit', 'delivered', 'cancelled', 'returned'].includes(o.status))}
           onClose={() => setShowTrackingScanner(false)}
           onUpdate={() => {}}
         />

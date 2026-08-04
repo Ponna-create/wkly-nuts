@@ -450,7 +450,7 @@ export default function SalesOrders() {
 
       {showTrackingScanner && (
         <TrackingScanner
-          orders={orders.filter(o => o.status === 'collected')}
+          orders={orders.filter(o => !o.tracking_number && !['dispatched', 'transit', 'delivered', 'cancelled', 'returned'].includes(o.status))}
           onClose={() => setShowTrackingScanner(false)}
           onUpdate={() => loadOrders()}
         />
