@@ -1,6 +1,6 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
-import { X, Camera, Image as ImageIcon, CheckCircle, AlertCircle, Package } from 'lucide-react';
+import { X, Camera, Image as ImageIcon, CheckCircle, AlertCircle, Package, Search } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { dbService } from '../../services/supabase';
 import { findBestOrderMatch } from '../../utils/ocrMatch';
@@ -12,29 +12,36 @@ const fileToBase64 = (file) => new Promise((resolve, reject) => {
   reader.readAsDataURL(file);
 });
 
-// Scans the printed CONSIGNMENT NUMBER barcode straight off a courier's
-// paper slip (ST Courier etc.) instead of typing it in by hand. The
-// customer name on the slip is handwritten and too messy to read reliably,
-// so matching to the right order is a tap, not a guess.
+let reviewIdCounter = 0;
+const nextReviewId = () => `rv-${Date.now()}-${reviewIdCounter++}`;
+
+// Upload a whole stack of courier slip photos and it should feel like
+// dropping a pile of paper on the desk and having it sort itself — every
+// photo gets OCR'd and matched in the background with no pausing per
+// photo, confident matches (phone number, or a name backed by the order's
+// own pincode showing up on the slip) link themselves straight away, and
+// only the genuinely unclear ones (bad handwriting, no match found) land
+// in a "Needs Your Check" list at the end for a quick manual pick.
 export default function TrackingScanner({ orders, onClose, onUpdate }) {
   const { showToast, dispatch } = useApp();
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState(null);
-  const [scannedCode, setScannedCode] = useState(null);
+  const [scannedCode, setScannedCode] = useState(null); // live camera single-scan only
   const [linkedOrders, setLinkedOrders] = useState({}); // orderId -> tracking number
   const [saving, setSaving] = useState(false);
-  const [readingFile, setReadingFile] = useState(false);
-  const [ocrLoading, setOcrLoading] = useState(false);
-  const [aiSuggestion, setAiSuggestion] = useState(null); // { order, confidence, matchedVia, trackingNumber }
-  const [queueProgress, setQueueProgress] = useState(null); // { current, total } while working through a multi-photo upload
+  const [batchProgress, setBatchProgress] = useState(null); // { current, total } while a photo batch runs
+  const [reviewQueue, setReviewQueue] = useState([]); // items that need a manual pick after the batch
+  const [pickerOpenFor, setPickerOpenFor] = useState(null); // review item id whose "assign manually" search is open
+  const [pickerSearch, setPickerSearch] = useState('');
   const html5QrCodeRef = useRef(null);
   const lastScanTimeRef = useRef(0);
   const processingRef = useRef(false);
   const fileInputRef = useRef(null);
   const aiFileInputRef = useRef(null);
-  const queueRef = useRef({ files: [], mode: null }); // remaining files in a multi-photo upload
 
-  const unlinkedOrders = orders.filter(o => !linkedOrders[o.id]);
+  const unlinkedOrders = useMemo(() => orders.filter(o => !linkedOrders[o.id]), [orders, linkedOrders]);
+  const linkedCount = Object.keys(linkedOrders).length;
+  const busy = batchProgress != null;
 
   const startScanner = async () => {
     try {
@@ -66,91 +73,18 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
     setScanning(false);
   };
 
-  const applyDecodedCode = (rawText) => {
-    const code = rawText.trim();
-    const alreadyLinked = Object.values(linkedOrders).includes(code);
-    if (alreadyLinked) {
-      showToast('This slip is already linked to an order', 'error');
-      if (queueRef.current.files.length > 0 || queueProgress) advanceQueue();
-      return;
-    }
-    setScannedCode(code);
-  };
-
   const onScanSuccess = (decodedText) => {
     const now = Date.now();
     if (now - lastScanTimeRef.current < 2000) return;
     if (processingRef.current) return;
     lastScanTimeRef.current = now;
-    applyDecodedCode(decodedText);
+    setScannedCode(decodedText.trim());
   };
 
-  // Reading an already-taken photo (gallery, photocopy scan, etc.) instead
-  // of live-scanning the physical slip — same barcode decoder, just fed a
-  // still image rather than a camera stream. Multiple files selected at
-  // once are processed one at a time via the queue below, so a whole
-  // day's stack of slip photos can go in one pick.
-  const handleFileSelected = (e) => {
-    // Snapshot the files as a plain array BEFORE clearing the input — .value
-    // = '' resets the input's live FileList too (same object reference, not
-    // a copy), so clearing first silently emptied the whole batch.
-    const files = Array.from(e.target.files || []);
-    e.target.value = ''; // allow picking the same file(s) again later
-    if (files.length === 0) return;
-    startQueue(files, 'barcode');
-  };
-
-  const processBarcodeFile = async (file) => {
-    setError(null);
-    setReadingFile(true);
-    if (scanning) await stopScanner();
-    try {
-      if (!html5QrCodeRef.current) {
-        html5QrCodeRef.current = new Html5Qrcode('tracking-scan-reader');
-      }
-      const decodedText = await html5QrCodeRef.current.scanFile(file, false);
-      applyDecodedCode(decodedText);
-    } catch (err) {
-      console.error('File scan error:', err);
-      if (queueRef.current.files.length > 0 || queueProgress) {
-        showToast("Couldn't find a barcode in one photo — skipped it", 'error');
-        advanceQueue();
-      } else {
-        setError("Couldn't find a barcode in that photo — try a clearer/closer photo, or scan live.");
-      }
-    } finally {
-      setReadingFile(false);
-    }
-  };
-
-  // Drives both upload paths through a shared queue so a batch of photos
-  // (picked all at once) gets processed one at a time — each one still
-  // pauses on the same confirm/pick-order step as a single upload, so
-  // nothing gets linked without her tapping it.
-  const startQueue = (fileList, mode) => {
-    const files = Array.from(fileList);
-    queueRef.current = { files, mode };
-    setQueueProgress({ current: 1, total: files.length });
-    advanceQueue();
-  };
-
-  const advanceQueue = () => {
-    const { files, mode } = queueRef.current;
-    if (files.length === 0) {
-      queueRef.current = { files: [], mode: null };
-      setQueueProgress(null);
-      return;
-    }
-    const [file, ...rest] = files;
-    queueRef.current = { files: rest, mode };
-    setQueueProgress(prev => (prev ? { current: prev.total - rest.length, total: prev.total } : null));
-    if (mode === 'barcode') processBarcodeFile(file);
-    else processAiFile(file);
-  };
-
-  const linkOrder = async (order, code, extracted = {}) => {
-    if (!code || saving) return;
-    setSaving(true);
+  // Saves the tracking number onto an order. Returns true/false so batch
+  // processing can decide whether to move on or fall back to the review
+  // list. Pure side-effect function — no queue/UI logic in here.
+  const doLink = async (order, code, extracted = {}) => {
     const updatedOrder = {
       id: order.id,
       trackingNumber: code,
@@ -162,14 +96,8 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
       ...(extracted.slipDate && { courierSlipDate: extracted.slipDate }),
     };
     const { error } = await dbService.updateSalesOrder(updatedOrder);
-    setSaving(false);
-    if (error) {
-      showToast('Error saving tracking number', 'error');
-      return;
-    }
-    // Keep shared app state in sync too — this scanner is opened from more
-    // than one page (Sales Orders, Quick Order), and not every caller does
-    // its own full reload afterward.
+    if (error) return false;
+
     dispatch({
       type: 'UPDATE_SALES_ORDER',
       payload: {
@@ -184,79 +112,151 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
       },
     });
     setLinkedOrders(prev => ({ ...prev, [order.id]: code }));
-    setScannedCode(null);
-    setAiSuggestion(null);
-    showToast(`${order.order_number} → ${code}`, 'success');
-    // Mid-batch — move straight to the next photo instead of waiting on her
-    // to tap an upload button again.
-    if (queueRef.current.files.length > 0 || queueProgress) advanceQueue();
+    return true;
   };
 
-  const handlePickOrder = (order) => linkOrder(order, scannedCode);
+  // Single live-camera scan — still a one-at-a-time interactive flow (she's
+  // holding the slip under the camera), so it keeps the old scan → pick UI.
+  const handlePickOrder = async (order) => {
+    if (!scannedCode || saving) return;
+    setSaving(true);
+    const ok = await doLink(order, scannedCode);
+    setSaving(false);
+    if (!ok) { showToast('Error saving tracking number', 'error'); return; }
+    showToast(`${order.order_number} → ${scannedCode}`, 'success');
+    setScannedCode(null);
+  };
 
-  // AI photo read (Google Cloud Vision OCR, server-side) — reads whatever
-  // text is on the slip and guesses the order via phone number or a
-  // pincode-boosted name match. A confident match (phone, or name score
-  // >= 0.85) links straight away — no tap needed; only a genuinely
-  // uncertain guess stops and asks her to confirm. Multiple files at once
-  // run through the same queue as the barcode upload above.
-  const handleAiFileSelected = (e) => {
+  // Barcode-only upload: decodes the consignment number but there's no name
+  // on it to match against, so every file here always needs a manual pick —
+  // it still runs the whole batch without pausing, then queues them all up.
+  const handleFileSelected = async (e) => {
     const files = Array.from(e.target.files || []);
     e.target.value = '';
     if (files.length === 0) return;
-    startQueue(files, 'ai');
-  };
-
-  const processAiFile = async (file) => {
-    setError(null);
-    setAiSuggestion(null);
-    setOcrLoading(true);
     if (scanning) await stopScanner();
 
-    const inBatch = queueRef.current.files.length > 0 || queueProgress;
-    const skip = (msg) => {
-      if (inBatch) { showToast(msg, 'error'); advanceQueue(); }
-      else setError(msg);
-    };
-
-    try {
-      const base64 = await fileToBase64(file);
-      const res = await fetch('/api/scan-slip', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: base64 }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.text) {
-        skip("Couldn't read any text in one photo — skipped");
-        return;
+    setBatchProgress({ current: 0, total: files.length });
+    const newReview = [];
+    for (let i = 0; i < files.length; i++) {
+      setBatchProgress({ current: i + 1, total: files.length });
+      if (!html5QrCodeRef.current) html5QrCodeRef.current = new Html5Qrcode('tracking-scan-reader');
+      try {
+        const decodedText = await html5QrCodeRef.current.scanFile(files[i], false);
+        newReview.push({ id: nextReviewId(), trackingNumber: decodedText.trim(), order: null, reason: 'Barcode only — no name on it, pick the order' });
+      } catch {
+        newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, reason: "Couldn't find a barcode in this photo" });
       }
-
-      const match = findBestOrderMatch(data.text, unlinkedOrders);
-      if (!match.trackingNumber) {
-        skip('No tracking number found in one photo — skipped');
-        return;
-      }
-      if (!match.order) {
-        // Got a tracking number but no confident order match — fall through
-        // to the normal manual picker with this number pre-filled.
-        applyDecodedCode(match.trackingNumber);
-        return;
-      }
-      if (match.matchedVia === 'phone' || match.confidence >= 0.85) {
-        linkOrder(match.order, match.trackingNumber, match);
-        return;
-      }
-      setAiSuggestion(match);
-    } catch (err) {
-      console.error('AI scan error:', err);
-      skip('AI read failed for one photo — skipped');
-    } finally {
-      setOcrLoading(false);
     }
+    setBatchProgress(null);
+    setReviewQueue(prev => [...prev, ...newReview]);
+    showToast(`${newReview.length} photo${newReview.length !== 1 ? 's' : ''} added to Needs Your Check`, 'success');
   };
 
-  const linkedCount = Object.keys(linkedOrders).length;
+  // The magic path: reads the whole slip (Google Cloud Vision OCR,
+  // server-side), matches by phone or a pincode-boosted name match, and
+  // auto-links anything confident without stopping. Runs the entire batch
+  // straight through — only what's left over after all photos are read
+  // shows up for her to check.
+  const handleAiFileSelected = async (e) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (files.length === 0) return;
+    if (scanning) await stopScanner();
+
+    setError(null);
+    setBatchProgress({ current: 0, total: files.length });
+    const linkedIds = new Set(Object.keys(linkedOrders));
+    const newReview = [];
+    let autoLinked = 0;
+
+    for (let i = 0; i < files.length; i++) {
+      setBatchProgress({ current: i + 1, total: files.length });
+      const file = files[i];
+      try {
+        const base64 = await fileToBase64(file);
+        const res = await fetch('/api/scan-slip', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: base64 }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.text) {
+          newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, reason: "Couldn't read any text in this photo" });
+          continue;
+        }
+
+        const pool = orders.filter(o => !linkedIds.has(String(o.id)));
+        const match = findBestOrderMatch(data.text, pool);
+
+        if (!match.trackingNumber) {
+          newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, guessedName: match.guessedName, reason: 'No tracking number found in this photo' });
+          continue;
+        }
+
+        if (match.order && (match.matchedVia === 'phone' || match.confidence >= 0.85)) {
+          const ok = await doLink(match.order, match.trackingNumber, match);
+          if (ok) { linkedIds.add(String(match.order.id)); autoLinked++; }
+          else newReview.push({ id: nextReviewId(), trackingNumber: match.trackingNumber, order: match.order, ...match, reason: 'Matched but saving failed — try confirming again' });
+          continue;
+        }
+
+        // Medium/low confidence — surface exactly what it read so she can
+        // tell at a glance whether it's bad handwriting or a genuine no-match.
+        const reason = match.order
+          ? `${Math.round(match.confidence * 100)}% name match — please confirm`
+          : match.guessedName
+            ? `Couldn't confidently match "${match.guessedName}" — check the handwriting`
+            : "Couldn't read a name on this slip — pick manually";
+        newReview.push({ id: nextReviewId(), trackingNumber: match.trackingNumber, order: match.order, confidence: match.confidence, matchedVia: match.matchedVia, guessedName: match.guessedName, weight: match.weight, amount: match.amount, slipDate: match.slipDate, reason });
+      } catch (err) {
+        console.error('AI scan error:', err);
+        newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, reason: 'AI read failed for this photo' });
+      }
+    }
+
+    setBatchProgress(null);
+    setReviewQueue(prev => [...prev, ...newReview]);
+    showToast(
+      `${autoLinked} linked automatically${newReview.length ? `, ${newReview.length} need a quick check` : ''}`,
+      'success'
+    );
+  };
+
+  const confirmReviewItem = async (item) => {
+    if (!item.order || !item.trackingNumber || saving) return;
+    setSaving(true);
+    const ok = await doLink(item.order, item.trackingNumber, item);
+    setSaving(false);
+    if (!ok) { showToast('Error saving tracking number', 'error'); return; }
+    showToast(`${item.order.order_number} → ${item.trackingNumber}`, 'success');
+    setReviewQueue(prev => prev.filter(r => r.id !== item.id));
+  };
+
+  const assignReviewItem = async (item, order) => {
+    if (!item.trackingNumber || saving) return;
+    setSaving(true);
+    const ok = await doLink(order, item.trackingNumber, item);
+    setSaving(false);
+    if (!ok) { showToast('Error saving tracking number', 'error'); return; }
+    showToast(`${order.order_number} → ${item.trackingNumber}`, 'success');
+    setReviewQueue(prev => prev.filter(r => r.id !== item.id));
+    setPickerOpenFor(null);
+    setPickerSearch('');
+  };
+
+  const dismissReviewItem = (id) => setReviewQueue(prev => prev.filter(r => r.id !== id));
+
+  const pickerResults = useMemo(() => {
+    if (!pickerOpenFor) return [];
+    const q = pickerSearch.trim().toLowerCase();
+    const pool = unlinkedOrders;
+    if (!q) return pool.slice(0, 8);
+    return pool.filter(o =>
+      (o.customer_name || '').toLowerCase().includes(q) ||
+      (o.order_number || '').toLowerCase().includes(q)
+    ).slice(0, 8);
+  }, [pickerOpenFor, pickerSearch, unlinkedOrders]);
 
   const handleFinish = async () => {
     await stopScanner();
@@ -270,7 +270,9 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
         <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
           <div>
             <h2 className="text-xl font-bold text-gray-900">Scan Tracking Slips</h2>
-            <p className="text-sm text-gray-500 mt-1">{linkedCount} linked · {unlinkedOrders.length} order{unlinkedOrders.length !== 1 ? 's' : ''} left</p>
+            <p className="text-sm text-gray-500 mt-1">
+              {linkedCount} linked{reviewQueue.length > 0 ? ` · ${reviewQueue.length} need a check` : ''} · {unlinkedOrders.length} order{unlinkedOrders.length !== 1 ? 's' : ''} left
+            </p>
           </div>
           <button onClick={handleFinish} className="text-gray-500 hover:text-gray-700">
             <X className="w-6 h-6" />
@@ -278,30 +280,30 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
         </div>
 
         <div className="p-4 space-y-4">
-          {queueProgress && (
+          {batchProgress && (
             <div className="p-2 bg-blue-50 border border-blue-200 rounded-lg text-center text-sm text-blue-700 font-medium">
-              Processing photo {queueProgress.current} of {queueProgress.total}
+              Reading photo {batchProgress.current} of {batchProgress.total}...
             </div>
           )}
 
-          {!scannedCode && !aiSuggestion && (
+          {!scannedCode && (
             <div className="relative bg-black rounded-lg overflow-hidden" style={{ minHeight: '220px' }}>
               <div id="tracking-scan-reader" className="w-full" />
               {!scanning && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-gray-900">
-                  <button onClick={startScanner} disabled={readingFile || ocrLoading}
+                  <button onClick={startScanner} disabled={busy}
                     className="flex items-center gap-3 px-6 py-3 bg-teal-600 text-white rounded-lg hover:bg-teal-700 font-medium text-lg disabled:opacity-50">
                     <Camera className="w-6 h-6" /> Start Camera
                   </button>
-                  <button onClick={() => fileInputRef.current?.click()} disabled={readingFile || ocrLoading}
+                  <button onClick={() => aiFileInputRef.current?.click()} disabled={busy}
+                    className="flex items-center gap-2 px-4 py-2 bg-fuchsia-600 text-white rounded-lg hover:bg-fuchsia-700 font-medium text-sm disabled:opacity-50">
+                    <ImageIcon className="w-4 h-4" /> {busy ? 'Reading photos...' : 'Upload Photos (full slip — auto-matches)'}
+                  </button>
+                  <button onClick={() => fileInputRef.current?.click()} disabled={busy}
                     className="flex items-center gap-2 px-4 py-2 bg-white text-gray-700 rounded-lg hover:bg-gray-100 font-medium text-sm disabled:opacity-50">
-                    <ImageIcon className="w-4 h-4" /> {readingFile ? 'Reading photo...' : 'Upload Photos (barcode)'}
+                    <ImageIcon className="w-4 h-4" /> {busy ? 'Reading photos...' : 'Upload Photos (barcode only)'}
                   </button>
-                  <button onClick={() => aiFileInputRef.current?.click()} disabled={readingFile || ocrLoading}
-                    className="flex items-center gap-2 px-4 py-2 bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-200 rounded-lg hover:bg-fuchsia-100 font-medium text-sm disabled:opacity-50">
-                    <ImageIcon className="w-4 h-4" /> {ocrLoading ? 'Reading photo...' : 'Upload Photos (full slip)'}
-                  </button>
-                  <p className="text-xs text-gray-400">Tip: select multiple photos at once to go through a whole stack</p>
+                  <p className="text-xs text-gray-400">Select the whole stack at once — it reads all of them, then only asks about the ones it's unsure of</p>
                   <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleFileSelected} className="hidden" />
                   <input ref={aiFileInputRef} type="file" accept="image/*" multiple onChange={handleAiFileSelected} className="hidden" />
                 </div>
@@ -316,37 +318,7 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
             </div>
           )}
 
-          {aiSuggestion && (
-            <div className="space-y-3">
-              <div className="p-3 bg-fuchsia-50 border border-fuchsia-200 rounded-lg">
-                <p className="text-xs text-fuchsia-600 font-medium flex items-center gap-1">
-                  <CheckCircle className="w-3.5 h-3.5" /> SUGGESTED MATCH
-                  {aiSuggestion.matchedVia === 'phone' && ' — matched by phone number'}
-                  {aiSuggestion.matchedVia === 'name' && ` — ${Math.round(aiSuggestion.confidence * 100)}% name match`}
-                </p>
-                <p className="text-lg font-bold text-fuchsia-900 mt-1">{aiSuggestion.order.customer_name}</p>
-                <p className="text-xs text-gray-600">{aiSuggestion.order.order_number} · {aiSuggestion.order.shipping_address?.slice(0, 50) || ''}</p>
-                <p className="text-sm font-mono text-gray-700 mt-1">Tracking: {aiSuggestion.trackingNumber}</p>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => linkOrder(aiSuggestion.order, aiSuggestion.trackingNumber, aiSuggestion)}
-                  disabled={saving}
-                  className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 bg-teal-600 text-white rounded-lg hover:bg-teal-700 font-medium disabled:opacity-50"
-                >
-                  <CheckCircle className="w-4 h-4" /> Confirm — this is correct
-                </button>
-                <button
-                  onClick={() => { applyDecodedCode(aiSuggestion.trackingNumber); setAiSuggestion(null); }}
-                  className="px-4 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 font-medium text-gray-700 text-sm"
-                >
-                  Not this one
-                </button>
-              </div>
-            </div>
-          )}
-
-          {scannedCode ? (
+          {scannedCode && (
             <div className="space-y-3">
               <div className="p-3 bg-teal-50 border border-teal-200 rounded-lg">
                 <p className="text-xs text-teal-600 font-medium">SCANNED CONSIGNMENT NUMBER</p>
@@ -371,19 +343,93 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
                 </div>
               )}
               <button
-                onClick={() => {
-                  setScannedCode(null);
-                  if (queueRef.current.files.length > 0 || queueProgress) advanceQueue();
-                }}
+                onClick={() => setScannedCode(null)}
                 className="w-full px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg border border-gray-300"
               >
-                {queueProgress ? 'Skip this photo' : 'Rescan this slip'}
+                Rescan this slip
               </button>
             </div>
-          ) : (
-            unlinkedOrders.length === 0 && linkedCount > 0 && (
-              <p className="text-sm text-gray-500 text-center py-4">All orders linked — you're done!</p>
-            )
+          )}
+
+          {reviewQueue.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="font-bold text-gray-900 text-sm flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-600" /> Needs Your Check ({reviewQueue.length})
+              </h3>
+              {reviewQueue.map(item => (
+                <div key={item.id} className="p-3 bg-amber-50 border border-amber-200 rounded-lg space-y-2">
+                  {item.trackingNumber && (
+                    <p className="text-xs font-mono text-gray-600">Tracking: {item.trackingNumber}</p>
+                  )}
+                  <p className="text-sm text-amber-800">{item.reason}</p>
+
+                  {item.order && (
+                    <div className="p-2 bg-white border border-amber-200 rounded">
+                      <p className="text-sm font-semibold text-gray-900">{item.order.customer_name}</p>
+                      <p className="text-xs text-gray-500">{item.order.order_number} · {item.order.shipping_address?.slice(0, 50) || ''}</p>
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap gap-1.5">
+                    {item.order && item.trackingNumber && (
+                      <button
+                        onClick={() => confirmReviewItem(item)}
+                        disabled={saving}
+                        className="flex items-center gap-1 px-2.5 py-1.5 bg-teal-600 text-white rounded text-xs font-medium hover:bg-teal-700 disabled:opacity-50"
+                      >
+                        <CheckCircle className="w-3.5 h-3.5" /> Confirm
+                      </button>
+                    )}
+                    {item.trackingNumber && (
+                      <button
+                        onClick={() => { setPickerOpenFor(pickerOpenFor === item.id ? null : item.id); setPickerSearch(''); }}
+                        className="flex items-center gap-1 px-2.5 py-1.5 bg-white border border-gray-300 rounded text-xs font-medium text-gray-700 hover:bg-gray-50"
+                      >
+                        <Search className="w-3.5 h-3.5" /> {item.order ? 'Not this one' : 'Pick order'}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => dismissReviewItem(item.id)}
+                      className="px-2.5 py-1.5 text-xs text-gray-500 hover:bg-gray-100 rounded"
+                    >
+                      Skip
+                    </button>
+                  </div>
+
+                  {pickerOpenFor === item.id && (
+                    <div className="pt-1 space-y-1.5">
+                      <input
+                        autoFocus
+                        value={pickerSearch}
+                        onChange={(e) => setPickerSearch(e.target.value)}
+                        placeholder="Search customer or order #..."
+                        className="w-full px-2.5 py-1.5 border border-gray-300 rounded text-sm"
+                      />
+                      <div className="space-y-1 max-h-40 overflow-y-auto">
+                        {pickerResults.map(o => (
+                          <button
+                            key={o.id}
+                            onClick={() => assignReviewItem(item, o)}
+                            disabled={saving}
+                            className="w-full text-left px-2 py-1.5 border border-gray-200 rounded hover:border-teal-400 hover:bg-teal-50 text-sm disabled:opacity-50"
+                          >
+                            <span className="font-medium text-gray-900">{o.customer_name}</span>
+                            <span className="text-xs text-gray-500 ml-1.5">{o.order_number}</span>
+                          </button>
+                        ))}
+                        {pickerResults.length === 0 && (
+                          <p className="text-xs text-gray-400 text-center py-2">No matching orders</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {reviewQueue.length === 0 && !scannedCode && unlinkedOrders.length === 0 && linkedCount > 0 && (
+            <p className="text-sm text-gray-500 text-center py-4">All orders linked — you're done!</p>
           )}
 
           {linkedCount > 0 && (

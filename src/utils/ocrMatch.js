@@ -81,12 +81,13 @@ export function findBestOrderMatch(ocrText, candidateOrders) {
   const slipDate = extractSlipDateFromText(ocrText);
   const weight = extractWeightFromText(ocrText);
   const amount = extractAmountFromText(ocrText);
-  const extracted = { trackingNumber, slipDate, weight, amount };
+  const guessedName = extractLikelyNameLine(ocrText);
+  const extracted = { trackingNumber, slipDate, weight, amount, guessedName };
 
   const phone = extractPhoneFromText(ocrText);
   if (phone) {
     const match = candidateOrders.find(o => (o.phone || '').replace(/\D/g, '').slice(-10) === phone);
-    if (match) return { order: match, confidence: 1, matchedVia: 'phone', ...extracted };
+    if (match) return { order: match, confidence: 1, matchedVia: 'phone', bestCandidate: match, ...extracted };
   }
 
   const lowerText = ocrText.toLowerCase();
@@ -97,7 +98,7 @@ export function findBestOrderMatch(ocrText, candidateOrders) {
     // Direct substring hit (name appears verbatim somewhere in the OCR text)
     // beats fuzzy scoring — common for cleanly printed names.
     const directHit = lowerText.includes(name.toLowerCase());
-    let score = directHit ? 1 : similarity(name, extractLikelyNameLine(ocrText));
+    let score = directHit ? 1 : similarity(name, guessedName);
     // Pincode already on the order (from the customer record) appearing
     // anywhere in the OCR text is a strong secondary signal — bump a
     // decent name match up to auto-link territory instead of making her
@@ -109,15 +110,19 @@ export function findBestOrderMatch(ocrText, candidateOrders) {
     if (!best || score > best.score) best = { order, score };
   }
 
+  // bestCandidate is returned even below the confirm threshold — the review
+  // list still shows "closest guess: X (32%)" so she can tell at a glance
+  // whether it's a bad OCR read or genuinely not in the order list, instead
+  // of just "no match" with nothing to go on.
   if (best && best.score >= 0.6) {
-    return { order: best.order, confidence: best.score, matchedVia: 'name', ...extracted };
+    return { order: best.order, confidence: best.score, matchedVia: 'name', bestCandidate: best.order, ...extracted };
   }
-  return { order: null, confidence: 0, matchedVia: null, ...extracted };
+  return { order: null, confidence: best?.score || 0, matchedVia: null, bestCandidate: best?.order || null, ...extracted };
 }
 
 // Heuristic: the "To" name on these slips is usually a short line (1-3
 // words), not a sentence — take the shortest non-numeric line as a guess.
-function extractLikelyNameLine(text) {
+export function extractLikelyNameLine(text) {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   const nameLines = lines.filter(l => l.length > 1 && l.length < 30 && !/\d{4,}/.test(l));
   if (nameLines.length === 0) return '';
