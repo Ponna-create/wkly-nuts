@@ -310,8 +310,16 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
 
         <div className="p-4 space-y-4">
           {batchProgress && (
-            <div className="p-2 bg-blue-50 border border-blue-200 rounded-lg text-center text-sm text-blue-700 font-medium">
-              Reading photo {batchProgress.current} of {batchProgress.total}...
+            <div className="p-2 bg-blue-50 border border-blue-200 rounded-lg space-y-1.5">
+              <p className="text-center text-sm text-blue-700 font-medium">
+                Reading photo {batchProgress.current} of {batchProgress.total}...
+              </p>
+              <div className="w-full h-2 bg-blue-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-blue-600 rounded-full transition-all duration-300"
+                  style={{ width: `${Math.round((batchProgress.current / batchProgress.total) * 100)}%` }}
+                />
+              </div>
             </div>
           )}
 
