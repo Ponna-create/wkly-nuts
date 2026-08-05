@@ -166,53 +166,82 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
 
     setError(null);
     setBatchProgress({ current: 0, total: files.length });
-    const linkedIds = new Set(Object.keys(linkedOrders));
-    const newReview = [];
-    let autoLinked = 0;
 
-    for (let i = 0; i < files.length; i++) {
-      setBatchProgress({ current: i + 1, total: files.length });
-      const file = files[i];
+    // Phase 1: read every photo with Gemini, 2 at a time. This is the slow
+    // part (a few seconds of actual model "thinking" per photo, plus the
+    // free tier's own 10-requests/minute cap) — running them one at a time
+    // wasted that budget. 2 concurrent stays safely under the cap without
+    // tripping 429s on a normal-sized batch. Kept as a separate pass from
+    // matching/linking below so two photos in flight at once can never both
+    // grab the same order — that part stays strictly sequential.
+    const ocrResults = new Array(files.length);
+    let completed = 0;
+    const CONCURRENCY = 2;
+    const readOne = async (i) => {
       try {
-        const base64 = await fileToBase64(file);
+        const base64 = await fileToBase64(files[i]);
         const res = await fetch('/api/scan-slip', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ image: base64 }),
         });
         const data = await res.json();
-        if (!res.ok || (!data.trackingNumber && !data.customerName && !data.rawText)) {
-          newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, reason: "Couldn't read anything in this photo" });
-          continue;
-        }
-
-        const pool = orders.filter(o => !linkedIds.has(String(o.id)));
-        const match = findBestOrderMatch(data, pool);
-
-        if (!match.trackingNumber) {
-          newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, guessedName: match.guessedName, reason: 'No tracking number found in this photo' });
-          continue;
-        }
-
-        if (match.order && (match.matchedVia === 'phone' || match.confidence >= 0.85)) {
-          const ok = await doLink(match.order, match.trackingNumber, match);
-          if (ok) { linkedIds.add(String(match.order.id)); autoLinked++; }
-          else newReview.push({ id: nextReviewId(), trackingNumber: match.trackingNumber, order: match.order, ...match, reason: 'Matched but saving failed — try confirming again' });
-          continue;
-        }
-
-        // Medium/low confidence — surface exactly what it read so she can
-        // tell at a glance whether it's bad handwriting or a genuine no-match.
-        const reason = match.order
-          ? `${Math.round(match.confidence * 100)}% name match — please confirm`
-          : match.guessedName
-            ? `Couldn't confidently match "${match.guessedName}" — check the handwriting`
-            : "Couldn't read a name on this slip — pick manually";
-        newReview.push({ id: nextReviewId(), trackingNumber: match.trackingNumber, order: match.order, confidence: match.confidence, matchedVia: match.matchedVia, guessedName: match.guessedName, weight: match.weight, amount: match.amount, slipDate: match.slipDate, reason });
+        ocrResults[i] = { ok: res.ok, status: res.status, data };
       } catch (err) {
         console.error('AI scan error:', err);
-        newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, reason: 'AI read failed for this photo' });
+        ocrResults[i] = { ok: false, error: err };
       }
+      completed++;
+      setBatchProgress({ current: completed, total: files.length });
+    };
+    const worker = async (start) => {
+      for (let i = start; i < files.length; i += CONCURRENCY) await readOne(i);
+    };
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, files.length) }, (_, w) => worker(w)));
+
+    // Phase 2: match + link in original order, sequentially and fast (no
+    // more waiting on Gemini here).
+    const linkedIds = new Set(Object.keys(linkedOrders));
+    const newReview = [];
+    let autoLinked = 0;
+
+    for (let i = 0; i < files.length; i++) {
+      const result = ocrResults[i];
+      if (!result || !result.ok) {
+        const reason = result?.status === 429 ? "Rate limited — wait a minute and re-upload this one" : "Couldn't read anything in this photo";
+        newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, reason });
+        continue;
+      }
+      const data = result.data;
+      if (!data.trackingNumber && !data.customerName && !data.rawText) {
+        newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, reason: "Couldn't read anything in this photo" });
+        continue;
+      }
+
+      const pool = orders.filter(o => !linkedIds.has(String(o.id)));
+      const match = findBestOrderMatch(data, pool);
+
+      if (!match.trackingNumber) {
+        newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, guessedName: match.guessedName, reason: 'No tracking number found in this photo' });
+        continue;
+      }
+
+      if (match.order && (match.matchedVia === 'phone' || match.confidence >= 0.85)) {
+        linkedIds.add(String(match.order.id)); // reserve before the await so nothing else in this batch can grab the same order
+        const ok = await doLink(match.order, match.trackingNumber, match);
+        if (ok) { autoLinked++; }
+        else { linkedIds.delete(String(match.order.id)); newReview.push({ id: nextReviewId(), trackingNumber: match.trackingNumber, order: match.order, ...match, reason: 'Matched but saving failed — try confirming again' }); }
+        continue;
+      }
+
+      // Medium/low confidence — surface exactly what it read so she can
+      // tell at a glance whether it's bad handwriting or a genuine no-match.
+      const reason = match.order
+        ? `${Math.round(match.confidence * 100)}% name match — please confirm`
+        : match.guessedName
+          ? `Couldn't confidently match "${match.guessedName}" — check the handwriting`
+          : "Couldn't read a name on this slip — pick manually";
+      newReview.push({ id: nextReviewId(), trackingNumber: match.trackingNumber, order: match.order, confidence: match.confidence, matchedVia: match.matchedVia, guessedName: match.guessedName, weight: match.weight, amount: match.amount, slipDate: match.slipDate, reason });
     }
 
     setBatchProgress(null);
