@@ -30,6 +30,7 @@ import Marketing from './pages/Marketing';
 import OmniChannels from './pages/OmniChannels';
 import GSTFiling from './pages/GSTFiling';
 import QuickOrder from './pages/QuickOrder';
+import AiUsage from './pages/AiUsage';
 
 function App() {
   return (
@@ -61,6 +62,7 @@ function App() {
               <Route path="/omni-channels" element={<ErrorBoundary><OmniChannels /></ErrorBoundary>} />
               <Route path="/gst" element={<ErrorBoundary><GSTFiling /></ErrorBoundary>} />
               <Route path="/help" element={<ErrorBoundary><HelpGuide /></ErrorBoundary>} />
+              <Route path="/ai-usage" element={<ErrorBoundary><AiUsage /></ErrorBoundary>} />
               <Route path="/settings" element={<ErrorBoundary><BackupSettings /></ErrorBoundary>} />
               <Route path="/quick-order" element={<ErrorBoundary><QuickOrder /></ErrorBoundary>} />
             </Routes>

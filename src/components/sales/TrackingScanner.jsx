@@ -143,8 +143,11 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
       if (!html5QrCodeRef.current) html5QrCodeRef.current = new Html5Qrcode('tracking-scan-reader');
       try {
         const decodedText = await html5QrCodeRef.current.scanFile(files[i], false);
-        newReview.push({ id: nextReviewId(), trackingNumber: decodedText.trim(), order: null, reason: 'Barcode only — no name on it, pick the order' });
+        const code = decodedText.trim();
+        const { data: logRow } = await dbService.logAiScan({ trackingNumber: code, outcome: 'pending_review' });
+        newReview.push({ id: nextReviewId(), logId: logRow?.id, trackingNumber: code, order: null, reason: 'Barcode only — no name on it, pick the order' });
       } catch {
+        dbService.logAiScan({ outcome: 'failed' });
         newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, reason: "Couldn't find a barcode in this photo" });
       }
     }
@@ -209,11 +212,13 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
       const result = ocrResults[i];
       if (!result || !result.ok) {
         const reason = result?.status === 429 ? "Rate limited — wait a minute and re-upload this one" : "Couldn't read anything in this photo";
+        dbService.logAiScan({ outcome: 'failed' });
         newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, reason });
         continue;
       }
       const data = result.data;
       if (!data.trackingNumber && !data.customerName && !data.rawText) {
+        dbService.logAiScan({ outcome: 'failed' });
         newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, reason: "Couldn't read anything in this photo" });
         continue;
       }
@@ -222,6 +227,7 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
       const match = findBestOrderMatch(data, pool);
 
       if (!match.trackingNumber) {
+        dbService.logAiScan({ outcome: 'failed', guessedName: match.guessedName });
         newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, guessedName: match.guessedName, reason: 'No tracking number found in this photo' });
         continue;
       }
@@ -229,8 +235,14 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
       if (match.order && (match.matchedVia === 'phone' || match.confidence >= 0.85)) {
         linkedIds.add(String(match.order.id)); // reserve before the await so nothing else in this batch can grab the same order
         const ok = await doLink(match.order, match.trackingNumber, match);
-        if (ok) { autoLinked++; }
-        else { linkedIds.delete(String(match.order.id)); newReview.push({ id: nextReviewId(), trackingNumber: match.trackingNumber, order: match.order, ...match, reason: 'Matched but saving failed — try confirming again' }); }
+        if (ok) {
+          autoLinked++;
+          dbService.logAiScan({ outcome: 'auto_linked', orderId: match.order.id, orderNumber: match.order.order_number, trackingNumber: match.trackingNumber, matchedVia: match.matchedVia, confidence: match.confidence, guessedName: match.guessedName });
+        } else {
+          linkedIds.delete(String(match.order.id));
+          const { data: logRow } = await dbService.logAiScan({ orderId: match.order.id, orderNumber: match.order.order_number, trackingNumber: match.trackingNumber, matchedVia: match.matchedVia, confidence: match.confidence, guessedName: match.guessedName, outcome: 'pending_review' });
+          newReview.push({ id: nextReviewId(), logId: logRow?.id, trackingNumber: match.trackingNumber, order: match.order, ...match, reason: 'Matched but saving failed — try confirming again' });
+        }
         continue;
       }
 
@@ -241,7 +253,8 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
         : match.guessedName
           ? `Couldn't confidently match "${match.guessedName}" — check the handwriting`
           : "Couldn't read a name on this slip — pick manually";
-      newReview.push({ id: nextReviewId(), trackingNumber: match.trackingNumber, order: match.order, confidence: match.confidence, matchedVia: match.matchedVia, guessedName: match.guessedName, weight: match.weight, amount: match.amount, slipDate: match.slipDate, reason });
+      const { data: logRow } = await dbService.logAiScan({ orderId: match.order?.id, orderNumber: match.order?.order_number, trackingNumber: match.trackingNumber, matchedVia: match.matchedVia, confidence: match.confidence, guessedName: match.guessedName, outcome: 'pending_review' });
+      newReview.push({ id: nextReviewId(), logId: logRow?.id, trackingNumber: match.trackingNumber, order: match.order, confidence: match.confidence, matchedVia: match.matchedVia, guessedName: match.guessedName, weight: match.weight, amount: match.amount, slipDate: match.slipDate, reason });
     }
 
     setBatchProgress(null);
@@ -258,6 +271,7 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
     const ok = await doLink(item.order, item.trackingNumber, item);
     setSaving(false);
     if (!ok) { showToast('Error saving tracking number', 'error'); return; }
+    if (item.logId) dbService.resolveAiScan(item.logId, { outcome: 'user_confirmed', orderId: item.order.id, orderNumber: item.order.order_number });
     showToast(`${item.order.order_number} → ${item.trackingNumber}`, 'success');
     setReviewQueue(prev => prev.filter(r => r.id !== item.id));
   };
@@ -268,13 +282,23 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
     const ok = await doLink(order, item.trackingNumber, item);
     setSaving(false);
     if (!ok) { showToast('Error saving tracking number', 'error'); return; }
+    // If it already had a suggested order and she picked someone else,
+    // that's the AI guessing wrong — distinct from picking from scratch
+    // (barcode-only, or no name match at all) for accuracy tracking.
+    if (item.logId) dbService.resolveAiScan(item.logId, { outcome: item.order ? 'user_reassigned' : 'user_assigned', orderId: order.id, orderNumber: order.order_number });
     showToast(`${order.order_number} → ${item.trackingNumber}`, 'success');
     setReviewQueue(prev => prev.filter(r => r.id !== item.id));
     setPickerOpenFor(null);
     setPickerSearch('');
   };
 
-  const dismissReviewItem = (id) => setReviewQueue(prev => prev.filter(r => r.id !== id));
+  const dismissReviewItem = (id) => {
+    setReviewQueue(prev => {
+      const item = prev.find(r => r.id === id);
+      if (item?.logId) dbService.resolveAiScan(item.logId, { outcome: 'skipped' });
+      return prev.filter(r => r.id !== id);
+    });
+  };
 
   const pickerResults = useMemo(() => {
     if (!pickerOpenFor) return [];

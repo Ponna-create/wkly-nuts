@@ -3565,6 +3565,72 @@ const _realDbService = {
   },
 
   // ==========================================
+  // AI SCAN LOG — usage/accuracy tracking for Scan Slips (courier OCR)
+  // ==========================================
+  async logAiScan(entry) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    try {
+      const { data, error } = await supabase
+        .from('ai_scan_log')
+        .insert([{
+          order_id: entry.orderId || null,
+          order_number: entry.orderNumber || null,
+          tracking_number: entry.trackingNumber || null,
+          matched_via: entry.matchedVia || null,
+          confidence: entry.confidence ?? null,
+          guessed_name: entry.guessedName || null,
+          outcome: entry.outcome || 'pending_review',
+          resolved_at: entry.outcome && entry.outcome !== 'pending_review' ? new Date().toISOString() : null,
+        }])
+        .select()
+        .single();
+      if (error) throw error;
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error logging AI scan:', error);
+      return { data: null, error };
+    }
+  },
+
+  async resolveAiScan(id, updates) {
+    if (!isSupabaseAvailable() || !id) return { data: null, error: new Error('Missing id') };
+    try {
+      const { data, error } = await supabase
+        .from('ai_scan_log')
+        .update({
+          outcome: updates.outcome,
+          order_id: updates.orderId ?? undefined,
+          order_number: updates.orderNumber ?? undefined,
+          resolved_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+        .select()
+        .single();
+      if (error) throw error;
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error resolving AI scan:', error);
+      return { data: null, error };
+    }
+  },
+
+  async getAiScanLog() {
+    if (!isSupabaseAvailable()) return { data: [], error: null };
+    try {
+      const { data, error } = await supabase
+        .from('ai_scan_log')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(1000);
+      if (error) throw error;
+      return { data: data || [], error: null };
+    } catch (error) {
+      console.error('Error fetching AI scan log:', error);
+      return { data: [], error };
+    }
+  },
+
+  // ==========================================
   // STOCK ALERTS
   // ==========================================
   async getLowStockAlerts() {

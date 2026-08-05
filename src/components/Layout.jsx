@@ -4,7 +4,7 @@ import {
   Home, Package, Warehouse, ShoppingCart, FileText,
   Menu, X, LogOut, Users, Truck, Factory,
   ChevronDown, ChevronRight, Database, Settings, BarChart3, Boxes, Tag, ClipboardList,
-  Heart, Megaphone, Layers, Zap
+  Heart, Megaphone, Layers, Zap, Sparkles
 } from 'lucide-react';
 import { logout } from './Auth';
 import { isTestMode, setTestMode, resetTestData } from '../services/supabase';
@@ -60,6 +60,7 @@ const navGroups = [
   {
     label: null,
     items: [
+      { name: 'AI', href: '/ai-usage', icon: Sparkles },
       { name: 'Settings', href: '/settings', icon: Settings },
     ],
   },
