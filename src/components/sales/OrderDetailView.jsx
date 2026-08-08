@@ -206,6 +206,7 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
   const startEditOrder = () => {
     setEditForm({
       customer_name: currentOrder.customer_name || '',
+      order_source: currentOrder.order_source || '',
       shipping_address: currentOrder.shipping_address || '',
       shipping_charge: currentOrder.shipping_charge || 0,
       items: (currentOrder.items || []).map(i => ({ ...i })),
@@ -249,6 +250,7 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
     const updatedOrder = {
       ...currentOrder,
       customer_name: editForm.customer_name,
+      order_source: editForm.order_source,
       shipping_address: editForm.shipping_address,
       items: editForm.items,
       shipping_charge: shippingCharge,
@@ -433,7 +435,25 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
               </div>
               <div>
                 <p className="text-xs font-semibold text-gray-500 uppercase">Source</p>
-                <p className="text-lg font-bold text-gray-900 capitalize">{currentOrder.order_source}</p>
+                {editingOrder ? (
+                  <select
+                    value={editForm.order_source}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, order_source: e.target.value }))}
+                    className="w-full mt-1 px-2 py-1 border border-gray-300 rounded text-sm font-medium capitalize"
+                  >
+                    <option value="whatsapp">WhatsApp</option>
+                    <option value="instagram">Instagram</option>
+                    <option value="website">Website</option>
+                    <option value="walkin">Walk-in</option>
+                    <option value="meta_ad">Meta Ad</option>
+                    <option value="zoho">Zoho</option>
+                    {editForm.order_source && !['whatsapp', 'instagram', 'website', 'walkin', 'meta_ad', 'zoho'].includes(editForm.order_source) && (
+                      <option value={editForm.order_source}>{editForm.order_source}</option>
+                    )}
+                  </select>
+                ) : (
+                  <p className="text-lg font-bold text-gray-900 capitalize">{currentOrder.order_source}</p>
+                )}
               </div>
             </div>
             {!editingOrder && (
