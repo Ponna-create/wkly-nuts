@@ -447,7 +447,8 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
                     <option value="walkin">Walk-in</option>
                     <option value="meta_ad">Meta Ad</option>
                     <option value="zoho">Zoho</option>
-                    {editForm.order_source && !['whatsapp', 'instagram', 'website', 'walkin', 'meta_ad', 'zoho'].includes(editForm.order_source) && (
+                    <option value="amazon">Amazon</option>
+                    {editForm.order_source && !['whatsapp', 'instagram', 'website', 'walkin', 'meta_ad', 'zoho', 'amazon'].includes(editForm.order_source) && (
                       <option value={editForm.order_source}>{editForm.order_source}</option>
                     )}
                   </select>

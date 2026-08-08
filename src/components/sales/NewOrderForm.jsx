@@ -36,6 +36,7 @@ export default function NewOrderForm({ onClose }) {
     transactionId: '',
     status: 'confirmed',
     shippingAddress: '',
+    zohoOrderId: '', // doubles as a generic external-order-id reference (Amazon Order ID, etc.)
   });
 
   const [newItem, setNewItem] = useState({
@@ -203,8 +204,9 @@ export default function NewOrderForm({ onClose }) {
 
   const handleCreateCustomer = async () => {
     if (savingCustomer) return; // block double-clicks — two rapid saves create duplicate customers
-    if (!newCustomer.name || !newCustomer.phone) {
-      showToast('Name and phone are required', 'error');
+    const phoneRequired = formData.orderSource !== 'amazon'; // Amazon never gives us the buyer's phone
+    if (!newCustomer.name || (phoneRequired && !newCustomer.phone)) {
+      showToast(phoneRequired ? 'Name and phone are required' : 'Name is required', 'error');
       return;
     }
 
@@ -257,6 +259,7 @@ export default function NewOrderForm({ onClose }) {
     const { data, error } = await dbService.createSalesOrder({
       ...formData,
       customerId: selectedCustomer?.id,
+      notes: formData.zohoOrderId ? `Amazon Order ID: ${formData.zohoOrderId}` : undefined,
     });
 
     if (error) {
@@ -301,9 +304,51 @@ export default function NewOrderForm({ onClose }) {
             />
           </div>
 
-          {/* Mobile Number - second, drives customer lookup */}
+          {/* Order Source - before phone, since Amazon orders skip the phone requirement below */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-900 mb-2">Order Source</label>
+            <select
+              value={formData.orderSource}
+              onChange={(e) => setFormData(prev => ({ ...prev, orderSource: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
+            >
+              <option value="whatsapp">WhatsApp</option>
+              <option value="website">Website</option>
+              <option value="instagram">Instagram</option>
+              <option value="meta_ad">Meta Ad</option>
+              <option value="walkin">Walk-in</option>
+              <option value="zoho">Zoho Commerce</option>
+              <option value="amazon">Amazon</option>
+            </select>
+          </div>
+
+          {formData.orderSource === 'amazon' && (
+            <div>
+              <label className="block text-sm font-semibold text-gray-900 mb-2">Amazon Order ID (for reference)</label>
+              <input
+                type="text"
+                placeholder="e.g. 402-8526004-3660355"
+                value={formData.zohoOrderId}
+                onChange={(e) => setFormData(prev => ({ ...prev, zohoOrderId: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
+              />
+            </div>
+          )}
+
+          {/* Mobile Number - second, drives customer lookup. Amazon orders never come with a phone number, so it's optional there. */}
           <div className="space-y-3">
-            <label className="block text-sm font-semibold text-gray-900">Mobile Number *</label>
+            <label className="block text-sm font-semibold text-gray-900">
+              Mobile Number {formData.orderSource === 'amazon' ? '(optional — Amazon doesn\'t give us this)' : '*'}
+            </label>
+            {formData.orderSource === 'amazon' && !selectedCustomer && !newCustomerMode && (
+              <button
+                type="button"
+                onClick={handleOpenCreateCustomer}
+                className="text-xs text-teal-700 hover:text-teal-900 font-medium underline"
+              >
+                No phone number — add customer by name only
+              </button>
+            )}
             {phoneLookupStatus === 'found' && selectedCustomer ? (
               <div className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-lg">
                 <div className="flex items-center gap-2">
@@ -361,7 +406,7 @@ export default function NewOrderForm({ onClose }) {
                 />
                 <input
                   type="tel"
-                  placeholder="Phone *"
+                  placeholder={formData.orderSource === 'amazon' ? 'Phone (optional)' : 'Phone *'}
                   value={newCustomer.phone}
                   onChange={(e) => {
                     const val = e.target.value;
@@ -460,37 +505,20 @@ export default function NewOrderForm({ onClose }) {
           {/* Rest of the order form only appears once a customer is set */}
           {selectedCustomer && (
             <>
-              {/* Order Source & Payment */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-900 mb-2">Order Source</label>
-                  <select
-                    value={formData.orderSource}
-                    onChange={(e) => setFormData(prev => ({ ...prev, orderSource: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
-                  >
-                    <option value="whatsapp">WhatsApp</option>
-                    <option value="website">Website</option>
-                    <option value="instagram">Instagram</option>
-                    <option value="meta_ad">Meta Ad</option>
-                    <option value="walkin">Walk-in</option>
-                    <option value="zoho">Zoho Commerce</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-900 mb-2">Payment Method</label>
-                  <select
-                    value={formData.paymentMethod}
-                    onChange={(e) => setFormData(prev => ({ ...prev, paymentMethod: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
-                  >
-                    <option value="upi">UPI</option>
-                    <option value="cod">COD</option>
-                    <option value="bank_transfer">Bank Transfer</option>
-                    <option value="gpay">Google Pay</option>
-                    <option value="phonepe">PhonePe</option>
-                  </select>
-                </div>
+              {/* Payment Method — Order Source is chosen earlier, above the phone field */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-900 mb-2">Payment Method</label>
+                <select
+                  value={formData.paymentMethod}
+                  onChange={(e) => setFormData(prev => ({ ...prev, paymentMethod: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
+                >
+                  <option value="upi">UPI</option>
+                  <option value="cod">COD</option>
+                  <option value="bank_transfer">Bank Transfer</option>
+                  <option value="gpay">Google Pay</option>
+                  <option value="phonepe">PhonePe</option>
+                </select>
               </div>
 
               <div>
