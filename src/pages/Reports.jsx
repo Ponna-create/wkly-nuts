@@ -213,17 +213,27 @@ export default function Reports() {
   const customerRetention = useMemo(() => {
     // Customers who ordered in the filtered period
     const periodCustomers = new Set(filteredOrders.map(o => (o.customer_name || '').toLowerCase().trim()).filter(Boolean));
-    // All customers who ordered BEFORE the filtered period
-    const priorCustomers = new Set(
-      orders.filter(o => {
-        const d = o.order_date || o.created_at?.split('T')[0];
-        return d && d < rangeFrom;
-      }).map(o => (o.customer_name || '').toLowerCase().trim()).filter(Boolean)
-    );
-    const repeatCustomers = [...periodCustomers].filter(c => priorCustomers.has(c));
-    const newCustomers = [...periodCustomers].filter(c => !priorCustomers.has(c));
 
-    // Repeat order frequency
+    // A customer is "repeat" if they have more than one order up through the
+    // end of the selected range — not just orders strictly before rangeFrom.
+    // The old logic only ever looked at orders before the range START, so on
+    // "All Time" (rangeFrom = 2020-01-01) nothing can ever be "before" it and
+    // repeat count was always 0, no matter how many times someone reordered
+    // inside the period itself.
+    const ordersUpToRangeEnd = orders.filter(o => {
+      const d = o.order_date || o.created_at?.split('T')[0];
+      return d && d <= rangeTo;
+    });
+    const orderCountsUpToRangeEnd = {};
+    ordersUpToRangeEnd.forEach(o => {
+      const name = (o.customer_name || '').toLowerCase().trim();
+      if (name) orderCountsUpToRangeEnd[name] = (orderCountsUpToRangeEnd[name] || 0) + 1;
+    });
+
+    const repeatCustomers = [...periodCustomers].filter(c => (orderCountsUpToRangeEnd[c] || 0) > 1);
+    const newCustomers = [...periodCustomers].filter(c => (orderCountsUpToRangeEnd[c] || 0) <= 1);
+
+    // Repeat order frequency within just the filtered period itself
     const orderCounts = {};
     filteredOrders.forEach(o => {
       const name = (o.customer_name || '').toLowerCase().trim();
@@ -238,7 +248,7 @@ export default function Reports() {
       multiOrder: multiOrderCustomers,
       repeatRate: periodCustomers.size > 0 ? ((repeatCustomers.length / periodCustomers.size) * 100).toFixed(0) : 0,
     };
-  }, [filteredOrders, orders, rangeFrom]);
+  }, [filteredOrders, orders, rangeTo]);
 
   // === BREAKEVEN ANALYSIS ===
   const breakeven = useMemo(() => {
