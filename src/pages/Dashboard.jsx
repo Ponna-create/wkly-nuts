@@ -40,10 +40,22 @@ export default function Dashboard() {
   const isCloudSynced = !!useDatabase;
   const isCheckingConnection = !!isLoading;
 
+  // Every calendar month from the earliest order through the current month —
+  // not just months that happen to have orders. A month with zero sales is
+  // still a real (likely NIL-filed) GST period and should stay selectable,
+  // not silently disappear from the dropdown just because nothing sold.
   const availableMonths = useMemo(() => {
-    const set = new Set([currentMonthKey()]);
-    orders.forEach(o => { if (o.order_date) set.add(o.order_date.slice(0, 7)); });
-    return Array.from(set).sort().reverse();
+    const orderMonths = orders.map(o => o.order_date?.slice(0, 7)).filter(Boolean);
+    const earliest = orderMonths.length > 0 ? orderMonths.sort()[0] : currentMonthKey();
+    const months = [];
+    let [y, m] = earliest.split('-').map(Number);
+    const [curY, curM] = currentMonthKey().split('-').map(Number);
+    while (y < curY || (y === curY && m <= curM)) {
+      months.push(`${y}-${String(m).padStart(2, '0')}`);
+      m++;
+      if (m > 12) { m = 1; y++; }
+    }
+    return months.reverse();
   }, [orders]);
   const [selectedMonth, setSelectedMonth] = useState(currentMonthKey());
   const isCurrentMonth = selectedMonth === currentMonthKey();
