@@ -527,7 +527,7 @@ export default function QuickOrder() {
                         <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-xs text-gray-400">₹</span>
                         <input
                           type="number"
-                          value={item.unitPrice}
+                          value={item.unitPrice || ''}
                           onChange={(e) => setItemPrice(item.key, e.target.value)}
                           className={`w-16 pl-4 pr-1 py-1 text-sm text-right border rounded ${item.unitPrice <= 0 ? 'border-amber-400' : 'border-gray-300'}`}
                         />
