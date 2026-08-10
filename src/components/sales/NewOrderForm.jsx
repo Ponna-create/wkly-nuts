@@ -602,7 +602,7 @@ export default function NewOrderForm({ onClose }) {
                         placeholder="Price"
                         min="0"
                         step="0.01"
-                        value={newItem.unitPrice}
+                        value={newItem.unitPrice || ''}
                         onChange={(e) => setNewItem(prev => ({ ...prev, unitPrice: parseFloat(e.target.value) || 0 }))}
                         className={`w-full px-3 pl-6 py-2 border rounded-lg text-sm ${
                           newItem.unitPrice > 0 ? 'border-green-400 bg-green-50' : 'border-gray-300'
