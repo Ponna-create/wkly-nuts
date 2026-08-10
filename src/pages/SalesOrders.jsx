@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Search, Eye, Trash2, Zap, Camera, FileSpreadsheet, MessageCircle, Truck, Printer, LayoutGrid, ClipboardList } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
+import { formatDate } from '../utils/dateFormat';
 import NewOrderForm from '../components/sales/NewOrderForm';
 import OrderDetailView from '../components/sales/OrderDetailView';
 import BulkTrackingEntry from '../components/sales/BulkTrackingEntry';
@@ -369,7 +370,7 @@ export default function SalesOrders() {
                           {badge.label}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-600">{order.order_date}</td>
+                      <td className="px-4 py-3 text-sm text-gray-600">{formatDate(order.order_date)}</td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-1">
                           {order.tracking_number && order.phone && (

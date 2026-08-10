@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { AlertCircle, Package, Truck, Users, ChevronRight, PieChart, TrendingUp, TrendingDown, Cloud, CloudOff } from 'lucide-react';
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { useApp } from '../context/AppContext';
+import { formatDate } from '../utils/dateFormat';
 
 const SOURCE_LABELS = {
   whatsapp: 'WhatsApp', website: 'Website', instagram: 'Instagram', inst: 'Instagram',
@@ -321,7 +322,7 @@ export default function Dashboard() {
               {recentActivity.length === 0 ? <p className="text-gray-400">No recent orders.</p> : recentActivity.map(o => (
                 <Link key={o.id} to="/orders" className="flex justify-between text-gray-700 hover:text-teal-600">
                   <span className="truncate">{o.customer_name || 'Customer'} — {o.status}</span>
-                  <span className="text-gray-400 flex-shrink-0 ml-2">{o.order_date}</span>
+                  <span className="text-gray-400 flex-shrink-0 ml-2">{formatDate(o.order_date)}</span>
                 </Link>
               ))}
             </div>
