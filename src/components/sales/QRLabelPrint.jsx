@@ -2,6 +2,7 @@ import React, { useRef } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { X, Printer } from 'lucide-react';
 import { sanitizeHtml } from '../../utils/sanitize';
+import { formatDate } from '../../utils/dateFormat';
 
 export default function QRLabelPrint({ order, onClose, labelSize = 'a4' }) {
   const printRef = useRef();
@@ -181,7 +182,7 @@ export default function QRLabelPrint({ order, onClose, labelSize = 'a4' }) {
                 </div>
                 <div className="text-right">
                   <div className="text-lg font-bold">{order.order_number}</div>
-                  <div className="text-xs text-gray-500">{order.order_date}</div>
+                  <div className="text-xs text-gray-500">{formatDate(order.order_date)}</div>
                 </div>
               </div>
 

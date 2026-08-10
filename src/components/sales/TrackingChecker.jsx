@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Truck, RefreshCw, CheckCircle, ExternalLink, MessageCircle } from 'lucide-react';
 import { dbService } from '../../services/supabase';
+import { formatDate } from '../../utils/dateFormat';
 
 // ST Courier's tracking page can't be pre-filled from outside their site —
 // their form does an AJAX call first (which just returns raw JSON) and then
@@ -214,7 +215,7 @@ export default function TrackingChecker({ orders, onOrderUpdate, showToast }) {
                 <div>
                   <span className="font-medium text-sm">{order.order_number}</span>
                   <span className="text-xs text-gray-500 ml-2">{order.customer_name}</span>
-                  <span className="text-xs text-green-600 ml-2">Delivered: {order.actual_delivery_date}</span>
+                  <span className="text-xs text-green-600 ml-2">Delivered: {formatDate(order.actual_delivery_date)}</span>
                 </div>
                 <button
                   onClick={() => handleSendFeedbackWhatsApp(order)}

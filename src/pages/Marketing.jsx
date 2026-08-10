@@ -4,6 +4,7 @@ import { dbService } from '../services/supabase';
 import { useApp } from '../context/AppContext';
 import { getChannelFees, setChannelFee as saveChannelFee } from '../utils/settings';
 import { itemCost } from '../utils/skuCost';
+import { formatDate } from '../utils/dateFormat';
 
 const SOURCE_LABELS = {
   whatsapp: 'WhatsApp', website: 'Website', instagram: 'Instagram', inst: 'Instagram',
@@ -376,7 +377,7 @@ export default function Marketing() {
               <div className="flex items-start justify-between">
                 <div>
                   <p className="font-semibold text-gray-900">{campaign.campaignName}</p>
-                  <p className="text-sm text-gray-500 capitalize">{campaign.platform} · {campaign.startDate} to {campaign.endDate || 'Ongoing'}</p>
+                  <p className="text-sm text-gray-500 capitalize">{campaign.platform} · {formatDate(campaign.startDate)} to {campaign.endDate ? formatDate(campaign.endDate) : 'Ongoing'}</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[campaign.status] || 'bg-gray-100 text-gray-700'}`}>

@@ -6,6 +6,7 @@ import { dbService } from '../../services/supabase';
 import LabelPrinter from './LabelPrinter';
 import WhatsAppSender from './WhatsAppSender';
 import { buildInvoiceDataFromOrder } from '../../utils/invoiceFromOrder';
+import { formatDate } from '../../utils/dateFormat';
 
 export default function OrderDetailView({ order, onClose, onUpdate }) {
   const { state, dispatch, showToast } = useApp();
@@ -352,7 +353,7 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
         <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between z-10">
           <div>
             <h2 className="text-2xl font-bold text-gray-900">{currentOrder.order_number}</h2>
-            <p className="text-sm text-gray-600 mt-1">{currentOrder.order_date}</p>
+            <p className="text-sm text-gray-600 mt-1">{formatDate(currentOrder.order_date)}</p>
           </div>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
             <X className="w-6 h-6" />
@@ -671,7 +672,7 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
             {currentOrder.dispatch_date && (
               <div>
                 <p className="text-xs font-semibold text-gray-500 uppercase">Dispatch Date</p>
-                <p className="text-gray-900">{currentOrder.dispatch_date}</p>
+                <p className="text-gray-900">{formatDate(currentOrder.dispatch_date)}</p>
               </div>
             )}
 
