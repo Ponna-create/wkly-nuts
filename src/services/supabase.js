@@ -1298,23 +1298,24 @@ const _realDbService = {
     }
   },
 
-  // Auditor's own GSTR-3B working file (June'26) numbers invoices as a
-  // single continuous count formatted "{n}/{MM}{YYYY}" — never resets per
-  // year, the month/year is just the period the invoice falls in. He asked
-  // to continue that same series going forward since we own the app; her
-  // June file runs an unbroken 10..52 with no gaps, so the DB sequence is
-  // seeded to continue at 53. This must stay ONE counter across every sales
+  // Auditor's actual filed format is "WKN/<MON><YY>/NNN" (e.g. WKN/JUN26/001,
+  // confirmed 2026-08 against his real June GST register and filed GSTR-3B).
+  // The counter itself is a single continuous series for the whole financial
+  // year (Apr-Mar) — it does NOT reset month to month, only at a new FY. June
+  // 2026 is the true start of the current series (April closed the prior FY,
+  // May was NIL), so June runs 001-043, July continues 044-147, August
+  // continues 148+, etc. This must stay ONE counter across every sales
   // channel (WhatsApp/Instagram, Website import, Amazon import) — GST
-  // filing needs one unbroken sequence, not one per channel. Uses an atomic
-  // Postgres sequence (not a JS "scan all, take max+1") so two invoices
-  // created close together can never collide.
+  // filing needs one unbroken sequence, not one per channel or per month.
+  // Uses an atomic Postgres sequence (not a JS "scan all, take max+1") so two
+  // invoices created close together can never collide.
   async getNextInvoiceNumber(forDate) {
     const { data: nextNum, error } = await supabase.rpc('nextval', { name: 'invoice_number_seq' });
     if (error) throw error;
     const d = forDate ? new Date(forDate) : new Date();
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const yyyy = d.getFullYear();
-    return `${nextNum}/${mm}${yyyy}`;
+    const mon = d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
+    const yy = String(d.getFullYear()).slice(-2);
+    return `WKN/${mon}${yy}/${String(nextNum).padStart(3, '0')}`;
   },
 
   async createInvoice(invoice) {
