@@ -1833,6 +1833,7 @@ export default function InvoiceManagement() {
     const getHSN = (skuName) => {
       const name = (skuName || '').toLowerCase();
       if (name.includes('seed cycle') || name.includes('seedcycle')) return '1204';
+      if (name.includes('mexican bites') || name.includes('party mix')) return '2106';
       return '2008 19 20';
     };
 
@@ -1844,7 +1845,11 @@ export default function InvoiceManagement() {
     };
 
     const csvRows = [];
-    const headers = ['Date', 'Invoice #', 'Customer', 'GSTIN', 'Product', 'HSN Code', 'Qty', 'Taxable Value', 'CGST @2.5%', 'SGST @2.5%', 'IGST @5%', 'Total Tax', 'Invoice Total', 'Channel'];
+    // State is shown explicitly (not just used silently to decide CGST/SGST
+    // vs IGST) so a blank/wrong state is easy to spot by eye instead of
+    // hiding as a wrongly-computed tax split — that's what caught July's 40
+    // customers with a missing state field defaulting to "assume TN".
+    const headers = ['Date', 'Invoice #', 'Customer', 'State', 'GSTIN', 'Product', 'HSN Code', 'Qty', 'Taxable Value', 'CGST @2.5%', 'SGST @2.5%', 'IGST @5%', 'Total Tax', 'Invoice Total', 'Channel'];
     csvRows.push(headers.join(','));
 
     let totalTaxable = 0, totalCGST = 0, totalSGST = 0, totalIGST = 0, totalTax = 0, grandTotal = 0;
@@ -1862,6 +1867,7 @@ export default function InvoiceManagement() {
       const customer = inv.customer || (inv.customerId ? customers.find(c => String(c.id) === String(inv.customerId)) : null);
       const custState = (customer?.state || customer?.city || '').toLowerCase();
       const isTN = custState.includes('tamil') || custState.includes('chennai') || custState.includes('tn') || !custState;
+      const stateLabel = customer?.state || 'MISSING — verify';
       const items = inv.items || [];
       const gstRate = inv.gstRate || 5;
       const channel = getChannel(inv);
@@ -1876,7 +1882,7 @@ export default function InvoiceManagement() {
         addToHsnSummary('2008 19 20', taxable, cgst, sgst, igst, tax);
         const row = [
           inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString('en-IN') : '',
-          inv.invoiceNumber || '', customer?.name || '', customer?.gstin || '',
+          inv.invoiceNumber || '', customer?.name || '', stateLabel, customer?.gstin || '',
           'Mixed Products', '2008 19 20', '1', taxable.toFixed(2),
           cgst.toFixed(2), sgst.toFixed(2), igst.toFixed(2), tax.toFixed(2), (taxable + tax).toFixed(2), channel
         ].map(c => { const s = String(c || ''); return s.includes(',') ? `"${s}"` : s; });
@@ -1909,7 +1915,7 @@ export default function InvoiceManagement() {
           addToHsnSummary(hsn, group.taxable, cgst, sgst, igst, tax);
           const row = [
             inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString('en-IN') : '',
-            inv.invoiceNumber || '', customer?.name || '', customer?.gstin || '',
+            inv.invoiceNumber || '', customer?.name || '', stateLabel, customer?.gstin || '',
             group.names.join(', '), hsn, group.qty, group.taxable.toFixed(2),
             cgst.toFixed(2), sgst.toFixed(2), igst.toFixed(2), tax.toFixed(2), (group.taxable + tax).toFixed(2), channel
           ].map(c => { const s = String(c || ''); return s.includes(',') ? `"${s}"` : s; });
@@ -1919,7 +1925,7 @@ export default function InvoiceManagement() {
     });
 
     csvRows.push('');
-    csvRows.push(['', '', '', '', '', '', 'TOTALS', totalTaxable.toFixed(2), totalCGST.toFixed(2), totalSGST.toFixed(2), totalIGST.toFixed(2), totalTax.toFixed(2), grandTotal.toFixed(2), ''].join(','));
+    csvRows.push(['', '', '', '', '', '', '', 'TOTALS', totalTaxable.toFixed(2), totalCGST.toFixed(2), totalSGST.toFixed(2), totalIGST.toFixed(2), totalTax.toFixed(2), grandTotal.toFixed(2), ''].join(','));
 
     // HSN-wise Summary — same section your auditor's own register ends with,
     // so this export can go straight to him in the format he already expects.
