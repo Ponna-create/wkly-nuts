@@ -1872,19 +1872,35 @@ export default function InvoiceManagement() {
         ].map(c => { const s = String(c || ''); return s.includes(',') ? `"${s}"` : s; });
         csvRows.push(row.join(','));
       } else {
+        // GST filing genuinely needs one row per HSN code (different HSN =
+        // different taxable-value bucket in GSTR-1), but items sharing the
+        // same HSN don't need their own repeated Date/Invoice#/Customer row
+        // each — that's the same invoice, just re-stating the customer 3x
+        // for a 3-item order. Combine same-HSN items into one row instead,
+        // the way the auditor's own register already does.
+        const byHsn = new Map();
         items.forEach(item => {
           const qty = item.quantity || 1;
           const taxable = item.total || (qty * (item.unitPrice || 0));
-          const tax = taxable * (gstRate / 100);
+          const hsn = item.hsnCode || getHSN(item.skuName);
+          const existing = byHsn.get(hsn) || { qty: 0, taxable: 0, names: [] };
+          existing.qty += qty;
+          existing.taxable += taxable;
+          existing.names.push(`${item.skuName || 'Unknown'} x${qty}`);
+          byHsn.set(hsn, existing);
+        });
+
+        byHsn.forEach((group, hsn) => {
+          const tax = group.taxable * (gstRate / 100);
           const cgst = isTN ? tax / 2 : 0;
           const sgst = isTN ? tax / 2 : 0;
           const igst = isTN ? 0 : tax;
-          totalTaxable += taxable; totalCGST += cgst; totalSGST += sgst; totalIGST += igst; totalTax += tax; grandTotal += taxable + tax;
+          totalTaxable += group.taxable; totalCGST += cgst; totalSGST += sgst; totalIGST += igst; totalTax += tax; grandTotal += group.taxable + tax;
           const row = [
             inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString('en-IN') : '',
             inv.invoiceNumber || '', customer?.name || '', customer?.gstin || '',
-            item.skuName || 'Unknown', item.hsnCode || getHSN(item.skuName), qty, taxable.toFixed(2),
-            cgst.toFixed(2), sgst.toFixed(2), igst.toFixed(2), tax.toFixed(2), (taxable + tax).toFixed(2), channel
+            group.names.join(', '), hsn, group.qty, group.taxable.toFixed(2),
+            cgst.toFixed(2), sgst.toFixed(2), igst.toFixed(2), tax.toFixed(2), (group.taxable + tax).toFixed(2), channel
           ].map(c => { const s = String(c || ''); return s.includes(',') ? `"${s}"` : s; });
           csvRows.push(row.join(','));
         });
