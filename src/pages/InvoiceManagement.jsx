@@ -1853,17 +1853,19 @@ export default function InvoiceManagement() {
     };
 
     const csvRows = [];
-    // State is shown explicitly (not just used silently to decide CGST/SGST
-    // vs IGST) so a blank/wrong state is easy to spot by eye instead of
-    // hiding as a wrongly-computed tax split — that's what caught July's 40
-    // customers with a missing state field defaulting to "assume TN".
-    const headers = ['Date', 'Invoice #', 'Customer', 'State', 'GSTIN', 'Product', 'HSN Code', 'Qty', 'Taxable Value', 'CGST @2.5%', 'SGST @2.5%', 'IGST @5%', 'Total Tax', 'Invoice Total', 'Channel'];
+    // One row per invoice, always — matches the auditor's own working
+    // register (SI No / Date / Invoice / Customer / GSTIN / Place of Supply
+    // / HSN / Basic Value / Rate / IGST / CGST / SGST / Total). Repeating the
+    // same invoice number across several rows (one per HSN code) was the
+    // confusing part; the per-HSN split that GST filing actually needs still
+    // lives in the HSN-wise Summary section below, it just doesn't need to
+    // fragment the main register too.
+    const headers = ['SI No', 'Date', 'Invoice #', 'Customer', 'GSTIN', 'Place of Supply', 'Product', 'HSN Code', 'Qty', 'Taxable Value', 'CGST @2.5%', 'SGST @2.5%', 'IGST @5%', 'Total Tax', 'Invoice Total', 'Channel'];
     csvRows.push(headers.join(','));
 
     let totalTaxable = 0, totalCGST = 0, totalSGST = 0, totalIGST = 0, totalTax = 0, grandTotal = 0;
     // HSN-wise summary — the auditor's own register always ends with this
-    // (taxable/tax totals grouped by HSN code alone, across every invoice),
-    // it's the piece our export was missing to look like a finished report.
+    // (taxable/tax totals grouped by HSN code alone, across every invoice).
     const hsnSummary = new Map();
     const addToHsnSummary = (hsn, taxable, cgst, sgst, igst, tax) => {
       const existing = hsnSummary.get(hsn) || { taxable: 0, cgst: 0, sgst: 0, igst: 0, tax: 0 };
@@ -1871,38 +1873,26 @@ export default function InvoiceManagement() {
       hsnSummary.set(hsn, existing);
     };
 
+    let si = 0;
     paidOrSent.forEach(inv => {
       const customer = inv.customer || (inv.customerId ? customers.find(c => String(c.id) === String(inv.customerId)) : null);
       const custState = (customer?.state || customer?.city || '').toLowerCase();
       const isTN = custState.includes('tamil') || custState.includes('chennai') || custState.includes('tn') || !custState;
-      const stateLabel = customer?.state || 'MISSING — verify';
+      const placeOfSupply = customer?.state || 'MISSING — verify';
       const items = inv.items || [];
       const gstRate = inv.gstRate || 5;
       const channel = getChannel(inv);
+      si += 1;
 
+      // Group by HSN first purely to get the per-HSN taxable/tax split right
+      // (different HSN = different taxable bucket), then collapse that back
+      // into ONE row for the invoice — product/HSN cells just list everything
+      // touched, e.g. "Night Soak x1, Day Pack x2" / "2008 19 20, 1204".
+      const byHsn = new Map();
       if (items.length === 0) {
         const taxable = inv.subtotal || inv.totalAmount || 0;
-        const tax = taxable * (gstRate / 100);
-        const cgst = isTN ? tax / 2 : 0;
-        const sgst = isTN ? tax / 2 : 0;
-        const igst = isTN ? 0 : tax;
-        totalTaxable += taxable; totalCGST += cgst; totalSGST += sgst; totalIGST += igst; totalTax += tax; grandTotal += taxable + tax;
-        addToHsnSummary('2008 19 20', taxable, cgst, sgst, igst, tax);
-        const row = [
-          inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString('en-IN') : '',
-          inv.invoiceNumber || '', customer?.name || '', stateLabel, customer?.gstin || '',
-          'Mixed Products', '2008 19 20', '1', taxable.toFixed(2),
-          cgst.toFixed(2), sgst.toFixed(2), igst.toFixed(2), tax.toFixed(2), (taxable + tax).toFixed(2), channel
-        ].map(c => { const s = String(c || ''); return s.includes(',') ? `"${s}"` : s; });
-        csvRows.push(row.join(','));
+        byHsn.set('2008 19 20', { qty: 1, taxable, names: ['Mixed Products'] });
       } else {
-        // GST filing genuinely needs one row per HSN code (different HSN =
-        // different taxable-value bucket in GSTR-1), but items sharing the
-        // same HSN don't need their own repeated Date/Invoice#/Customer row
-        // each — that's the same invoice, just re-stating the customer 3x
-        // for a 3-item order. Combine same-HSN items into one row instead,
-        // the way the auditor's own register already does.
-        const byHsn = new Map();
         items.forEach(item => {
           const qty = item.quantity || 1;
           const taxable = item.total || (qty * (item.unitPrice || 0));
@@ -1913,27 +1903,36 @@ export default function InvoiceManagement() {
           existing.names.push(`${item.skuName || 'Unknown'} x${qty}`);
           byHsn.set(hsn, existing);
         });
-
-        byHsn.forEach((group, hsn) => {
-          const tax = group.taxable * (gstRate / 100);
-          const cgst = isTN ? tax / 2 : 0;
-          const sgst = isTN ? tax / 2 : 0;
-          const igst = isTN ? 0 : tax;
-          totalTaxable += group.taxable; totalCGST += cgst; totalSGST += sgst; totalIGST += igst; totalTax += tax; grandTotal += group.taxable + tax;
-          addToHsnSummary(hsn, group.taxable, cgst, sgst, igst, tax);
-          const row = [
-            inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString('en-IN') : '',
-            inv.invoiceNumber || '', customer?.name || '', stateLabel, customer?.gstin || '',
-            group.names.join(', '), hsn, group.qty, group.taxable.toFixed(2),
-            cgst.toFixed(2), sgst.toFixed(2), igst.toFixed(2), tax.toFixed(2), (group.taxable + tax).toFixed(2), channel
-          ].map(c => { const s = String(c || ''); return s.includes(',') ? `"${s}"` : s; });
-          csvRows.push(row.join(','));
-        });
       }
+
+      let invTaxable = 0, invCGST = 0, invSGST = 0, invIGST = 0, invTax = 0;
+      const allNames = [], allHsn = [];
+      let invQty = 0;
+      byHsn.forEach((group, hsn) => {
+        const tax = group.taxable * (gstRate / 100);
+        const cgst = isTN ? tax / 2 : 0;
+        const sgst = isTN ? tax / 2 : 0;
+        const igst = isTN ? 0 : tax;
+        invTaxable += group.taxable; invCGST += cgst; invSGST += sgst; invIGST += igst; invTax += tax;
+        invQty += group.qty;
+        allNames.push(...group.names);
+        allHsn.push(hsn);
+        addToHsnSummary(hsn, group.taxable, cgst, sgst, igst, tax);
+      });
+      totalTaxable += invTaxable; totalCGST += invCGST; totalSGST += invSGST; totalIGST += invIGST; totalTax += invTax; grandTotal += invTaxable + invTax;
+
+      const row = [
+        si,
+        inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString('en-IN') : '',
+        inv.invoiceNumber || '', customer?.name || '', customer?.gstin || '', placeOfSupply,
+        allNames.join(', '), allHsn.join(', '), invQty, invTaxable.toFixed(2),
+        invCGST.toFixed(2), invSGST.toFixed(2), invIGST.toFixed(2), invTax.toFixed(2), (invTaxable + invTax).toFixed(2), channel
+      ].map(c => { const s = String(c || ''); return s.includes(',') ? `"${s}"` : s; });
+      csvRows.push(row.join(','));
     });
 
     csvRows.push('');
-    csvRows.push(['', '', '', '', '', '', '', 'TOTALS', totalTaxable.toFixed(2), totalCGST.toFixed(2), totalSGST.toFixed(2), totalIGST.toFixed(2), totalTax.toFixed(2), grandTotal.toFixed(2), ''].join(','));
+    csvRows.push(['', '', '', '', '', '', '', '', 'TOTALS', totalTaxable.toFixed(2), totalCGST.toFixed(2), totalSGST.toFixed(2), totalIGST.toFixed(2), totalTax.toFixed(2), grandTotal.toFixed(2), ''].join(','));
 
     // HSN-wise Summary — same section your auditor's own register ends with,
     // so this export can go straight to him in the format he already expects.

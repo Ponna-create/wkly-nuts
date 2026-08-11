@@ -1252,6 +1252,8 @@ const _realDbService = {
             email,
             phone,
             address,
+            city,
+            state,
             gstin
           )
         `)
@@ -1270,6 +1272,8 @@ const _realDbService = {
           email: invoice.customers.email,
           phone: invoice.customers.phone,
           address: invoice.customers.address,
+          city: invoice.customers.city,
+          state: invoice.customers.state,
           gstin: invoice.customers.gstin,
         } : null,
         invoiceDate: invoice.invoice_date,
