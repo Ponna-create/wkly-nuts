@@ -35,10 +35,14 @@ export default function ProfitLossWidget() {
       const revenue = orders.reduce((s, o) => s + (o.total_amount || 0), 0);
       const expenseTotal = expenses.reduce((s, e) => s + (e.total_amount || e.amount || 0), 0);
       const prodCost = productions.reduce((s, p) => s + (p.total_cost || 0), 0);
-      const profit = revenue - expenseTotal - prodCost;
+      // What was actually paid to the courier — distinct from shipping_charge
+      // (what the customer was billed, already inside total_amount above).
+      // Absorbed shipping (customer charged ₹0) was previously invisible here.
+      const courierCost = orders.reduce((s, o) => s + (o.courier_amount || 0), 0);
+      const profit = revenue - expenseTotal - prodCost - courierCost;
       const orderCount = orders.length;
 
-      setData({ revenue, expenseTotal, prodCost, profit, orderCount });
+      setData({ revenue, expenseTotal, prodCost, courierCost, profit, orderCount });
       setLoading(false);
     };
     load();
@@ -47,7 +51,7 @@ export default function ProfitLossWidget() {
   if (loading) return null;
   if (!data || (data.revenue === 0 && data.expenseTotal === 0)) return null;
 
-  const { revenue, expenseTotal, prodCost, profit, orderCount } = data;
+  const { revenue, expenseTotal, prodCost, courierCost, profit, orderCount } = data;
   const isProfit = profit >= 0;
   const month = new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
 
@@ -65,7 +69,7 @@ export default function ProfitLossWidget() {
         </Link>
       </div>
 
-      <div className="grid grid-cols-3 gap-3 mb-3">
+      <div className="grid grid-cols-4 gap-2 mb-3">
         <div className="text-center p-2 bg-green-50 rounded-lg">
           <p className="text-[10px] text-gray-500 uppercase">Revenue</p>
           <p className="text-sm font-bold text-green-700">₹{fmt(revenue)}</p>
@@ -78,6 +82,10 @@ export default function ProfitLossWidget() {
         <div className="text-center p-2 bg-orange-50 rounded-lg">
           <p className="text-[10px] text-gray-500 uppercase">Prod Cost</p>
           <p className="text-sm font-bold text-orange-600">₹{fmt(prodCost)}</p>
+        </div>
+        <div className="text-center p-2 bg-purple-50 rounded-lg">
+          <p className="text-[10px] text-gray-500 uppercase">Courier</p>
+          <p className="text-sm font-bold text-purple-600">₹{fmt(courierCost)}</p>
         </div>
       </div>
 

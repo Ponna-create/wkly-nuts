@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { BarChart3, TrendingUp, Package, ShoppingCart, Calendar, Download, IndianRupee, Factory, Users, Target, Wallet } from 'lucide-react';
+import { BarChart3, TrendingUp, Package, ShoppingCart, Calendar, Download, IndianRupee, Factory, Users, Target, Wallet, Truck } from 'lucide-react';
 import { dbService } from '../services/supabase';
 import { useApp } from '../context/AppContext';
 
@@ -108,6 +108,13 @@ export default function Reports() {
   // === SALES METRICS ===
   const salesMetrics = useMemo(() => {
     const total = filteredOrders.reduce((s, o) => s + (o.total_amount || 0), 0);
+    // What was actually paid to the courier per order — distinct from
+    // shipping_charge (what, if anything, was charged to the customer and
+    // is already folded into total_amount above). When shipping is absorbed
+    // (customer charged ₹0 for delivery), this is the real cost that was
+    // silently missing from profit — revenue looked full price, nothing
+    // showed the courier bill that came out of it.
+    const courierCost = filteredOrders.reduce((s, o) => s + (o.courier_amount || 0), 0);
     const count = filteredOrders.length;
     const delivered = filteredOrders.filter(o => o.status === 'delivered' || o.status === 'completed').length;
     const cancelled = filteredOrders.filter(o => o.status === 'cancelled').length;
@@ -139,7 +146,7 @@ export default function Reports() {
       .sort((a, b) => b.amount - a.amount)
       .slice(0, 8);
 
-    return { total, count, delivered, cancelled, avgValue, bySource, byStatus, topCustomers };
+    return { total, courierCost, count, delivered, cancelled, avgValue, bySource, byStatus, topCustomers };
   }, [filteredOrders]);
 
   // === EXPENSE METRICS ===
@@ -184,7 +191,7 @@ export default function Reports() {
   }, [filteredProductions]);
 
   // === PROFIT/LOSS ===
-  const netProfit = salesMetrics.total - expenseMetrics.total - productionMetrics.totalCost;
+  const netProfit = salesMetrics.total - expenseMetrics.total - productionMetrics.totalCost - salesMetrics.courierCost;
 
   // === MONTHLY TREND (last 6 months, uses all orders not filtered) ===
   const monthlyTrend = useMemo(() => {
@@ -347,6 +354,14 @@ export default function Reports() {
           <p className="text-2xl font-bold text-blue-700">{productionMetrics.totalCost.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
           <p className="text-xs text-gray-500">{productionMetrics.totalUnits} units</p>
         </div>
+        <div className="bg-white p-4 rounded-lg border border-gray-200">
+          <div className="flex items-center gap-2 mb-1">
+            <Truck className="w-4 h-4 text-purple-600" />
+            <p className="text-sm text-gray-600">Courier Cost</p>
+          </div>
+          <p className="text-2xl font-bold text-purple-700">{salesMetrics.courierCost.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
+          <p className="text-xs text-gray-500">What we actually paid, incl. absorbed shipping</p>
+        </div>
         <div className={`p-4 rounded-lg border ${netProfit >= 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
           <div className="flex items-center gap-2 mb-1">
             <TrendingUp className="w-4 h-4" />
@@ -355,7 +370,7 @@ export default function Reports() {
           <p className={`text-2xl font-bold ${netProfit >= 0 ? 'text-green-700' : 'text-red-700'}`}>
             {netProfit >= 0 ? '' : '-'}{Math.abs(netProfit).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
           </p>
-          <p className="text-xs text-gray-500">Revenue - Expenses - Production</p>
+          <p className="text-xs text-gray-500">Revenue - Expenses - Production - Courier</p>
         </div>
       </div>
 
