@@ -1263,6 +1263,7 @@ const _realDbService = {
         id: invoice.id,
         invoiceNumber: invoice.invoice_number,
         customerId: invoice.customer_id,
+        orderSource: invoice.order_source,
         customer: invoice.customers ? {
           id: invoice.customers.id,
           name: invoice.customers.name,
@@ -1336,6 +1337,7 @@ const _realDbService = {
         .insert({
           invoice_number: invoiceNumberValue, // Use NULL for new invoices (not 'N/A' to avoid duplicate key errors)
           customer_id: invoice.customerId || null,
+          order_source: invoice.orderSource || null,
           invoice_date: invoice.invoiceDate || new Date().toISOString().split('T')[0],
           due_date: invoice.dueDate || null,
           items: invoice.items || [],

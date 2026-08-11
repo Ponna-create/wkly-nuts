@@ -3,6 +3,7 @@
 export function buildInvoiceDataFromOrder(order, notePrefix, skus) {
   return {
     customerId: order.customer_id,
+    orderSource: order.order_source,
     invoiceDate: new Date().toISOString().split('T')[0],
     items: (order.items || []).map(item => {
       const skuId = item.sku_id || item.skuId;
