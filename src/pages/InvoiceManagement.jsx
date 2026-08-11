@@ -1623,7 +1623,15 @@ export default function InvoiceManagement() {
       );
     }
 
-    return filtered;
+    // Sort chronologically (invoice date, then invoice number as a tiebreak)
+    // rather than leaving it in whatever order rows came back from the DB —
+    // a batch of invoices created together in one sitting otherwise shows up
+    // in a scrambled, not-actually-sequential order.
+    return [...filtered].sort((a, b) => {
+      const dateCompare = (a.invoiceDate || '').localeCompare(b.invoiceDate || '');
+      if (dateCompare !== 0) return dateCompare;
+      return (a.invoiceNumber || '').localeCompare(b.invoiceNumber || '', undefined, { numeric: true });
+    });
   }, [invoices, statusFilter, searchTerm, selectedMonth]);
 
   // Helper function to find customer by ID (exposed for debugging)
