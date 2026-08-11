@@ -1848,6 +1848,15 @@ export default function InvoiceManagement() {
     csvRows.push(headers.join(','));
 
     let totalTaxable = 0, totalCGST = 0, totalSGST = 0, totalIGST = 0, totalTax = 0, grandTotal = 0;
+    // HSN-wise summary — the auditor's own register always ends with this
+    // (taxable/tax totals grouped by HSN code alone, across every invoice),
+    // it's the piece our export was missing to look like a finished report.
+    const hsnSummary = new Map();
+    const addToHsnSummary = (hsn, taxable, cgst, sgst, igst, tax) => {
+      const existing = hsnSummary.get(hsn) || { taxable: 0, cgst: 0, sgst: 0, igst: 0, tax: 0 };
+      existing.taxable += taxable; existing.cgst += cgst; existing.sgst += sgst; existing.igst += igst; existing.tax += tax;
+      hsnSummary.set(hsn, existing);
+    };
 
     paidOrSent.forEach(inv => {
       const customer = inv.customer || (inv.customerId ? customers.find(c => String(c.id) === String(inv.customerId)) : null);
@@ -1864,6 +1873,7 @@ export default function InvoiceManagement() {
         const sgst = isTN ? tax / 2 : 0;
         const igst = isTN ? 0 : tax;
         totalTaxable += taxable; totalCGST += cgst; totalSGST += sgst; totalIGST += igst; totalTax += tax; grandTotal += taxable + tax;
+        addToHsnSummary('2008 19 20', taxable, cgst, sgst, igst, tax);
         const row = [
           inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString('en-IN') : '',
           inv.invoiceNumber || '', customer?.name || '', customer?.gstin || '',
@@ -1896,6 +1906,7 @@ export default function InvoiceManagement() {
           const sgst = isTN ? tax / 2 : 0;
           const igst = isTN ? 0 : tax;
           totalTaxable += group.taxable; totalCGST += cgst; totalSGST += sgst; totalIGST += igst; totalTax += tax; grandTotal += group.taxable + tax;
+          addToHsnSummary(hsn, group.taxable, cgst, sgst, igst, tax);
           const row = [
             inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString('en-IN') : '',
             inv.invoiceNumber || '', customer?.name || '', customer?.gstin || '',
@@ -1909,6 +1920,17 @@ export default function InvoiceManagement() {
 
     csvRows.push('');
     csvRows.push(['', '', '', '', '', '', 'TOTALS', totalTaxable.toFixed(2), totalCGST.toFixed(2), totalSGST.toFixed(2), totalIGST.toFixed(2), totalTax.toFixed(2), grandTotal.toFixed(2), ''].join(','));
+
+    // HSN-wise Summary — same section your auditor's own register ends with,
+    // so this export can go straight to him in the format he already expects.
+    csvRows.push('');
+    csvRows.push('HSN-wise Summary');
+    csvRows.push(['HSN Code', 'Taxable Value', 'CGST @2.5%', 'SGST @2.5%', 'IGST @5%', 'Total Tax'].join(','));
+    const hsnRows = [...hsnSummary.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    hsnRows.forEach(([hsn, s]) => {
+      csvRows.push([hsn, s.taxable.toFixed(2), s.cgst.toFixed(2), s.sgst.toFixed(2), s.igst.toFixed(2), s.tax.toFixed(2)].join(','));
+    });
+    csvRows.push(['TOTAL', totalTaxable.toFixed(2), totalCGST.toFixed(2), totalSGST.toFixed(2), totalIGST.toFixed(2), totalTax.toFixed(2)].join(','));
 
     const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
