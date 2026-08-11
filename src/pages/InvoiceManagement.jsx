@@ -1838,10 +1838,18 @@ export default function InvoiceManagement() {
     };
 
     const getChannel = (inv) => {
-      const src = inv.orderSource || inv.order_source || '';
+      const src = (inv.orderSource || inv.order_source || '').toLowerCase();
       if (src.includes('amazon')) return 'Amazon';
       if (src.includes('website') || src.includes('shopify')) return 'Website';
-      return 'Direct';
+      if (src.includes('whatsapp')) return 'WhatsApp';
+      if (src.includes('instagram') || src === 'inst') return 'Instagram';
+      if (src.includes('meta')) return 'Meta Ad';
+      if (src.includes('walkin') || src.includes('walk-in')) return 'Walk-in';
+      if (src.includes('zoho')) return 'Zoho';
+      if (src.includes('collab')) return 'Collab';
+      if (src.includes('promo')) return 'Promotion';
+      if (!src) return 'Direct'; // no linked order_source (older/manual invoice) — genuinely unknown, not necessarily "direct" sales
+      return src.charAt(0).toUpperCase() + src.slice(1);
     };
 
     const csvRows = [];
