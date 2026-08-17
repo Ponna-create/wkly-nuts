@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
 import StockAlerts from '../components/StockAlerts';
 import COGSCalculator from '../components/COGSCalculator';
+import { formatDate } from '../utils/dateFormat';
 import {
   Plus, Search, X, Edit2, Trash2, Factory, Play, CheckCircle2,
   Clock, AlertTriangle, ChevronDown, ChevronUp, Package, Hash,
@@ -177,8 +178,8 @@ export default function ProductionRuns() {
     const batchNo = (run.sku_code ? `${run.sku_code}-${ddmmyy}` : run.run_number);
     return {
       batchNo,
-      mfd: new Date(mfd).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
-      useBy: useByDate.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+      mfd: formatDate(mfd),
+      useBy: formatDate(useByDate),
       skuName: run.sku_name,
       quantity: run.actual_quantity || run.planned_quantity,
     };
@@ -311,7 +312,7 @@ export default function ProductionRuns() {
                       </span>
                     </div>
                     <div className="flex items-center gap-3 text-xs text-gray-400 mt-0.5">
-                      <span>{new Date(run.batch_date).toLocaleDateString('en-IN')}</span>
+                      <span>{formatDate(run.batch_date)}</span>
                       <span>{run.planned_quantity} planned</span>
                       {run.actual_quantity > 0 && <span className="text-green-600">{run.actual_quantity} done</span>}
                       {run.instance_start && (
@@ -530,10 +531,10 @@ function CompletionDialog({ dialog, onConfirm, onClose }) {
   const { run, processing, result, qty, ingredients, packaging } = dialog;
 
   // Calculate MFD and Use By
-  const mfd = new Date(run.batch_date).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const mfd = formatDate(run.batch_date);
   const useByDate = new Date(run.batch_date);
   useByDate.setDate(useByDate.getDate() + (run.shelf_life_days || 30));
-  const useBy = useByDate.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const useBy = formatDate(useByDate);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
@@ -972,9 +973,9 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
 
   // MFD & Use By preview
   const shelfDays = parseInt(form.shelfLifeDays) || 30;
-  const mfdDisplay = form.batchDate ? new Date(form.batchDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-';
+  const mfdDisplay = form.batchDate ? formatDate(form.batchDate) : '-';
   const useByDate = form.batchDate ? new Date(new Date(form.batchDate).getTime() + shelfDays * 24 * 60 * 60 * 1000) : null;
-  const useByDisplay = useByDate ? useByDate.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-';
+  const useByDisplay = useByDate ? formatDate(useByDate) : '-';
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-start justify-center p-4 overflow-y-auto">
@@ -1509,7 +1510,7 @@ function WastageModal({ run, onClose, showToast }) {
           <div className="bg-gray-50 rounded-lg p-3 flex items-center justify-between">
             <div>
               <p className="font-medium text-sm">{run.run_number} - {run.sku_name}</p>
-              <p className="text-xs text-gray-500">{new Date(run.batch_date).toLocaleDateString('en-IN')} | {run.planned_quantity} planned</p>
+              <p className="text-xs text-gray-500">{formatDate(run.batch_date)} | {run.planned_quantity} planned</p>
             </div>
             <div className="text-right">
               <p className="text-sm font-bold text-orange-600">{totalWasteGrams.toFixed(0)}g wasted</p>

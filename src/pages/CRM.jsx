@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { Heart, MessageCircle, TrendingUp, Clock, Copy, Check } from 'lucide-react';
+import { formatDateShort } from '../utils/dateFormat';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const todayStart = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
@@ -222,7 +223,7 @@ export default function CRM() {
                       <span className="px-2 py-0.5 bg-purple-50 text-purple-600 text-xs rounded-full font-medium">suggest {tier.discount}% off</span>
                     )}
                   </div>
-                  <p className="text-xs text-gray-400 mt-0.5">Last order {row.lastOrderDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} · due {row.dueDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}{row.phone ? ` · ${row.phone}` : ''}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">Last order {formatDateShort(row.lastOrderDate)} · due {formatDateShort(row.dueDate)}{row.phone ? ` · ${row.phone}` : ''}</p>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <button onClick={() => copyMessage(row)} className="flex items-center gap-1 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 border rounded-lg">

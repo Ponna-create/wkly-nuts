@@ -3,6 +3,7 @@ import { Plus, Edit, Trash2, Search, X, Star } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
 import { LineChart, TrendingUp, TrendingDown, History } from 'lucide-react';
+import { formatDate } from '../utils/dateFormat';
 
 const VolatilityBadge = ({ volatility, trend }) => {
   if (!volatility && volatility !== 0) return null;
@@ -94,7 +95,7 @@ const PriceHistoryModal = ({ isOpen, onClose, vendorId, ingredientName, unit }) 
                       const diff = record.price_per_unit - prevPrice;
                       return (
                         <tr key={record.id} className="border-b last:border-0 hover:bg-gray-50">
-                          <td className="p-2">{new Date(record.created_at).toLocaleDateString()}</td>
+                          <td className="p-2">{formatDate(record.created_at)}</td>
                           <td className="p-2 font-medium">₹{record.price_per_unit}</td>
                           <td className={`p-2 ${diff > 0 ? 'text-red-500' : diff < 0 ? 'text-green-500' : 'text-gray-400'}`}>
                             {i === 0 ? '-' : `${diff > 0 ? '+' : ''}${diff.toFixed(2)}`}

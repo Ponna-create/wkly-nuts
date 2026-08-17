@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
+import { formatDate } from '../utils/dateFormat';
 import {
   Plus, Search, Filter, X, Edit2, Trash2, Receipt,
   IndianRupee, Calendar, TrendingUp, ChevronDown, ChevronUp, FileSpreadsheet
@@ -186,7 +187,7 @@ export default function Expenses() {
                   <div className="flex items-center gap-3 text-xs text-gray-400 mt-0.5">
                     <span>{exp.expense_number}</span>
                     {exp.vendor_name && <span>{exp.vendor_name}</span>}
-                    <span>{new Date(exp.payment_date).toLocaleDateString('en-IN')}</span>
+                    <span>{formatDate(exp.payment_date)}</span>
                   </div>
                 </div>
                 <div className="text-right flex-shrink-0">

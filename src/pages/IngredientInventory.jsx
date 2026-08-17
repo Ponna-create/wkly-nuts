@@ -3,9 +3,10 @@ import { Plus, ChevronDown, ChevronRight, Package, AlertCircle, Search, X, Edit2
 import { dbService } from '../services/supabase';
 import { useApp } from '../context/AppContext';
 
+import { formatDate as formatDateShared } from '../utils/dateFormat';
 const formatDate = (date) => {
   if (!date) return '—';
-  return new Date(date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  return formatDateShared(date);
 };
 
 const getBatchStatus = (batch) => {

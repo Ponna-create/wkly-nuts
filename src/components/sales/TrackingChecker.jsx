@@ -84,7 +84,7 @@ export default function TrackingChecker({ orders, onOrderUpdate, showToast }) {
   };
 
   const handleFlagStuck = async (order) => {
-    const note = `⚠️ Checked ${new Date().toLocaleDateString('en-IN')} — not moving`;
+    const note = `⚠️ Checked ${formatDate(new Date())} — not moving`;
     const { error } = await dbService.updateSalesOrder({ id: order.id, internalNotes: note });
     if (error) {
       showToast('Error saving note', 'error');

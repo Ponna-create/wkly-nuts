@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Plus, Edit, Trash2, Search, X, Package, AlertTriangle, CheckCircle, Layers, Leaf, Box } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
+import { formatDate } from '../utils/dateFormat';
 import StockAlerts from '../components/StockAlerts';
 
 export default function InventoryManagement() {
@@ -357,7 +358,7 @@ export default function InventoryManagement() {
                   <tbody>
                     {transactions.map((t, i) => (
                       <tr key={t.id || i} className="border-t border-gray-100 hover:bg-gray-50">
-                        <td className="py-2 px-4 text-gray-600 text-xs">{new Date(t.created_at).toLocaleDateString('en-IN')}</td>
+                        <td className="py-2 px-4 text-gray-600 text-xs">{formatDate(t.created_at)}</td>
                         <td className="py-2 px-4 font-medium">{t.skus?.name || '-'}</td>
                         <td className="py-2 px-4 text-gray-600">{t.pack_type}</td>
                         <td className={`py-2 px-4 text-right font-bold ${t.operation === 'add' ? 'text-green-600' : 'text-red-600'}`}>

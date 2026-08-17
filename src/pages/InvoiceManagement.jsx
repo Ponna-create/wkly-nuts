@@ -7,6 +7,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import logo from '../assets/wkly-nuts-logo.png';
 import { getBusinessInfo } from '../utils/settings';
+import { formatDate } from '../utils/dateFormat';
 
 export default function InvoiceManagement() {
   const { state, dispatch, showToast } = useApp();
@@ -1121,7 +1122,7 @@ export default function InvoiceManagement() {
       // Invoice Number and Date (Right side, below company address)
       const invoiceDate = invoice.invoiceDate || invoice.invoice_date;
       const invoiceNum = invoice.invoiceNumber || invoice.invoice_number || 'N/A';
-      const dateStr = invoiceDate ? new Date(invoiceDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A';
+      const dateStr = invoiceDate ? formatDate(invoiceDate) : 'N/A';
       
       companyY += 8;
       doc.setFontSize(10);
@@ -1744,8 +1745,8 @@ export default function InvoiceManagement() {
         customer?.name || 'No Customer',
         customer?.phone || '',
         customer?.email || '',
-        invoice.invoiceDate ? new Date(invoice.invoiceDate).toLocaleDateString('en-IN') : '',
-        invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString('en-IN') : '',
+        invoice.invoiceDate ? formatDate(invoice.invoiceDate) : '',
+        invoice.dueDate ? formatDate(invoice.dueDate) : '',
         invoice.status || 'draft',
         (invoice.subtotal || 0).toFixed(2),
         (invoice.discountAmount || 0).toFixed(2),
@@ -1757,7 +1758,7 @@ export default function InvoiceManagement() {
         (invoice.totalAmount || 0).toFixed(2),
         (invoice.balanceDue || 0).toFixed(2),
         invoice.paymentMethod || '',
-        invoice.paymentDate ? new Date(invoice.paymentDate).toLocaleDateString('en-IN') : '',
+        invoice.paymentDate ? formatDate(invoice.paymentDate) : '',
         (invoice.notes || '').replace(/\n/g, ' ').replace(/,/g, ';'),
         (invoice.terms || '').replace(/\n/g, ' ').replace(/,/g, ';')
       ];
@@ -1923,7 +1924,7 @@ export default function InvoiceManagement() {
 
       const row = [
         si,
-        inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString('en-IN') : '',
+        inv.invoiceDate ? formatDate(inv.invoiceDate) : '',
         inv.invoiceNumber || '', customer?.name || '', customer?.gstin || '', placeOfSupply,
         allNames.join(', '), allHsn.join(', '), invQty, invTaxable.toFixed(2),
         invCGST.toFixed(2), invSGST.toFixed(2), invIGST.toFixed(2), invTax.toFixed(2), (invTaxable + invTax).toFixed(2), channel
@@ -2536,7 +2537,7 @@ export default function InvoiceManagement() {
                           </td>
                           <td className="py-4 px-4 text-sm text-gray-600">
                             {invoice.invoiceDate 
-                              ? new Date(invoice.invoiceDate).toLocaleDateString('en-IN')
+                              ? formatDate(invoice.invoiceDate)
                               : 'N/A'
                             }
                           </td>

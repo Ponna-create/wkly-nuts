@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
 import { TimeInput12 } from './ProductionRuns';
 import { Clock, X, Trash2, ClipboardList, Users, Edit2, Check } from 'lucide-react';
+import { formatDateShort } from '../utils/dateFormat';
 
 const ACTIVITIES = [
   'Order confirmation', 'Customer replies (WhatsApp)', 'Delivery packing / fulfilment',
@@ -239,7 +240,7 @@ export default function WorkLog() {
             <tbody className="divide-y divide-gray-100">
               {entries.map(e => (
                 <tr key={e.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 text-gray-700 whitespace-nowrap">{e.work_date ? new Date(e.work_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—'}</td>
+                  <td className="px-4 py-3 text-gray-700 whitespace-nowrap">{e.work_date ? formatDateShort(e.work_date) : '—'}</td>
                   <td className="px-4 py-3 font-medium text-gray-900">{e.activity}{e.notes && <span className="block text-xs text-gray-400 font-normal">{e.notes}</span>}</td>
                   <td className="px-4 py-3 text-gray-600">{(e.staff || []).map(s => s.name).join(', ') || '—'}</td>
                   <td className="px-4 py-3 text-right text-gray-700">{(parseFloat(e.hours) || 0).toFixed(2)}</td>
