@@ -319,6 +319,10 @@ const _realDbService = {
         monthlySellingPrice: sku.monthly_pack?.sellingPrice || 0,
         mrp: sku.weekly_pack?.mrp ?? null,
         processCosts: sku.weekly_pack?.processCosts || [],
+        // What the courier scale actually reads (incl. packaging) — used to
+        // auto-resolve which order a tracking-slip photo belongs to.
+        shippingWeightKg: sku.weekly_pack?.shippingWeightKg ?? null,
+        monthlyShippingWeightKg: sku.monthly_pack?.shippingWeightKg ?? null,
         // Type + type-specific config (persisted in the JSONB)
         skuType: sku.weekly_pack?.skuType || 'weekly',
         unitWeight: sku.weekly_pack?.unitWeight ?? '',
@@ -373,6 +377,7 @@ const _realDbService = {
         sellingPrice: sku.sellingPrice || 0,
         mrp: sku.mrp ?? null,
         processCosts: sku.processCosts || [],
+        shippingWeightKg: sku.shippingWeightKg ?? null,
       };
       const monthlyPack = {
         ...(sku.monthlyPack || {}),
@@ -386,6 +391,7 @@ const _realDbService = {
         sellingPrice: sku.monthlySellingPrice ?? sku.sellingPrice ?? 0,
         mrp: sku.mrp ?? null,
         processCosts: sku.processCosts || [],
+        shippingWeightKg: sku.monthlyShippingWeightKg ?? sku.shippingWeightKg ?? null,
       };
       const { data, error } = await supabase
         .from('skus')
@@ -454,6 +460,7 @@ const _realDbService = {
         sellingPrice: sku.sellingPrice || sku.weeklyPack?.sellingPrice || 0,
         mrp: sku.mrp ?? sku.weeklyPack?.mrp ?? null,
         processCosts: sku.processCosts || sku.weeklyPack?.processCosts || [],
+        shippingWeightKg: sku.shippingWeightKg ?? sku.weeklyPack?.shippingWeightKg ?? null,
       };
       const monthlyPackUpdate = {
         ...(sku.monthlyPack || {}),
@@ -465,6 +472,7 @@ const _realDbService = {
         sellingPrice: sku.monthlySellingPrice ?? sku.monthlyPack?.sellingPrice ?? sku.sellingPrice ?? 0,
         mrp: sku.mrp ?? sku.monthlyPack?.mrp ?? null,
         processCosts: sku.processCosts || sku.monthlyPack?.processCosts || [],
+        shippingWeightKg: sku.monthlyShippingWeightKg ?? sku.monthlyPack?.shippingWeightKg ?? sku.shippingWeightKg ?? null,
       };
       const { data, error } = await supabase
         .from('skus')

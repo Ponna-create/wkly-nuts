@@ -61,7 +61,8 @@ const nextReviewId = () => `rv-${Date.now()}-${reviewIdCounter++}`;
 // only the genuinely unclear ones (bad handwriting, no match found) land
 // in a "Needs Your Check" list at the end for a quick manual pick.
 export default function TrackingScanner({ orders, onClose, onUpdate }) {
-  const { showToast, dispatch } = useApp();
+  const { state, showToast, dispatch } = useApp();
+  const skus = state.skus || [];
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState(null);
   const [scannedCode, setScannedCode] = useState(null); // live camera single-scan only
@@ -290,7 +291,7 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
       }
 
       const pool = orders.filter(o => !linkedIds.has(String(o.id)));
-      const match = findBestOrderMatch(data, pool);
+      const match = findBestOrderMatch(data, pool, skus);
 
       if (!match.trackingNumber) {
         dbService.logAiScan({ outcome: 'failed', guessedName: match.guessedName });
