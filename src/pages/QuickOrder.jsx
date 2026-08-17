@@ -283,7 +283,11 @@ export default function QuickOrder() {
     }
   };
 
-  const packOptions = ['weekly', 'monthly'];
+  // Only Recipe Pack SKUs (skuType 'weekly' — Day Pack, Nutrition Pack, Night
+  // Soak) actually have separate Weekly/Monthly pricing. Single/repack/resale
+  // SKUs (Dates, Seed Cycle, Mexican Bites, etc.) have just one price, so
+  // showing a "+Monthly" button for them added a second, meaningless variant.
+  const packOptionsFor = (sku) => sku.skuType === 'weekly' ? ['weekly', 'monthly'] : ['weekly'];
 
   return (
     <div className="min-h-screen bg-white flex flex-col">
@@ -495,13 +499,13 @@ export default function QuickOrder() {
                   {skus.map(sku => (
                     <div key={sku.id} className="flex items-center gap-2">
                       <span className="text-sm font-medium text-gray-800 flex-1 truncate">{sku.name}</span>
-                      {packOptions.map(pt => (
+                      {packOptionsFor(sku).map(pt => (
                         <button
                           key={pt}
                           onClick={() => addItem(sku, pt)}
                           className="px-3 py-1.5 bg-teal-600 text-white rounded-full text-xs font-medium hover:bg-teal-700 active:scale-95 transition"
                         >
-                          + {pt === 'weekly' ? 'Weekly' : 'Monthly'}
+                          {sku.skuType === 'weekly' ? `+ ${pt === 'weekly' ? 'Weekly' : 'Monthly'}` : '+ Add'}
                         </button>
                       ))}
                     </div>
@@ -517,7 +521,9 @@ export default function QuickOrder() {
                   <div key={item.key} className={`flex items-center justify-between rounded-lg px-3 py-2 ${item.unitPrice <= 0 ? 'bg-amber-50 border border-amber-200' : 'bg-gray-50'}`}>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-gray-900 truncate">{item.skuName}</p>
-                      <p className="text-xs text-gray-500 capitalize">{item.packType}</p>
+                      {skus.find(sk => String(sk.id) === String(item.skuId))?.skuType === 'weekly' && (
+                        <p className="text-xs text-gray-500 capitalize">{item.packType}</p>
+                      )}
                     </div>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
                       <button onClick={() => adjustItem(item.key, -1)} className="p-1 rounded bg-white border hover:bg-gray-100"><Minus className="w-3.5 h-3.5" /></button>
