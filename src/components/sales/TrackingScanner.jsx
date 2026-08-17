@@ -220,24 +220,32 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
     const ocrResults = new Array(files.length);
     let completed = 0;
     const CONCURRENCY = 2;
+    // 502/503 from our own API means the call to Gemini itself failed
+    // upstream — that's Google's infra hiccuping, not a problem with the
+    // photo, and it's almost always gone on the next attempt. Retrying here
+    // automatically means a batch upload doesn't leave one photo stuck in
+    // "needs your check" for a transient blip she'd otherwise have to
+    // notice and re-upload by hand.
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     const readOne = async (i) => {
-      try {
-        const base64 = await fileToBase64(files[i]);
-        const res = await fetch('/api/scan-slip', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image: base64 }),
-        });
-        const data = await res.json();
-        ocrResults[i] = { ok: res.ok, status: res.status, data };
-      } catch (err) {
-        console.error('AI scan error:', err);
-        // A network-level failure (request too large, connection reset,
-        // timeout) throws here rather than resolving with a status code —
-        // record which so it doesn't get reported as the same generic
-        // "couldn't read it" as a photo Gemini genuinely couldn't make out.
-        ocrResults[i] = { ok: false, networkError: err?.message || 'Network error' };
+      let lastResult;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const base64 = await fileToBase64(files[i]);
+          const res = await fetch('/api/scan-slip', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image: base64 }),
+          });
+          const data = await res.json();
+          lastResult = { ok: res.ok, status: res.status, data };
+        } catch (err) {
+          lastResult = { ok: false, networkError: err?.message || 'Network error' };
+        }
+        if (lastResult.ok || lastResult.status === 429 || lastResult.status === 400) break; // don't retry a rate-limit or a request Gemini actively rejected
+        if (attempt < 2) await sleep(1000 * (attempt + 1)); // 1s, then 2s
       }
+      ocrResults[i] = lastResult;
       completed++;
       setBatchProgress({ current: completed, total: files.length });
     };
@@ -260,7 +268,7 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
           : result?.networkError
             ? `Upload failed (${result.networkError}) — try again, or a smaller photo`
             : result?.status
-              ? `Server error (${result.status}) — try re-uploading this one`
+              ? `Server error (${result.status}) — retried 3x automatically, still failing, try re-uploading this one`
               : "Couldn't read anything in this photo";
         dbService.logAiScan({ outcome: 'failed' });
         newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, reason });
