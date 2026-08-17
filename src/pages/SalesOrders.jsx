@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Eye, Trash2, Zap, Camera, FileSpreadsheet, MessageCircle, Truck, Printer, LayoutGrid, ClipboardList } from 'lucide-react';
+import { Plus, Search, Eye, Trash2, Zap, Camera, FileSpreadsheet, MessageCircle, Truck, Printer, LayoutGrid, ClipboardList, CheckCircle2 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
 import { formatDate } from '../utils/dateFormat';
+import DateRangePicker from '../components/common/DateRangePicker';
 import NewOrderForm from '../components/sales/NewOrderForm';
 import OrderDetailView from '../components/sales/OrderDetailView';
 import BulkTrackingEntry from '../components/sales/BulkTrackingEntry';
@@ -219,7 +220,7 @@ export default function SalesOrders() {
           <button
             onClick={() => setShowBulkLabelPrint(true)}
             className="flex items-center gap-2 px-3 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition text-sm font-medium"
-            title="Print labels for all orders by date"
+            title="Print labels for orders by date"
           >
             <Printer className="w-4 h-4" />
             Labels
@@ -291,23 +292,11 @@ export default function SalesOrders() {
       {/* Date filter */}
       <div className="flex flex-wrap items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2">
         <span className="text-sm text-gray-500 font-medium">Order date:</span>
-        <input type="date" value={dateFrom} max={dateTo || undefined}
-          onChange={(e) => setDateFrom(e.target.value)}
-          className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-teal-500" />
-        <span className="text-gray-400 text-sm">to</span>
-        <input type="date" value={dateTo} min={dateFrom || undefined}
-          onChange={(e) => setDateTo(e.target.value)}
-          className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-teal-500" />
-        <button
-          onClick={() => { const t = new Date().toISOString().split('T')[0]; setDateFrom(t); setDateTo(t); }}
-          className="px-2.5 py-1.5 text-xs font-medium text-teal-700 bg-teal-50 border border-teal-200 rounded-lg hover:bg-teal-100">Today</button>
-        <button
-          onClick={() => { const y = new Date(Date.now() - 864e5).toISOString().split('T')[0]; setDateFrom(y); setDateTo(y); }}
-          className="px-2.5 py-1.5 text-xs font-medium text-gray-600 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100">Yesterday</button>
-        {(dateFrom || dateTo) && (
-          <button onClick={() => { setDateFrom(''); setDateTo(''); }}
-            className="px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 rounded-lg">Clear</button>
-        )}
+        <DateRangePicker
+          from={dateFrom}
+          to={dateTo}
+          onChange={({ from, to }) => { setDateFrom(from); setDateTo(to); }}
+        />
         <span className="ml-auto text-xs text-gray-400">{filteredOrders.length} order{filteredOrders.length !== 1 ? 's' : ''} shown</span>
       </div>
 
@@ -345,6 +334,7 @@ export default function SalesOrders() {
                   <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Source</th>
                   <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Amount</th>
                   <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Status</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Label</th>
                   <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Date</th>
                   <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Actions</th>
                 </tr>
@@ -369,6 +359,17 @@ export default function SalesOrders() {
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${badge.bg} ${badge.text}`}>
                           {badge.label}
                         </span>
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        {order.label_printed_at ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800" title={`Printed ${formatDate(order.label_printed_at)}`}>
+                            <CheckCircle2 className="w-3.5 h-3.5" /> Printed
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                            <Printer className="w-3.5 h-3.5" /> Not printed
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-600">{formatDate(order.order_date)}</td>
                       <td className="px-4 py-3 text-right">
@@ -509,6 +510,7 @@ export default function SalesOrders() {
         <A4LabelSheet
           orders={orders}
           onClose={() => setShowA4LabelSheet(false)}
+          onPrinted={() => loadOrders()}
           showToast={showToast}
         />
       )}

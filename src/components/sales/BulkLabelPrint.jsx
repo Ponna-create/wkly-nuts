@@ -1,36 +1,40 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
-import { X, Printer, Calendar, CheckSquare, Square } from 'lucide-react';
+import { X, Printer, CheckSquare, Square } from 'lucide-react';
 import { sanitizeHtml } from '../../utils/sanitize';
 import { dbService } from '../../services/supabase';
 import { useApp } from '../../context/AppContext';
 import { buildInvoiceDataFromOrder } from '../../utils/invoiceFromOrder';
 import { getBusinessInfo } from '../../utils/settings';
+import DateRangePicker from '../common/DateRangePicker';
 
 export default function BulkLabelPrint({ orders, onClose, onPrinted, showToast }) {
   const { state, dispatch } = useApp();
   const navigate = useNavigate();
   const printRef = useRef(null);
   const [labelSize, setLabelSize] = useState('a4');
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const today = new Date().toISOString().split('T')[0];
+  const [dateFrom, setDateFrom] = useState(today);
+  const [dateTo, setDateTo] = useState(today);
   const [selectedIds, setSelectedIds] = useState(new Set());
 
   const isA4 = labelSize === 'a4';
   const s = isA4 ? 1.4 : 1;
 
-  // Filter orders by selected date
+  // Filter orders by the selected date range — a Sat+Sun+Monday backlog can
+  // now be pulled in together instead of one calendar day at a time.
   const dateOrders = useMemo(() => {
     return (orders || []).filter(o => {
       const d = o.order_date || o.created_at?.split('T')[0];
-      return d === selectedDate;
+      return (!dateFrom || d >= dateFrom) && (!dateTo || d <= dateTo);
     });
-  }, [orders, selectedDate]);
+  }, [orders, dateFrom, dateTo]);
 
-  // Auto-select all on date change
+  // Auto-select all on date range change
   useEffect(() => {
     setSelectedIds(new Set(dateOrders.map(o => o.id)));
-  }, [dateOrders.length, selectedDate]);
+  }, [dateOrders.length, dateFrom, dateTo]);
 
   const toggleOrder = (id) => {
     setSelectedIds(prev => {
@@ -63,6 +67,10 @@ export default function BulkLabelPrint({ orders, onClose, onPrinted, showToast }
       await Promise.all(toBump.map(o => dbService.updateSalesOrder({ id: o.id, status: 'packing' })));
       if (onPrinted) onPrinted();
     }
+
+    // Stamp every printed order so the Sales Orders list can show which
+    // ones already had a label printed vs which are still pending.
+    await Promise.all(selectedOrders.map(o => dbService.updateSalesOrder({ id: o.id, label_printed_at: new Date().toISOString() })));
 
     // Auto-generate the invoice alongside the label for any order that doesn't have one yet
     const needsInvoice = selectedOrders.filter(o => !o.invoice_id);
@@ -99,7 +107,7 @@ export default function BulkLabelPrint({ orders, onClose, onPrinted, showToast }
     printWindow.document.write(`
       <html>
         <head>
-          <title>Bulk Labels - ${selectedDate}</title>
+          <title>Bulk Labels - ${dateFrom}${dateTo && dateTo !== dateFrom ? ' to ' + dateTo : ''}</title>
           <style>
             @page { size: ${pageWidth} ${pageHeight}; margin: 0; }
             * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -137,7 +145,7 @@ export default function BulkLabelPrint({ orders, onClose, onPrinted, showToast }
     const items = order.items || [];
     const trackingNumber = order.tracking_number || '';
     const courierName = order.courier_name || 'ST Courier';
-    const shippingDate = order.dispatch_date || order.order_date || selectedDate;
+    const shippingDate = order.dispatch_date || order.order_date || dateFrom;
     const address = order.shipping_address || '';
 
     const hasMonthly = items.some(i => (i.pack_type || i.packType || '').toLowerCase().includes('month'));
@@ -257,25 +265,15 @@ export default function BulkLabelPrint({ orders, onClose, onPrinted, showToast }
         </div>
 
         <div className="p-4 space-y-4">
-          {/* Date Filter */}
+          {/* Date range filter — one calendar, pick a start and end day (e.g.
+              a Sat+Sun+Monday backlog) instead of one day at a time */}
           <div className="flex items-center gap-3 bg-gray-50 p-3 rounded-lg">
-            <Calendar className="w-5 h-5 text-gray-500" />
-            <input type="date" value={selectedDate} onChange={(e) => { setSelectedDate(e.target.value); setSelectedIds(new Set()); }}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm flex-1" />
-            <span className="text-sm text-gray-600 font-medium">{dateOrders.length} orders</span>
-          </div>
-
-          {/* Quick date buttons */}
-          <div className="flex gap-2">
-            {[
-              { label: 'Today', date: new Date().toISOString().split('T')[0] },
-              { label: 'Yesterday', date: new Date(Date.now() - 86400000).toISOString().split('T')[0] },
-            ].map(d => (
-              <button key={d.label} onClick={() => { setSelectedDate(d.date); setSelectedIds(new Set()); }}
-                className={`px-3 py-1 rounded-full text-xs font-medium ${selectedDate === d.date ? 'bg-teal-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-                {d.label}
-              </button>
-            ))}
+            <DateRangePicker
+              from={dateFrom}
+              to={dateTo}
+              onChange={({ from, to }) => { setDateFrom(from); setDateTo(to); }}
+            />
+            <span className="text-sm text-gray-600 font-medium ml-auto">{dateOrders.length} orders</span>
           </div>
 
           {/* Order List with Checkboxes */}

@@ -2353,6 +2353,7 @@ const _realDbService = {
         ['internal_notes', 'internalNotes', 'internal_notes'],
         ['boxes_small', 'boxesSmall', 'boxes_small'],
         ['boxes_big', 'boxesBig', 'boxes_big'],
+        ['label_printed_at', 'labelPrintedAt', 'label_printed_at'],
       ];
 
       fields.forEach(([dbCol, camel, snake]) => {

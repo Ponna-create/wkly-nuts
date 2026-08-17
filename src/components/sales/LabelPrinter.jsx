@@ -3,6 +3,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { X, Printer, Edit3, ChevronDown } from 'lucide-react';
 import { sanitizeHtml } from '../../utils/sanitize';
 import { getBusinessInfo } from '../../utils/settings';
+import { dbService } from '../../services/supabase';
 
 // Box presets
 const BOX_PRESETS = [
@@ -11,7 +12,7 @@ const BOX_PRESETS = [
   { label: 'Custom', dimensions: '', weight: 0 },
 ];
 
-export default function LabelPrinter({ order, onClose, labelSize: initialSize = '4x6' }) {
+export default function LabelPrinter({ order, onClose, labelSize: initialSize = '4x6', onPrinted }) {
   const printRef = useRef(null);
   const [labelSize, setLabelSize] = useState(initialSize);
   const [editing, setEditing] = useState(false);
@@ -74,6 +75,12 @@ export default function LabelPrinter({ order, onClose, labelSize: initialSize = 
     `);
     printWindow.document.close();
     setTimeout(() => { printWindow.print(); printWindow.close(); }, 400);
+    // Stamp so the Sales Orders list can show this order's label as printed.
+    if (order.id) {
+      dbService.updateSalesOrder({ id: order.id, label_printed_at: new Date().toISOString() })
+        .then(() => { if (onPrinted) onPrinted(); })
+        .catch(() => {});
+    }
   };
 
   const s = isA4 ? 1.6 : 1;

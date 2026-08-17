@@ -1,24 +1,30 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { X, Printer, Calendar, CheckSquare, Square } from 'lucide-react';
+import { X, Printer, CheckSquare, Square } from 'lucide-react';
 import { generateA4LabelSheet } from '../../utils/a4LabelSheet';
+import { dbService } from '../../services/supabase';
+import DateRangePicker from '../common/DateRangePicker';
 
 // Multiple shipping labels on one A4 sheet (2 cols x 3 rows) — for printers
 // that aren't thermal/sticker printers. Separate from the one-per-page
 // "Labels" print, which stays for when that format is still needed.
-export default function A4LabelSheet({ orders, onClose, showToast }) {
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+export default function A4LabelSheet({ orders, onClose, showToast, onPrinted }) {
+  const today = new Date().toISOString().split('T')[0];
+  const [dateFrom, setDateFrom] = useState(today);
+  const [dateTo, setDateTo] = useState(today);
   const [selectedIds, setSelectedIds] = useState(new Set());
 
+  // Filter by date range — a Sat+Sun+Monday backlog can be pulled in
+  // together instead of one calendar day at a time.
   const dateOrders = useMemo(() => {
     return (orders || []).filter(o => {
       const d = o.order_date || o.created_at?.split('T')[0];
-      return d === selectedDate;
+      return (!dateFrom || d >= dateFrom) && (!dateTo || d <= dateTo);
     });
-  }, [orders, selectedDate]);
+  }, [orders, dateFrom, dateTo]);
 
   useEffect(() => {
     setSelectedIds(new Set(dateOrders.map(o => o.id)));
-  }, [dateOrders.length, selectedDate]);
+  }, [dateOrders.length, dateFrom, dateTo]);
 
   const toggleOrder = (id) => {
     setSelectedIds(prev => {
@@ -36,13 +42,16 @@ export default function A4LabelSheet({ orders, onClose, showToast }) {
   const selectedOrders = dateOrders.filter(o => selectedIds.has(o.id));
   const pages = Math.ceil(selectedOrders.length / 6) || 0;
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
     if (selectedOrders.length === 0) {
       showToast('No orders selected to print', 'error');
       return;
     }
     generateA4LabelSheet(selectedOrders);
     showToast(`${selectedOrders.length} label(s) on ${pages} A4 sheet${pages !== 1 ? 's' : ''} — downloaded`, 'success');
+    // Stamp so the Sales Orders list can show these as printed.
+    await Promise.all(selectedOrders.map(o => dbService.updateSalesOrder({ id: o.id, label_printed_at: new Date().toISOString() })));
+    if (onPrinted) onPrinted();
   };
 
   return (
@@ -65,26 +74,16 @@ export default function A4LabelSheet({ orders, onClose, showToast }) {
 
         <div className="p-4 space-y-4">
           <div className="flex items-center gap-3 bg-gray-50 p-3 rounded-lg">
-            <Calendar className="w-5 h-5 text-gray-500" />
-            <input type="date" value={selectedDate} onChange={(e) => { setSelectedDate(e.target.value); setSelectedIds(new Set()); }}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm flex-1" />
-            <span className="text-sm text-gray-600 font-medium">{dateOrders.length} orders</span>
-          </div>
-
-          <div className="flex gap-2">
-            {[
-              { label: 'Today', date: new Date().toISOString().split('T')[0] },
-              { label: 'Yesterday', date: new Date(Date.now() - 86400000).toISOString().split('T')[0] },
-            ].map(d => (
-              <button key={d.label} onClick={() => { setSelectedDate(d.date); setSelectedIds(new Set()); }}
-                className={`px-3 py-1 rounded-full text-xs font-medium ${selectedDate === d.date ? 'bg-teal-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-                {d.label}
-              </button>
-            ))}
+            <DateRangePicker
+              from={dateFrom}
+              to={dateTo}
+              onChange={({ from, to }) => { setDateFrom(from); setDateTo(to); }}
+            />
+            <span className="text-sm text-gray-600 font-medium ml-auto">{dateOrders.length} orders</span>
           </div>
 
           {dateOrders.length === 0 ? (
-            <div className="text-center py-8 text-gray-400"><p>No orders for this date</p></div>
+            <div className="text-center py-8 text-gray-400"><p>No orders in this date range</p></div>
           ) : (
             <div className="space-y-1">
               <button onClick={toggleAll} className="flex items-center gap-2 text-sm text-teal-600 font-medium mb-2 hover:text-teal-700">

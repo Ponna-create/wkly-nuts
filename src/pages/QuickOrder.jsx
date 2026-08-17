@@ -248,6 +248,7 @@ export default function QuickOrder() {
     generateA4LabelSheet([justSaved]);
     ensureInvoiceForJustSaved();
     showToast('Label downloaded — 1 label on an A4 sheet (5 slots left blank)', 'success');
+    dbService.updateSalesOrder({ id: justSaved.id, label_printed_at: new Date().toISOString() }).catch(() => {});
   };
 
   // Batch print — process a stack of orders back-to-back via paste + Save
@@ -267,6 +268,7 @@ export default function QuickOrder() {
     }
     generateA4LabelSheet(todaysOrders);
     showToast(`Printed ${todaysOrders.length} label(s) for ${orderDate}`, 'success');
+    await Promise.all(todaysOrders.map(o => dbService.updateSalesOrder({ id: o.id, label_printed_at: new Date().toISOString() })));
     // Same as single-order printing — make sure every one of these has an
     // invoice record for GST filing, not just the ones already printed individually.
     for (const o of todaysOrders) {
