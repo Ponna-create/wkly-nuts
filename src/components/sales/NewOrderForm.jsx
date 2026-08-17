@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Plus, Trash2, AlertTriangle, Phone, CheckCircle } from 'lucide-react';
+import { X, Plus, Trash2, AlertTriangle, Phone, CheckCircle, Upload } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { dbService } from '../../services/supabase';
 import { parseAddress } from '../../utils/addressParser';
+import { extractAmazonInvoiceText, parseAmazonInvoice } from '../../utils/amazonInvoicePdf';
 
 export default function NewOrderForm({ onClose }) {
   const { state, dispatch, showToast } = useApp();
@@ -13,6 +14,7 @@ export default function NewOrderForm({ onClose }) {
   const [phoneLookupStatus, setPhoneLookupStatus] = useState('idle'); // idle | searching | found | not_found
   const [phoneMatch, setPhoneMatch] = useState(null);
   const [savingCustomer, setSavingCustomer] = useState(false);
+  const [parsingInvoice, setParsingInvoice] = useState(false);
 
   // SKUs from state — pricing comes from each SKU's own Selling Price, the
   // master price (see getPricingForSku below)
@@ -141,6 +143,65 @@ export default function NewOrderForm({ onClose }) {
   const handleOpenCreateCustomer = () => {
     setNewCustomer(prev => ({ ...prev, phone: phoneInput }));
     setNewCustomerMode(true);
+  };
+
+  // Reads an Amazon invoice PDF entirely in the browser (no server, no API —
+  // see utils/amazonInvoicePdf.js) and pre-fills the form from it. Always
+  // lands in the review panel rather than saving anything directly — she
+  // still has to check it over and hit Save, same as manual entry.
+  const handleAmazonPdfUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setParsingInvoice(true);
+    try {
+      const text = await extractAmazonInvoiceText(file);
+      const parsed = parseAmazonInvoice(text);
+
+      setNewCustomer({
+        name: parsed.customer.name || '',
+        email: '',
+        phone: '',
+        address: parsed.customer.address || '',
+        city: parsed.customer.city || '',
+        state: parsed.customer.state || '',
+        pincode: parsed.customer.pincode || '',
+      });
+      setNewCustomerMode(true);
+
+      const items = (parsed.items || []).map(item => {
+        const sku = skus.find(s => (s.name || '').toLowerCase().includes((item.name || '').toLowerCase()) || (item.name || '').toLowerCase().includes((s.name || '').toLowerCase()));
+        return {
+          skuId: sku ? String(sku.id) : '',
+          skuName: item.name,
+          packType: 'weekly',
+          quantity: item.quantity || 1,
+          unitPrice: item.unitPrice || 0,
+          total: item.total || 0,
+        };
+      });
+
+      setFormData(prev => ({
+        ...prev,
+        orderDate: parsed.orderDate || prev.orderDate,
+        zohoOrderId: parsed.orderNumber || prev.zohoOrderId,
+        items,
+        shippingCharge: parsed.shippingCharge || 0,
+      }));
+
+      const needsCheck = (parsed.items || []).some(i => i.hsnNeedsVerification || !i.unitPrice);
+      showToast(
+        needsCheck
+          ? 'Invoice read — please double-check the items, HSN, and prices before saving'
+          : `Invoice read: ${parsed.customer.name || 'customer'}, ${(parsed.items || []).length} item(s)`,
+        needsCheck ? 'warning' : 'success'
+      );
+    } catch (err) {
+      console.error('Amazon invoice parse failed:', err);
+      showToast('Could not read that PDF — enter the details manually instead', 'error');
+    } finally {
+      setParsingInvoice(false);
+      e.target.value = ''; // allow re-uploading the same file if needed
+    }
   };
 
   const handleSkuChange = (skuId) => {
@@ -323,15 +384,26 @@ export default function NewOrderForm({ onClose }) {
           </div>
 
           {formData.orderSource === 'amazon' && (
-            <div>
-              <label className="block text-sm font-semibold text-gray-900 mb-2">Amazon Order ID (for reference)</label>
-              <input
-                type="text"
-                placeholder="e.g. 402-8526004-3660355"
-                value={formData.zohoOrderId}
-                onChange={(e) => setFormData(prev => ({ ...prev, zohoOrderId: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
-              />
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-semibold text-gray-900 mb-2">Upload Amazon Invoice PDF (fills in the fields below automatically)</label>
+                <label className={`flex items-center justify-center gap-2 w-full px-3 py-3 border-2 border-dashed rounded-lg text-sm cursor-pointer transition ${parsingInvoice ? 'border-gray-200 text-gray-400' : 'border-teal-300 text-teal-700 hover:border-teal-500 hover:bg-teal-50'}`}>
+                  <Upload className="w-4 h-4" />
+                  {parsingInvoice ? 'Reading invoice...' : 'Choose PDF — customer, item, price, HSN all read automatically'}
+                  <input type="file" accept="application/pdf" onChange={handleAmazonPdfUpload} disabled={parsingInvoice} className="hidden" />
+                </label>
+                <p className="text-xs text-gray-400 mt-1">Reads the invoice in your browser only — nothing is uploaded anywhere. Always double-check before saving.</p>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-900 mb-2">Amazon Order ID (for reference)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. 402-8526004-3660355"
+                  value={formData.zohoOrderId}
+                  onChange={(e) => setFormData(prev => ({ ...prev, zohoOrderId: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
+                />
+              </div>
             </div>
           )}
 
