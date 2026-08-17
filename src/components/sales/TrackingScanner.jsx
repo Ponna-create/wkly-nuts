@@ -5,25 +5,26 @@ import { useApp } from '../../context/AppContext';
 import { dbService } from '../../services/supabase';
 import { findBestOrderMatch } from '../../utils/ocrMatch';
 
-// Phone camera photos routinely come in at 3-8MB — sent raw, base64 encoding
-// inflates that by another ~33%, and Vercel's serverless functions reject
-// oversized request bodies before the function code (and Gemini) ever sees
-// the image. That failure looks identical to a genuinely-unreadable photo —
-// both just show "Couldn't read anything" — so a real photo could be
-// silently getting rejected on size alone with zero indication that's what
-// happened. Downscaling to a max dimension well within OCR-legible range
-// before upload avoids the limit entirely and also makes the Gemini call
-// faster/cheaper. 1600px turned out too aggressive for this — a full-page
-// consignment slip has small handwritten fields relative to the whole
-// frame, and shrinking that far pushed faint pen strokes below Gemini's
-// legibility threshold on a real slip (it read cleanly-written ones fine,
-// failed on messier handwriting after the resize). Vercel's request-body
-// limit is ~4.5MB and a compressed JPEG at this resolution/quality lands
-// nowhere close to that even for a full-resolution phone photo, so there's
-// plenty of headroom to raise this without reintroducing the original
-// size-limit problem.
+// Only resize/recompress when the file is actually large enough to risk
+// Vercel's ~4.5MB request-body limit (base64 inflates size ~33% on top of
+// the original). A photo already under that just gets sent as-is — every
+// canvas round-trip is a fresh generation of JPEG compression loss on top
+// of whatever the phone's camera already applied, and re-encoding a file
+// that didn't need it at all was hurting real, already-fine photos for no
+// reason. Only touch it when there's an actual size problem to solve.
+const SIZE_THRESHOLD_BYTES = 3 * 1024 * 1024; // 3MB — leaves headroom under the ~4.5MB body limit even after base64 inflation
 const MAX_DIMENSION = 2400;
+const readRaw = (file) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(reader.result);
+  reader.onerror = reject;
+  reader.readAsDataURL(file);
+});
 const fileToBase64 = (file) => new Promise((resolve, reject) => {
+  if (file.size <= SIZE_THRESHOLD_BYTES) {
+    readRaw(file).then(resolve).catch(reject);
+    return;
+  }
   const img = new Image();
   const objectUrl = URL.createObjectURL(file);
   img.onload = () => {
@@ -44,10 +45,7 @@ const fileToBase64 = (file) => new Promise((resolve, reject) => {
     URL.revokeObjectURL(objectUrl);
     // Fall back to the raw file rather than failing outright — some formats
     // (e.g. HEIC) can't be drawn to a canvas in every browser.
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
+    readRaw(file).then(resolve).catch(reject);
   };
   img.src = objectUrl;
 });
@@ -219,13 +217,11 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
     // grab the same order — that part stays strictly sequential.
     const ocrResults = new Array(files.length);
     let completed = 0;
-    const CONCURRENCY = 2;
-    // 502/503 from our own API means the call to Gemini itself failed
-    // upstream — that's Google's infra hiccuping, not a problem with the
-    // photo, and it's almost always gone on the next attempt. Retrying here
-    // automatically means a batch upload doesn't leave one photo stuck in
-    // "needs your check" for a transient blip she'd otherwise have to
-    // notice and re-upload by hand.
+    // Sequential, not concurrent — the free Gemini tier's own per-minute cap
+    // is easy to trip with 2 requests in flight plus retries stacked on top,
+    // and that self-inflicted overload was showing up as opaque 502s rather
+    // than a clean 429. One at a time is slower but far more reliable, and
+    // batches here are small enough that it doesn't meaningfully cost time.
     const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     const readOne = async (i) => {
       let lastResult;
@@ -243,16 +239,13 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
           lastResult = { ok: false, networkError: err?.message || 'Network error' };
         }
         if (lastResult.ok || lastResult.status === 429 || lastResult.status === 400) break; // don't retry a rate-limit or a request Gemini actively rejected
-        if (attempt < 2) await sleep(1000 * (attempt + 1)); // 1s, then 2s
+        if (attempt < 2) await sleep(3000 * (attempt + 1)); // 3s, then 6s — long enough for a per-minute quota to actually recover
       }
       ocrResults[i] = lastResult;
       completed++;
       setBatchProgress({ current: completed, total: files.length });
     };
-    const worker = async (start) => {
-      for (let i = start; i < files.length; i += CONCURRENCY) await readOne(i);
-    };
-    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, files.length) }, (_, w) => worker(w)));
+    for (let i = 0; i < files.length; i++) await readOne(i);
 
     // Phase 2: match + link in original order, sequentially and fast (no
     // more waiting on Gemini here).
@@ -263,12 +256,13 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
     for (let i = 0; i < files.length; i++) {
       const result = ocrResults[i];
       if (!result || !result.ok) {
+        const detail = result?.data?.geminiDetail;
         const reason = result?.status === 429
           ? "Rate limited — wait a minute and re-upload this one"
           : result?.networkError
             ? `Upload failed (${result.networkError}) — try again, or a smaller photo`
             : result?.status
-              ? `Server error (${result.status}) — retried 3x automatically, still failing, try re-uploading this one`
+              ? `Server error (${result.status})${detail ? `: ${detail}` : ''} — retried 3x, still failing`
               : "Couldn't read anything in this photo";
         dbService.logAiScan({ outcome: 'failed' });
         newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, reason });
@@ -277,7 +271,8 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
       const data = result.data;
       if (!data.trackingNumber && !data.customerName && !data.rawText) {
         dbService.logAiScan({ outcome: 'failed' });
-        newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, reason: "Couldn't read anything in this photo" });
+        const reason = data.emptyReason ? `Nothing readable (${data.emptyReason})` : "Couldn't read anything in this photo";
+        newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, reason });
         continue;
       }
 

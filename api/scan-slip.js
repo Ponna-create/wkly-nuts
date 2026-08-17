@@ -4,9 +4,22 @@
 // with no idea what it's looking at: it garbled messy handwritten names into
 // nonsense (random Cyrillic/CJK characters) since it was just guessing at
 // scripts. Gemini actually reads the slip the way a person would — it knows
-// the squiggle in the "To:" box is a name — and extracts the fields
-// directly instead of us regexing a raw OCR text blob afterward.
-
+// the squiggle in the "To:" box is a name.
+//
+// Rebuilt after real slips kept failing here despite reading fine in
+// Gemini's own consumer chat with the identical photo. The two aren't
+// actually equivalent even though they hit the same underlying model:
+//   1. This forced a rigid typed JSON schema on the FIRST response — no room
+//      to reason about a hard read before committing to an answer. Chat has
+//      no such constraint. Structured decoding under a strict schema is a
+//      known accuracy hit on tasks that need real visual reasoning, not just
+//      lookup. Switched to free-form text + a delimiter Gemini fills in,
+//      parsed on our side — same result shape, without forcing the answer
+//      before it's "thought" about the image.
+//   2. Every upstream failure was swallowed into a server log she can never
+//      see and reported to the client as one generic "request failed" with
+//      no detail — pure guesswork trying to diagnose from outside. Now
+//      returns a real (truncated) snippet of what Gemini's API actually said.
 const ALLOWED_ORIGINS = [
   'https://wkly-nuts.vercel.app',
   'http://localhost:5173',
@@ -19,18 +32,19 @@ function getCorsOrigin(req) {
   return ALLOWED_ORIGINS[0];
 }
 
-const PROMPT = `You are reading a courier consignment slip (ST Courier, India) from a photo. Some fields are handwritten and messy — read them carefully and use context (this is a shipping slip) to infer what they say, the way a person would, rather than transcribing stray marks literally.
+const PROMPT = `You are reading a courier consignment slip (ST Courier, India) from a photo, exactly the way you'd read it if someone pasted this photo directly into a chat with you. Some fields are handwritten and messy — read them carefully and use context (this is a shipping slip) to work out what they say, the way a person would, rather than transcribing stray marks literally.
 
-Extract these fields as JSON:
-- trackingNumber: the printed CONSIGNMENT NUMBER, 11-12 digits, printed under the barcode (this is machine-printed, not handwritten — should almost always be readable even when the rest of the slip is messy)
-- customerName: the handwritten name in the "To:" / "Receiver's Full Name" box
-- phone: the handwritten mobile number in the "To: Mobile:" box, digits only, or null if not legible
-- weight: the weight in KG as a number, or null
-- amount: the number written in the Cash or Credit box (the shipping amount collected), or null
-- date: the DATE field, normalized to YYYY-MM-DD (if no year is shown, assume 2026), or null
-- rawText: every other word/number you can make out on the slip, space-separated, for fallback matching
+Look at the whole photo first, then report these fields, one per line, in exactly this format (use "null" with no quotes for anything truly illegible or blank — but judge each field independently, a messy name does NOT mean the tracking number is also unreadable):
 
-Judge each field independently — a messy or unclear name does NOT mean the tracking number, weight, or amount are also unreadable, and vice versa. Give your best reasonable reading for every field you can make any sense of at all, even a partial or low-confidence one (e.g. "Nishali" is a fine answer even if you're not fully sure of one letter) — a human reviews and confirms every result afterward, so a decent guess is far more useful than null. Only use null when a field is truly blank, fully obscured, or gives you nothing to go on whatsoever. Respond with ONLY the JSON object.`;
+TRACKING: the printed CONSIGNMENT NUMBER, 11-12 digits, printed under the barcode (machine-printed, not handwritten — should almost always be readable even when the rest of the slip is messy)
+NAME: the handwritten name in the "To:" / "Receiver's Full Name" box — give your best reading even if not fully certain of every letter, a human confirms this afterward
+PHONE: the handwritten mobile number in the "To: Mobile:" box, digits only
+WEIGHT: the weight in KG as a plain number
+AMOUNT: the number written in the Cash or Credit box (the shipping amount collected)
+DATE: the DATE field as YYYY-MM-DD (assume 2026 if no year shown)
+RAWTEXT: every other word/number you can make out on the slip, space-separated, for fallback matching
+
+A low-confidence best guess is far more useful to us than "null" — someone reviews and confirms every result afterward, so don't hold back a reasonable reading just because you're not 100% sure. Only write null when there's truly nothing to go on for that field. Respond with ONLY those 7 lines, nothing else before or after.`;
 
 export default async function handler(req, res) {
   const origin = getCorsOrigin(req);
@@ -49,7 +63,6 @@ export default async function handler(req, res) {
   if (!image || typeof image !== 'string') {
     return res.status(400).json({ error: 'Missing image (base64)' });
   }
-  // Strip a data: URL prefix if the client sent one whole
   const commaIdx = image.indexOf(',');
   const base64 = commaIdx !== -1 ? image.slice(commaIdx + 1) : image;
   const mimeMatch = image.match(/^data:(image\/\w+);base64,/);
@@ -58,7 +71,7 @@ export default async function handler(req, res) {
   try {
     const geminiRes = await fetch(
       // "-latest" alias always points at the current recommended Flash
-      // model, so this doesn't silently break again the next time Google
+      // model so this doesn't silently break again the next time Google
       // retires a model version (gemini-2.0-flash, used here originally,
       // was retired March 2026).
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`,
@@ -72,51 +85,56 @@ export default async function handler(req, res) {
               { inline_data: { mime_type: mimeType, data: base64 } },
             ],
           }],
-          generationConfig: {
-            responseMimeType: 'application/json',
-            responseSchema: {
-              type: 'OBJECT',
-              properties: {
-                trackingNumber: { type: 'STRING', nullable: true },
-                customerName: { type: 'STRING', nullable: true },
-                phone: { type: 'STRING', nullable: true },
-                weight: { type: 'NUMBER', nullable: true },
-                amount: { type: 'NUMBER', nullable: true },
-                date: { type: 'STRING', nullable: true },
-                rawText: { type: 'STRING', nullable: true },
-              },
-            },
-          },
+          // No responseSchema this time, deliberately — see file header.
+          // Plain text out, parsed below.
         }),
       }
     );
 
     if (!geminiRes.ok) {
       const errText = await geminiRes.text();
-      console.error('Gemini API error:', errText);
-      return res.status(502).json({ error: 'Slip reading request failed' });
+      console.error('Gemini API error:', geminiRes.status, errText);
+      // Actually surface what Gemini said instead of a black-box "failed" —
+      // this is the detail that was previously only in a log nobody could see.
+      return res.status(502).json({ error: 'Slip reading request failed', geminiStatus: geminiRes.status, geminiDetail: errText.slice(0, 300) });
     }
 
     const data = await geminiRes.json();
-    const jsonText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-    let fields;
-    try {
-      fields = JSON.parse(jsonText);
-    } catch {
-      fields = {};
+    const finishReason = data?.candidates?.[0]?.finishReason;
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+    if (!text) {
+      // The model responded but produced no usable content — most commonly
+      // a safety filter or hitting its own output token limit, not "the
+      // photo was unreadable". Worth telling apart from a genuine empty read.
+      return res.status(200).json({
+        trackingNumber: null, customerName: null, phone: null, weight: null,
+        amount: null, date: null, rawText: '',
+        emptyReason: finishReason || 'no content returned',
+      });
     }
 
+    const field = (label) => {
+      const m = text.match(new RegExp(`${label}:\\s*(.*)`, 'i'));
+      if (!m) return null;
+      const val = m[1].trim();
+      return (!val || /^null$/i.test(val)) ? null : val;
+    };
+
+    const weightRaw = field('WEIGHT');
+    const amountRaw = field('AMOUNT');
+
     return res.status(200).json({
-      trackingNumber: fields.trackingNumber || null,
-      customerName: fields.customerName || null,
-      phone: fields.phone || null,
-      weight: fields.weight ?? null,
-      amount: fields.amount ?? null,
-      date: fields.date || null,
-      rawText: fields.rawText || '',
+      trackingNumber: field('TRACKING'),
+      customerName: field('NAME'),
+      phone: field('PHONE'),
+      weight: weightRaw ? parseFloat(weightRaw.replace(/[^\d.]/g, '')) || null : null,
+      amount: amountRaw ? parseFloat(amountRaw.replace(/[^\d.]/g, '')) || null : null,
+      date: field('DATE'),
+      rawText: field('RAWTEXT') || '',
     });
   } catch (error) {
     console.error('scan-slip error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+    return res.status(500).json({ error: 'Internal server error', detail: String(error?.message || error).slice(0, 300) });
   }
 }
