@@ -156,6 +156,13 @@ export default function SKUManagement() {
     mrp: '',
     // Process cost — roasting gas, grinding, machine sealing, etc. Per-unit ₹ line items.
     processCosts: [],
+    // What the courier's scale actually reads for this box — includes
+    // packaging, not just product content (that's unitWeight/pouchWeight
+    // above, a different number). Used to auto-resolve which order a
+    // tracking-slip photo belongs to when a name match is ambiguous (a
+    // slip's weight rules out a 400g Seed Cycle vs a 1kg+ Monthly box).
+    shippingWeightKg: '',
+    monthlyShippingWeightKg: '',
   });
 
   const [currentRecipeItem, setCurrentRecipeItem] = useState({
@@ -288,6 +295,8 @@ export default function SKUManagement() {
       monthlySellingPrice: '',
       mrp: '',
       processCosts: [],
+      shippingWeightKg: '',
+      monthlyShippingWeightKg: '',
     });
     setCurrentRecipeItem({ ingredientId: '', gramsPerSachet: '' });
     setSkuCodeEdited(false);
@@ -545,6 +554,8 @@ export default function SKUManagement() {
       monthlySellingPrice: formData.monthlySellingPrice !== '' ? parseFloat(formData.monthlySellingPrice) : null,
       gstRate: formData.gstRate !== '' ? parseFloat(formData.gstRate) : 5,
       mrp: formData.mrp !== '' ? parseFloat(formData.mrp) : null,
+      shippingWeightKg: formData.shippingWeightKg !== '' ? parseFloat(formData.shippingWeightKg) : null,
+      monthlyShippingWeightKg: formData.monthlyShippingWeightKg !== '' ? parseFloat(formData.monthlyShippingWeightKg) : null,
       processCosts: formData.processCosts || [],
     };
 
@@ -601,6 +612,8 @@ export default function SKUManagement() {
       monthlySellingPrice: sku.monthlySellingPrice || '',
       mrp: sku.mrp ?? '',
       processCosts: sku.processCosts || [],
+      shippingWeightKg: sku.shippingWeightKg ?? '',
+      monthlyShippingWeightKg: sku.monthlyShippingWeightKg ?? '',
     });
     setEditingSKU(sku);
     setShowForm(true);
@@ -1495,6 +1508,12 @@ export default function SKUManagement() {
                             className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="e.g. 199" />
                         </div>
                         <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Shipping Weight (kg)</label>
+                          <input type="number" step="0.01" value={formData.shippingWeightKg} onChange={e => setFormData(f => ({ ...f, shippingWeightKg: e.target.value }))}
+                            className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="e.g. 0.4" />
+                          <p className="text-[11px] text-gray-400 mt-1">What the courier scale reads (incl. packaging) — used to auto-match tracking slips.</p>
+                        </div>
+                        <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Reorder Cycle (days)</label>
                           <input type="number" value={formData.reorderCycleDays} onChange={e => setFormData(f => ({ ...f, reorderCycleDays: e.target.value }))}
                             className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Blank = not tracked" />
@@ -1730,6 +1749,11 @@ export default function SKUManagement() {
                       <label className="block text-sm font-medium text-gray-700 mb-1">MRP</label>
                       <input type="number" value={formData.mrp} onChange={e => setFormData(f => ({ ...f, mrp: e.target.value }))}
                         className="w-full border rounded-lg px-3 py-2 text-sm" min="0" placeholder="e.g. 249" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Shipping Weight (kg)</label>
+                      <input type="number" step="0.01" value={formData.shippingWeightKg} onChange={e => setFormData(f => ({ ...f, shippingWeightKg: e.target.value }))}
+                        className="w-full border rounded-lg px-3 py-2 text-sm" min="0" placeholder="e.g. 0.4" />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Reorder Cycle (days)</label>
@@ -2003,6 +2027,18 @@ export default function SKUManagement() {
                     <input type="number" value={formData.reorderCycleDays} onChange={e => setFormData(f => ({ ...f, reorderCycleDays: e.target.value }))}
                       className="w-full border rounded-lg px-3 py-2 text-sm" min="1" placeholder="e.g. 7" />
                     <p className="text-[11px] text-gray-400 mt-1">Monthly orders auto-multiply boxes by 4.</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Weekly Shipping Weight (kg)</label>
+                    <input type="number" step="0.01" value={formData.shippingWeightKg} onChange={e => setFormData(f => ({ ...f, shippingWeightKg: e.target.value }))}
+                      className="w-full border rounded-lg px-3 py-2 text-sm" min="0" placeholder="e.g. 0.5" />
+                    <p className="text-[11px] text-gray-400 mt-1">What the courier scale reads (incl. packaging).</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Monthly Shipping Weight (kg)</label>
+                    <input type="number" step="0.01" value={formData.monthlyShippingWeightKg} onChange={e => setFormData(f => ({ ...f, monthlyShippingWeightKg: e.target.value }))}
+                      className="w-full border rounded-lg px-3 py-2 text-sm" min="0" placeholder="e.g. 1.8" />
+                    <p className="text-[11px] text-gray-400 mt-1">Used to auto-match tracking slips by weight.</p>
                   </div>
                 </div>
               </div>

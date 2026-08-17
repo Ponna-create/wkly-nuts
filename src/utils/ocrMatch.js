@@ -72,14 +72,39 @@ function similarity(a, b) {
   return 1 - distance / Math.max(m, n);
 }
 
+// What the courier's scale should read for this order — sum of each item's
+// SKU shipping weight (set in SKU Management; distinct from the product's
+// own content weight) × quantity, using the weekly or monthly figure
+// depending on that line's pack type. Returns null if any item's SKU is
+// missing a shipping weight, since a partial/guessed total would be worse
+// than no signal at all for telling two orders apart.
+export function expectedWeightForOrder(order, skus) {
+  const items = order.items || [];
+  if (items.length === 0 || !skus?.length) return null;
+  let total = 0;
+  for (const item of items) {
+    const sku = skus.find(s => String(s.id) === String(item.sku_id || item.skuId));
+    const isMonthly = (item.pack_type || item.packType) === 'monthly';
+    const perUnit = isMonthly ? sku?.monthlyShippingWeightKg : sku?.shippingWeightKg;
+    if (perUnit == null) return null;
+    total += perUnit * (item.quantity || 1);
+  }
+  return total;
+}
+
 // Best guess at which order a slip belongs to. `slip` is the structured
 // object returned by api/scan-slip.js (Gemini-read fields: trackingNumber,
 // customerName, phone, weight, amount, date, rawText) — those fields are
 // used directly since Gemini already read them in context, with the old
 // regex extractors only as a fallback for whatever it left null. Tries
 // phone first (high confidence — a phone number is unique); falls back to
-// fuzzy name matching, boosted by a pincode hit against the raw text.
-export function findBestOrderMatch(slip, candidateOrders) {
+// fuzzy name matching, boosted by a pincode hit against the raw text or the
+// slip's weight lining up with what that order should actually weigh —
+// exactly the signal that would have told apart two same-named orders
+// (a 400g Seed Cycle vs a 1.3kg Monthly box) without needing to dig through
+// the database by hand. `skus` is optional — weight scoring just doesn't
+// apply if it's not passed or SKUs don't have a shipping weight set yet.
+export function findBestOrderMatch(slip, candidateOrders, skus = []) {
   const text = slip.text || slip.rawText || '';
   const trackingNumber = slip.trackingNumber || extractTrackingFromText(text);
   const slipDate = slip.date || extractSlipDateFromText(text);
@@ -111,6 +136,17 @@ export function findBestOrderMatch(slip, candidateOrders) {
     const pincode = String(order.shipping_pincode || order.pincode || '').trim();
     if (pincode && pincode.length >= 5 && text.includes(pincode)) {
       score = Math.min(1, score + 0.25);
+    }
+    // Weight is a strong secondary signal precisely when two orders share a
+    // name (or a fuzzy match ties) — a 400g Seed Cycle and a 1.3kg Monthly
+    // box are never going to weigh the same on the courier's scale.
+    if (weight != null) {
+      const expected = expectedWeightForOrder(order, skus);
+      if (expected != null) {
+        const diff = Math.abs(weight - expected);
+        if (diff <= 0.15) score = Math.min(1, score + 0.2); // within 150g — plausibly the same box
+        else if (diff >= 0.5) score = Math.max(0, score - 0.3); // way off — probably not this order
+      }
     }
     if (!best || score > best.score) best = { order, score };
   }
