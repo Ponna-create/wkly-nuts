@@ -13,9 +13,16 @@ import { findBestOrderMatch } from '../../utils/ocrMatch';
 // silently getting rejected on size alone with zero indication that's what
 // happened. Downscaling to a max dimension well within OCR-legible range
 // before upload avoids the limit entirely and also makes the Gemini call
-// faster/cheaper, since text stays perfectly readable far below full camera
-// resolution.
-const MAX_DIMENSION = 1600;
+// faster/cheaper. 1600px turned out too aggressive for this — a full-page
+// consignment slip has small handwritten fields relative to the whole
+// frame, and shrinking that far pushed faint pen strokes below Gemini's
+// legibility threshold on a real slip (it read cleanly-written ones fine,
+// failed on messier handwriting after the resize). Vercel's request-body
+// limit is ~4.5MB and a compressed JPEG at this resolution/quality lands
+// nowhere close to that even for a full-resolution phone photo, so there's
+// plenty of headroom to raise this without reintroducing the original
+// size-limit problem.
+const MAX_DIMENSION = 2400;
 const fileToBase64 = (file) => new Promise((resolve, reject) => {
   const img = new Image();
   const objectUrl = URL.createObjectURL(file);
@@ -31,7 +38,7 @@ const fileToBase64 = (file) => new Promise((resolve, reject) => {
     canvas.width = width;
     canvas.height = height;
     canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-    resolve(canvas.toDataURL('image/jpeg', 0.85));
+    resolve(canvas.toDataURL('image/jpeg', 0.92));
   };
   img.onerror = () => {
     URL.revokeObjectURL(objectUrl);

@@ -22,7 +22,7 @@ function getCorsOrigin(req) {
 const PROMPT = `You are reading a courier consignment slip (ST Courier, India) from a photo. Some fields are handwritten and messy — read them carefully and use context (this is a shipping slip) to infer what they say, the way a person would, rather than transcribing stray marks literally.
 
 Extract these fields as JSON:
-- trackingNumber: the printed CONSIGNMENT NUMBER, 11-12 digits, printed under the barcode (this is machine-printed, not handwritten)
+- trackingNumber: the printed CONSIGNMENT NUMBER, 11-12 digits, printed under the barcode (this is machine-printed, not handwritten — should almost always be readable even when the rest of the slip is messy)
 - customerName: the handwritten name in the "To:" / "Receiver's Full Name" box
 - phone: the handwritten mobile number in the "To: Mobile:" box, digits only, or null if not legible
 - weight: the weight in KG as a number, or null
@@ -30,7 +30,7 @@ Extract these fields as JSON:
 - date: the DATE field, normalized to YYYY-MM-DD (if no year is shown, assume 2026), or null
 - rawText: every other word/number you can make out on the slip, space-separated, for fallback matching
 
-If a field genuinely isn't visible or you're not confident, use null rather than guessing. Respond with ONLY the JSON object.`;
+Judge each field independently — a messy or unclear name does NOT mean the tracking number, weight, or amount are also unreadable, and vice versa. Give your best reasonable reading for every field you can make any sense of at all, even a partial or low-confidence one (e.g. "Nishali" is a fine answer even if you're not fully sure of one letter) — a human reviews and confirms every result afterward, so a decent guess is far more useful than null. Only use null when a field is truly blank, fully obscured, or gives you nothing to go on whatsoever. Respond with ONLY the JSON object.`;
 
 export default async function handler(req, res) {
   const origin = getCorsOrigin(req);
