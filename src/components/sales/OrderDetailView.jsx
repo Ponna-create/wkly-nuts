@@ -500,7 +500,7 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
                     <input
                       type="number"
                       min="1"
-                      value={item.quantity}
+                      value={item.quantity || ''}
                       onChange={(e) => updateEditItem(idx, 'quantity', e.target.value)}
                       className="w-14 px-2 py-1 border border-gray-300 rounded text-sm text-center"
                     />
@@ -509,7 +509,7 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
                       <input
                         type="number"
                         min="0"
-                        value={item.unit_price ?? item.unitPrice ?? 0}
+                        value={(item.unit_price ?? item.unitPrice) || ''}
                         onChange={(e) => updateEditItem(idx, 'unit_price', e.target.value)}
                         className="w-20 px-2 py-1 border border-gray-300 rounded text-sm text-right"
                       />
@@ -531,7 +531,7 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
                     <span className="text-sm text-gray-500 mr-1">₹</span>
                     <input
                       type="number"
-                      value={editForm.shipping_charge}
+                      value={editForm.shipping_charge || ''}
                       onChange={(e) => setEditForm(prev => ({ ...prev, shipping_charge: e.target.value }))}
                       className="w-20 px-2 py-1 border border-gray-300 rounded text-sm text-right"
                     />

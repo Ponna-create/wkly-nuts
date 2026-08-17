@@ -490,7 +490,7 @@ export default function VendorManagement() {
                   <div className="flex gap-2">
                     <input
                       type="number"
-                      value={currentIngredient.quantityAvailable}
+                      value={currentIngredient.quantityAvailable || ''}
                       onChange={(e) =>
                         setCurrentIngredient({
                           ...currentIngredient,
@@ -525,7 +525,7 @@ export default function VendorManagement() {
                   <label className="label text-sm">Price per Unit (₹)</label>
                   <input
                     type="number"
-                    value={currentIngredient.pricePerUnit}
+                    value={currentIngredient.pricePerUnit || ''}
                     onChange={(e) =>
                       setCurrentIngredient({ ...currentIngredient, pricePerUnit: e.target.value })
                     }

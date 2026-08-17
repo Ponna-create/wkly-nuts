@@ -293,12 +293,12 @@ export default function IngredientInventory() {
                       {isEditingThis ? (
                         <>
                           <td className="px-4 py-2 text-right">
-                            <input type="number" min="0" value={editingStock.minStockThreshold}
+                            <input type="number" min="0" value={editingStock.minStockThreshold || ''}
                               onChange={e => setEditingStock(prev => ({ ...prev, minStockThreshold: e.target.value }))}
                               className="w-20 border rounded px-2 py-1 text-sm text-right" placeholder="0" />
                           </td>
                           <td className="px-4 py-2 text-right">
-                            <input type="number" min="0" autoFocus value={editingStock.qty}
+                            <input type="number" min="0" autoFocus value={editingStock.qty || ''}
                               onChange={e => setEditingStock(prev => ({ ...prev, qty: e.target.value }))}
                               className="w-20 border rounded px-2 py-1 text-sm text-right" />
                           </td>
@@ -450,7 +450,7 @@ export default function IngredientInventory() {
                                     <td className="py-3 pl-4">
                                       {isEditingWasteThis ? (
                                         <div className="flex items-center gap-1.5">
-                                          <input type="number" min="0" step="0.01" value={editingWaste.value}
+                                          <input type="number" min="0" step="0.01" value={editingWaste.value || ''}
                                             onChange={e => setEditingWaste(prev => ({ ...prev, value: e.target.value }))}
                                             placeholder="kg" autoFocus
                                             className="border rounded px-2 py-1 text-xs focus:ring-2 focus:ring-amber-500 w-20" />
@@ -580,13 +580,13 @@ export default function IngredientInventory() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Quantity (kg) *</label>
                   <input type="number" min="0" step="0.01" placeholder="0.00"
-                    value={batchForm.quantity} onChange={e => setBatchForm({ ...batchForm, quantity: e.target.value })}
+                    value={batchForm.quantity || ''} onChange={e => setBatchForm({ ...batchForm, quantity: e.target.value })}
                     className="w-full border rounded-lg px-3 py-2 text-sm" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Rate / kg (₹)</label>
                   <input type="number" min="0" step="0.01" placeholder="0"
-                    value={batchForm.price} onChange={e => setBatchForm({ ...batchForm, price: e.target.value })}
+                    value={batchForm.price || ''} onChange={e => setBatchForm({ ...batchForm, price: e.target.value })}
                     className="w-full border rounded-lg px-3 py-2 text-sm" />
                 </div>
               </div>

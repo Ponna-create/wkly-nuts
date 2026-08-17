@@ -1195,7 +1195,7 @@ export default function SKUManagement() {
                     <label className="label">Target Weight per Sachet (grams) <span className="text-red-500">*</span></label>
                     <input
                       type="number"
-                      value={formData.targetWeightPerSachet}
+                      value={formData.targetWeightPerSachet || ''}
                       onChange={(e) => setFormData({ ...formData, targetWeightPerSachet: e.target.value })}
                       className="input-field"
                       placeholder="e.g., 30 or 44"
@@ -1208,13 +1208,13 @@ export default function SKUManagement() {
                     <div className="grid grid-cols-3 gap-3">
                       <div>
                         <label className="text-xs text-gray-500">Number of pouches</label>
-                        <input type="number" min="1" value={formData.pouchCount}
+                        <input type="number" min="1" value={formData.pouchCount || ''}
                           onChange={(e) => setFormData({ ...formData, pouchCount: e.target.value })}
                           className="input-field" placeholder="e.g., 2" />
                       </div>
                       <div>
                         <label className="text-xs text-gray-500">Weight per pouch</label>
-                        <input type="number" step="0.01" value={formData.pouchWeight}
+                        <input type="number" step="0.01" value={formData.pouchWeight || ''}
                           onChange={(e) => setFormData({ ...formData, pouchWeight: e.target.value })}
                           className="input-field" placeholder="e.g., 140" />
                       </div>
@@ -1240,20 +1240,20 @@ export default function SKUManagement() {
                   <>
                     <div>
                       <label className="label">Bulk Quantity (kg) <span className="text-red-500">*</span></label>
-                      <input type="number" step="0.01" value={formData.bulkQty}
+                      <input type="number" step="0.01" value={formData.bulkQty || ''}
                         onChange={(e) => setFormData({ ...formData, bulkQty: e.target.value })}
                         className="input-field" placeholder="e.g., 3" />
                     </div>
                     <div>
                       <label className="label">Bulk Price paid (₹) <span className="text-red-500">*</span></label>
-                      <input type="number" step="0.01" value={formData.bulkPrice}
+                      <input type="number" step="0.01" value={formData.bulkPrice || ''}
                         onChange={(e) => setFormData({ ...formData, bulkPrice: e.target.value })}
                         className="input-field" placeholder="e.g., 900" />
                     </div>
                     <div>
                       <label className="label">Pack Size to sell <span className="text-red-500">*</span></label>
                       <div className="flex gap-2">
-                        <input type="number" step="1" value={formData.packSize}
+                        <input type="number" step="1" value={formData.packSize || ''}
                           onChange={(e) => setFormData({ ...formData, packSize: e.target.value })}
                           className="input-field flex-1" placeholder="e.g., 250" />
                         <select value={formData.unitOfMeasure}
@@ -1267,7 +1267,7 @@ export default function SKUManagement() {
                     </div>
                     <div>
                       <label className="label">Usable yield %</label>
-                      <input type="number" step="1" value={formData.yieldPercent}
+                      <input type="number" step="1" value={formData.yieldPercent || ''}
                         onChange={(e) => setFormData({ ...formData, yieldPercent: e.target.value })}
                         className="input-field" placeholder="Blank = no loss. e.g. 85 (dates sorting)" />
                     </div>
@@ -1276,7 +1276,7 @@ export default function SKUManagement() {
                 {formData.skuType === 'resale' && (
                   <div>
                     <label className="label">Purchase Price per Unit (₹) <span className="text-red-500">*</span></label>
-                    <input type="number" step="0.01" value={formData.buyPrice}
+                    <input type="number" step="0.01" value={formData.buyPrice || ''}
                       onChange={(e) => setFormData({ ...formData, buyPrice: e.target.value })}
                       className="input-field" placeholder="e.g., 120" />
                     <p className="text-xs text-gray-500 mt-1">What you pay per finished unit before your packaging.</p>
@@ -1445,9 +1445,9 @@ export default function SKUManagement() {
                               setFormData(f => ({ ...f, packagingMaterials: u }));
                             }}
                               className="flex-1 border rounded-lg px-3 py-1.5 text-sm" placeholder="e.g. Pouch 250g, Label" />
-                            <input type="number" value={pkg.quantity_per_pack} onChange={e => { const u = [...formData.packagingMaterials]; u[idx] = { ...u[idx], quantity_per_pack: e.target.value }; setFormData(f => ({ ...f, packagingMaterials: u })); }}
+                            <input type="number" value={pkg.quantity_per_pack || ''} onChange={e => { const u = [...formData.packagingMaterials]; u[idx] = { ...u[idx], quantity_per_pack: e.target.value }; setFormData(f => ({ ...f, packagingMaterials: u })); }}
                               className="w-16 border rounded-lg px-2 py-1.5 text-sm" placeholder="Qty" min="0" title="Quantity" />
-                            <input type="number" value={pkg.price_per_unit} onChange={e => { const u = [...formData.packagingMaterials]; u[idx] = { ...u[idx], price_per_unit: e.target.value }; setFormData(f => ({ ...f, packagingMaterials: u })); }}
+                            <input type="number" value={pkg.price_per_unit || ''} onChange={e => { const u = [...formData.packagingMaterials]; u[idx] = { ...u[idx], price_per_unit: e.target.value }; setFormData(f => ({ ...f, packagingMaterials: u })); }}
                               className="w-20 border rounded-lg px-2 py-1.5 text-sm" placeholder="₹/unit" min="0" step="0.01" title="Price per unit" />
                             <button type="button" onClick={() => setFormData(f => ({ ...f, packagingMaterials: f.packagingMaterials.filter((_, i) => i !== idx) }))}
                               className="p-1 text-red-400 hover:text-red-600"><X className="w-4 h-4" /></button>
@@ -1476,7 +1476,7 @@ export default function SKUManagement() {
                           <div key={idx} className="flex items-center gap-2 mb-2">
                             <input type="text" value={c.name} onChange={e => { const u = [...formData.processCosts]; u[idx] = { ...u[idx], name: e.target.value }; setFormData(f => ({ ...f, processCosts: u })); }}
                               className="flex-1 border rounded-lg px-3 py-1.5 text-sm" placeholder="e.g. Roasting gas, Machine sealing" />
-                            <input type="number" value={c.cost_per_unit} onChange={e => { const u = [...formData.processCosts]; u[idx] = { ...u[idx], cost_per_unit: e.target.value }; setFormData(f => ({ ...f, processCosts: u })); }}
+                            <input type="number" value={c.cost_per_unit || ''} onChange={e => { const u = [...formData.processCosts]; u[idx] = { ...u[idx], cost_per_unit: e.target.value }; setFormData(f => ({ ...f, processCosts: u })); }}
                               className="w-24 border rounded-lg px-2 py-1.5 text-sm" placeholder="₹/unit" min="0" step="0.01" title="Cost per unit" />
                             <button type="button" onClick={() => setFormData(f => ({ ...f, processCosts: f.processCosts.filter((_, i) => i !== idx) }))}
                               className="p-1 text-red-400 hover:text-red-600"><X className="w-4 h-4" /></button>
@@ -1495,28 +1495,28 @@ export default function SKUManagement() {
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Shelf Life (days)</label>
-                          <input type="number" value={formData.shelfLifeDays} onChange={e => setFormData(f => ({ ...f, shelfLifeDays: e.target.value }))}
+                          <input type="number" value={formData.shelfLifeDays || ''} onChange={e => setFormData(f => ({ ...f, shelfLifeDays: e.target.value }))}
                             className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="e.g. 180" />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Selling Price / Unit</label>
-                          <input type="number" value={formData.sellingPrice} onChange={e => setFormData(f => ({ ...f, sellingPrice: e.target.value }))}
+                          <input type="number" value={formData.sellingPrice || ''} onChange={e => setFormData(f => ({ ...f, sellingPrice: e.target.value }))}
                             className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="e.g. 149" />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">MRP</label>
-                          <input type="number" value={formData.mrp} onChange={e => setFormData(f => ({ ...f, mrp: e.target.value }))}
+                          <input type="number" value={formData.mrp || ''} onChange={e => setFormData(f => ({ ...f, mrp: e.target.value }))}
                             className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="e.g. 199" />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Shipping Weight (kg)</label>
-                          <input type="number" step="0.01" value={formData.shippingWeightKg} onChange={e => setFormData(f => ({ ...f, shippingWeightKg: e.target.value }))}
+                          <input type="number" step="0.01" value={formData.shippingWeightKg || ''} onChange={e => setFormData(f => ({ ...f, shippingWeightKg: e.target.value }))}
                             className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="e.g. 0.4" />
                           <p className="text-[11px] text-gray-400 mt-1">What the courier scale reads (incl. packaging) — used to auto-match tracking slips.</p>
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Reorder Cycle (days)</label>
-                          <input type="number" value={formData.reorderCycleDays} onChange={e => setFormData(f => ({ ...f, reorderCycleDays: e.target.value }))}
+                          <input type="number" value={formData.reorderCycleDays || ''} onChange={e => setFormData(f => ({ ...f, reorderCycleDays: e.target.value }))}
                             className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Blank = not tracked" />
                         </div>
                       </div>
@@ -1621,7 +1621,7 @@ export default function SKUManagement() {
                         <input
                           type="number"
                           step="0.1"
-                          value={currentRecipeItem.gramsPerSachet}
+                          value={currentRecipeItem.gramsPerSachet || ''}
                           onChange={(e) => setCurrentRecipeItem({ ...currentRecipeItem, gramsPerSachet: e.target.value })}
                           className="input-field"
                           placeholder="e.g., 500"
@@ -1686,9 +1686,9 @@ export default function SKUManagement() {
                                 setFormData(f => ({ ...f, packagingMaterials: u }));
                               }}
                                 className="flex-1 border rounded-lg px-3 py-1.5 text-sm" placeholder="e.g. Pouch, Label" />
-                              <input type="number" value={pkg.quantity_per_pack} onChange={e => { const u = [...formData.packagingMaterials]; u[idx] = { ...u[idx], quantity_per_pack: e.target.value }; setFormData(f => ({ ...f, packagingMaterials: u })); }}
+                              <input type="number" value={pkg.quantity_per_pack || ''} onChange={e => { const u = [...formData.packagingMaterials]; u[idx] = { ...u[idx], quantity_per_pack: e.target.value }; setFormData(f => ({ ...f, packagingMaterials: u })); }}
                                 className="w-16 border rounded-lg px-2 py-1.5 text-sm" placeholder="Qty" min="0" title="Quantity" />
-                              <input type="number" value={pkg.price_per_unit} onChange={e => { const u = [...formData.packagingMaterials]; u[idx] = { ...u[idx], price_per_unit: e.target.value }; setFormData(f => ({ ...f, packagingMaterials: u })); }}
+                              <input type="number" value={pkg.price_per_unit || ''} onChange={e => { const u = [...formData.packagingMaterials]; u[idx] = { ...u[idx], price_per_unit: e.target.value }; setFormData(f => ({ ...f, packagingMaterials: u })); }}
                                 className="w-20 border rounded-lg px-2 py-1.5 text-sm" placeholder="₹/unit" min="0" step="0.01" title="Price per unit" />
                               <button type="button" onClick={() => setFormData(f => ({ ...f, packagingMaterials: f.packagingMaterials.filter((_, i) => i !== idx) }))}
                                 className="p-1 text-red-400 hover:text-red-600"><X className="w-4 h-4" /></button>
@@ -1716,7 +1716,7 @@ export default function SKUManagement() {
                             <div key={idx} className="flex items-center gap-2 mb-2">
                               <input type="text" value={c.name} onChange={e => { const u = [...formData.processCosts]; u[idx] = { ...u[idx], name: e.target.value }; setFormData(f => ({ ...f, processCosts: u })); }}
                                 className="flex-1 border rounded-lg px-3 py-1.5 text-sm" placeholder="e.g. Roasting gas, Machine sealing" />
-                              <input type="number" value={c.cost_per_unit} onChange={e => { const u = [...formData.processCosts]; u[idx] = { ...u[idx], cost_per_unit: e.target.value }; setFormData(f => ({ ...f, processCosts: u })); }}
+                              <input type="number" value={c.cost_per_unit || ''} onChange={e => { const u = [...formData.processCosts]; u[idx] = { ...u[idx], cost_per_unit: e.target.value }; setFormData(f => ({ ...f, processCosts: u })); }}
                                 className="w-24 border rounded-lg px-2 py-1.5 text-sm" placeholder="₹/unit" min="0" step="0.01" title="Cost per unit" />
                               <button type="button" onClick={() => setFormData(f => ({ ...f, processCosts: f.processCosts.filter((_, i) => i !== idx) }))}
                                 className="p-1 text-red-400 hover:text-red-600"><X className="w-4 h-4" /></button>
@@ -1738,27 +1738,27 @@ export default function SKUManagement() {
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Shelf Life (days)</label>
-                      <input type="number" value={formData.shelfLifeDays} onChange={e => setFormData(f => ({ ...f, shelfLifeDays: e.target.value }))}
+                      <input type="number" value={formData.shelfLifeDays || ''} onChange={e => setFormData(f => ({ ...f, shelfLifeDays: e.target.value }))}
                         className="w-full border rounded-lg px-3 py-2 text-sm" min="1" placeholder="e.g. 180" />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Selling Price / Unit</label>
-                      <input type="number" value={formData.sellingPrice} onChange={e => setFormData(f => ({ ...f, sellingPrice: e.target.value }))}
+                      <input type="number" value={formData.sellingPrice || ''} onChange={e => setFormData(f => ({ ...f, sellingPrice: e.target.value }))}
                         className="w-full border rounded-lg px-3 py-2 text-sm" min="0" placeholder="e.g. 199" />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">MRP</label>
-                      <input type="number" value={formData.mrp} onChange={e => setFormData(f => ({ ...f, mrp: e.target.value }))}
+                      <input type="number" value={formData.mrp || ''} onChange={e => setFormData(f => ({ ...f, mrp: e.target.value }))}
                         className="w-full border rounded-lg px-3 py-2 text-sm" min="0" placeholder="e.g. 249" />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Shipping Weight (kg)</label>
-                      <input type="number" step="0.01" value={formData.shippingWeightKg} onChange={e => setFormData(f => ({ ...f, shippingWeightKg: e.target.value }))}
+                      <input type="number" step="0.01" value={formData.shippingWeightKg || ''} onChange={e => setFormData(f => ({ ...f, shippingWeightKg: e.target.value }))}
                         className="w-full border rounded-lg px-3 py-2 text-sm" min="0" placeholder="e.g. 0.4" />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Reorder Cycle (days)</label>
-                      <input type="number" value={formData.reorderCycleDays} onChange={e => setFormData(f => ({ ...f, reorderCycleDays: e.target.value }))}
+                      <input type="number" value={formData.reorderCycleDays || ''} onChange={e => setFormData(f => ({ ...f, reorderCycleDays: e.target.value }))}
                         className="w-full border rounded-lg px-3 py-2 text-sm" min="1" placeholder="e.g. 28" />
                     </div>
                   </div>
@@ -1889,7 +1889,7 @@ export default function SKUManagement() {
                       <input
                         type="number"
                         step="0.1"
-                        value={currentRecipeItem.gramsPerSachet}
+                        value={currentRecipeItem.gramsPerSachet || ''}
                         onChange={(e) => setCurrentRecipeItem({ ...currentRecipeItem, gramsPerSachet: e.target.value })}
                         className="input-field"
                         placeholder="6.5"
@@ -1920,12 +1920,12 @@ export default function SKUManagement() {
                         updated[idx] = { ...updated[idx], name: e.target.value, price_per_unit: match ? match.cost_per_unit : updated[idx].price_per_unit };
                         setFormData(f => ({ ...f, packagingMaterials: updated }));
                       }} className="flex-1 border rounded-lg px-3 py-1.5 text-sm" placeholder="e.g. Weekly Box, Sachet 100g" />
-                      <input type="number" value={pkg.quantity_per_pack} onChange={e => {
+                      <input type="number" value={pkg.quantity_per_pack || ''} onChange={e => {
                         const updated = [...formData.packagingMaterials];
                         updated[idx] = { ...updated[idx], quantity_per_pack: e.target.value };
                         setFormData(f => ({ ...f, packagingMaterials: updated }));
                       }} className="w-16 border rounded-lg px-2 py-1.5 text-sm" placeholder="Qty" min="0" title="Quantity" />
-                      <input type="number" value={pkg.price_per_unit} onChange={e => {
+                      <input type="number" value={pkg.price_per_unit || ''} onChange={e => {
                         const updated = [...formData.packagingMaterials];
                         updated[idx] = { ...updated[idx], price_per_unit: e.target.value };
                         setFormData(f => ({ ...f, packagingMaterials: updated }));
@@ -1969,7 +1969,7 @@ export default function SKUManagement() {
                         updated[idx] = { ...updated[idx], name: e.target.value };
                         setFormData(f => ({ ...f, processingIngredients: updated }));
                       }} className="flex-1 border rounded-lg px-3 py-1.5 text-sm" placeholder="e.g. Ghee, Honey, Jaggery" />
-                      <input type="number" value={item.quantity_per_pack} onChange={e => {
+                      <input type="number" value={item.quantity_per_pack || ''} onChange={e => {
                         const updated = [...formData.processingIngredients];
                         updated[idx] = { ...updated[idx], quantity_per_pack: e.target.value };
                         setFormData(f => ({ ...f, processingIngredients: updated }));
@@ -2004,40 +2004,40 @@ export default function SKUManagement() {
                 <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Shelf Life (days)</label>
-                    <input type="number" value={formData.shelfLifeDays} onChange={e => setFormData(f => ({ ...f, shelfLifeDays: e.target.value }))}
+                    <input type="number" value={formData.shelfLifeDays || ''} onChange={e => setFormData(f => ({ ...f, shelfLifeDays: e.target.value }))}
                       className="w-full border rounded-lg px-3 py-2 text-sm" min="1" placeholder="30" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Weekly Selling Price</label>
-                    <input type="number" value={formData.sellingPrice} onChange={e => setFormData(f => ({ ...f, sellingPrice: e.target.value }))}
+                    <input type="number" value={formData.sellingPrice || ''} onChange={e => setFormData(f => ({ ...f, sellingPrice: e.target.value }))}
                       className="w-full border rounded-lg px-3 py-2 text-sm" min="0" placeholder="e.g. 399" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Monthly Selling Price</label>
-                    <input type="number" value={formData.monthlySellingPrice} onChange={e => setFormData(f => ({ ...f, monthlySellingPrice: e.target.value }))}
+                    <input type="number" value={formData.monthlySellingPrice || ''} onChange={e => setFormData(f => ({ ...f, monthlySellingPrice: e.target.value }))}
                       className="w-full border rounded-lg px-3 py-2 text-sm" min="0" placeholder="e.g. 1500" />
                     <p className="text-[11px] text-gray-400 mt-1">Its own price — not forced to 4× weekly.</p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">MRP</label>
-                    <input type="number" value={formData.mrp} onChange={e => setFormData(f => ({ ...f, mrp: e.target.value }))}
+                    <input type="number" value={formData.mrp || ''} onChange={e => setFormData(f => ({ ...f, mrp: e.target.value }))}
                       className="w-full border rounded-lg px-3 py-2 text-sm" min="0" placeholder="e.g. 449" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Days per Box (reorder)</label>
-                    <input type="number" value={formData.reorderCycleDays} onChange={e => setFormData(f => ({ ...f, reorderCycleDays: e.target.value }))}
+                    <input type="number" value={formData.reorderCycleDays || ''} onChange={e => setFormData(f => ({ ...f, reorderCycleDays: e.target.value }))}
                       className="w-full border rounded-lg px-3 py-2 text-sm" min="1" placeholder="e.g. 7" />
                     <p className="text-[11px] text-gray-400 mt-1">Monthly orders auto-multiply boxes by 4.</p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Weekly Shipping Weight (kg)</label>
-                    <input type="number" step="0.01" value={formData.shippingWeightKg} onChange={e => setFormData(f => ({ ...f, shippingWeightKg: e.target.value }))}
+                    <input type="number" step="0.01" value={formData.shippingWeightKg || ''} onChange={e => setFormData(f => ({ ...f, shippingWeightKg: e.target.value }))}
                       className="w-full border rounded-lg px-3 py-2 text-sm" min="0" placeholder="e.g. 0.5" />
                     <p className="text-[11px] text-gray-400 mt-1">What the courier scale reads (incl. packaging).</p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Monthly Shipping Weight (kg)</label>
-                    <input type="number" step="0.01" value={formData.monthlyShippingWeightKg} onChange={e => setFormData(f => ({ ...f, monthlyShippingWeightKg: e.target.value }))}
+                    <input type="number" step="0.01" value={formData.monthlyShippingWeightKg || ''} onChange={e => setFormData(f => ({ ...f, monthlyShippingWeightKg: e.target.value }))}
                       className="w-full border rounded-lg px-3 py-2 text-sm" min="0" placeholder="e.g. 1.8" />
                     <p className="text-[11px] text-gray-400 mt-1">Used to auto-match tracking slips by weight.</p>
                   </div>
@@ -2199,7 +2199,7 @@ export default function SKUManagement() {
                 <label className="label">Number of Units</label>
                 <input
                   type="number"
-                  value={calculatorData.numberOfPacks}
+                  value={calculatorData.numberOfPacks || ''}
                   onChange={(e) => {
                     setCalculatorData({ ...calculatorData, numberOfPacks: e.target.value });
                     setProductionRequirements(null);
@@ -2236,7 +2236,7 @@ export default function SKUManagement() {
                   <label className="label">Number of Packs</label>
                   <input
                     type="number"
-                    value={calculatorData.numberOfPacks}
+                    value={calculatorData.numberOfPacks || ''}
                     onChange={(e) => {
                       setCalculatorData({ ...calculatorData, numberOfPacks: e.target.value });
                       setProductionRequirements(null);

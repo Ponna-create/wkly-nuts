@@ -219,7 +219,7 @@ export default function OmniChannels() {
                         <div className="mt-3 bg-teal-50 border border-teal-200 rounded-lg p-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
                           <input type="text" placeholder="e.g. Domain" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
                             className="border rounded-lg px-2 py-1.5 text-sm col-span-2 sm:col-span-1" />
-                          <input type="number" placeholder="Amount ₹" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))}
+                          <input type="number" placeholder="Amount ₹" value={form.amount || ''} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))}
                             className="border rounded-lg px-2 py-1.5 text-sm" min="0" />
                           <select value={form.frequency} onChange={e => setForm(f => ({ ...f, frequency: e.target.value }))}
                             className="border rounded-lg px-2 py-1.5 text-sm">

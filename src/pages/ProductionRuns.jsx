@@ -62,11 +62,11 @@ export function TimeInput12({ value, onChange }) {
   };
   return (
     <div className="flex items-center gap-1">
-      <input type="number" min="1" max="12" value={h12} placeholder="10"
+      <input type="number" min="1" max="12" value={h12 || ''} placeholder="10"
         onChange={e => emit(e.target.value, min || '00', ampm)}
         className="w-12 border rounded-lg px-2 py-2 text-sm text-center" />
       <span className="text-gray-400">:</span>
-      <input type="number" min="0" max="59" value={min} placeholder="30"
+      <input type="number" min="0" max="59" value={min || ''} placeholder="30"
         onChange={e => emit(h12 || '12', e.target.value, ampm)}
         className="w-12 border rounded-lg px-2 py-2 text-sm text-center" />
       <button type="button"
@@ -1046,7 +1046,7 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
             )}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">{isRecipeSku ? 'How many packs? *' : 'How many units? *'}</label>
-              <input type="number" value={form.plannedQuantity} onChange={e => { const v = e.target.value; setForm(f => ({ ...f, plannedQuantity: v })); if (form.skuCode) handleSkuChange(form.skuCode, v); }}
+              <input type="number" value={form.plannedQuantity || ''} onChange={e => { const v = e.target.value; setForm(f => ({ ...f, plannedQuantity: v })); if (form.skuCode) handleSkuChange(form.skuCode, v); }}
                 disabled={isEditing}
                 className="w-full border rounded-lg px-3 py-2 text-sm disabled:bg-gray-100" min="1" required />
             </div>
@@ -1057,7 +1057,7 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Actual Qty Produced</label>
-                <input type="number" value={form.actualQuantity} onChange={e => setForm(f => ({ ...f, actualQuantity: e.target.value }))}
+                <input type="number" value={form.actualQuantity || ''} onChange={e => setForm(f => ({ ...f, actualQuantity: e.target.value }))}
                   className="w-full border rounded-lg px-3 py-2 text-sm" min="0" />
               </div>
               <div>
@@ -1199,12 +1199,12 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
                         <>
                           <div>
                             <label className="block text-[11px] text-gray-500 mb-1">People</label>
-                            <input type="number" min="0" value={s.people} onChange={e => updateSession(idx, 'people', e.target.value)}
+                            <input type="number" min="0" value={s.people || ''} onChange={e => updateSession(idx, 'people', e.target.value)}
                               className="w-full border rounded-lg px-2 py-1.5 text-sm" placeholder="3" />
                           </div>
                           <div>
                             <label className="block text-[11px] text-gray-500 mb-1">₹/hour per person</label>
-                            <input type="number" min="0" step="0.01" value={s.rate} onChange={e => updateSession(idx, 'rate', e.target.value)}
+                            <input type="number" min="0" step="0.01" value={s.rate || ''} onChange={e => updateSession(idx, 'rate', e.target.value)}
                               className="w-full border rounded-lg px-2 py-1.5 text-sm" placeholder="40" />
                           </div>
                         </>
@@ -1354,7 +1354,7 @@ function StaffManager({ staff, onClose, onChanged }) {
             </div>
             <div className="col-span-3">
               <label className="block text-[11px] text-gray-500 mb-1">₹/hour</label>
-              <input type="number" min="0" value={rate} onChange={e => setRate(e.target.value)} className="w-full border rounded-lg px-2 py-1.5 text-sm" placeholder="40" />
+              <input type="number" min="0" value={rate || ''} onChange={e => setRate(e.target.value)} className="w-full border rounded-lg px-2 py-1.5 text-sm" placeholder="40" />
             </div>
             <div className="col-span-4">
               <label className="block text-[11px] text-gray-500 mb-1">Role</label>
@@ -1558,7 +1558,7 @@ function WastageModal({ run, onClose, showToast }) {
               </div>
               <div>
                 <label className="block text-xs text-gray-600 mb-1">Waste Qty (grams) *</label>
-                <input type="number" value={form.wasteQuantityGrams} onChange={e => setForm(f => ({ ...f, wasteQuantityGrams: e.target.value }))}
+                <input type="number" value={form.wasteQuantityGrams || ''} onChange={e => setForm(f => ({ ...f, wasteQuantityGrams: e.target.value }))}
                   className="w-full border rounded-lg px-2 py-1.5 text-sm" placeholder="0" min="0" />
               </div>
             </div>
@@ -1575,7 +1575,7 @@ function WastageModal({ run, onClose, showToast }) {
               </div>
               <div>
                 <label className="block text-xs text-gray-600 mb-1">Cost Impact (INR)</label>
-                <input type="number" step="0.01" value={form.costImpact} onChange={e => setForm(f => ({ ...f, costImpact: e.target.value }))}
+                <input type="number" step="0.01" value={form.costImpact || ''} onChange={e => setForm(f => ({ ...f, costImpact: e.target.value }))}
                   className="w-full border rounded-lg px-2 py-1.5 text-sm" placeholder="0.00" min="0" />
               </div>
             </div>

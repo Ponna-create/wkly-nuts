@@ -270,7 +270,7 @@ export default function QRScanner({ onClose, onScanComplete }) {
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Hours (edit if needed)</label>
-              <input type="number" value={logHours} onChange={e => setLogHours(parseFloat(e.target.value) || 0)}
+              <input type="number" value={logHours || ''} onChange={e => setLogHours(parseFloat(e.target.value) || 0)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" min="0" step="0.1" />
             </div>
             <div className="flex gap-3 justify-end pt-2 border-t border-gray-200">

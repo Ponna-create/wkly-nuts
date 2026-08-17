@@ -293,12 +293,12 @@ export default function COGSCalculator() {
             )}
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">{isDayRecipeSKU ? 'Packs to Make' : 'Units to Make'}</label>
-              <input type="number" value={quantity} onChange={e => setQuantity(e.target.value)}
+              <input type="number" value={quantity || ''} onChange={e => setQuantity(e.target.value)}
                 className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500" placeholder="e.g. 50" min="1" />
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">{isDayRecipeSKU ? 'Selling Price/Pack' : 'Selling Price/Unit'}</label>
-              <input type="number" value={sellingPrice} onChange={e => setSellingPrice(e.target.value)}
+              <input type="number" value={sellingPrice || ''} onChange={e => setSellingPrice(e.target.value)}
                 className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500" placeholder="e.g. 399" min="0" />
             </div>
           </div>
@@ -325,7 +325,7 @@ export default function COGSCalculator() {
                       <option key={ai.id} value={ai.name}>{ai.name}</option>
                     ))}
                   </select>
-                  <input type="number" value={item.grams} onChange={e => updateCustomIngredient(idx, 'grams', e.target.value)}
+                  <input type="number" value={item.grams || ''} onChange={e => updateCustomIngredient(idx, 'grams', e.target.value)}
                     className="w-20 border rounded-lg px-2 py-1.5 text-sm" placeholder="grams" min="0" step="0.5" />
                   <span className="text-xs text-gray-500">g</span>
                   <button onClick={() => removeCustomIngredient(idx)} className="p-1 text-red-400 hover:text-red-600"><X className="w-4 h-4" /></button>

@@ -192,17 +192,17 @@ export default function InventoryManagement() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Weekly Packs</label>
-                  <input type="number" min="0" value={formData.weeklyPacksAvailable} onChange={e => setFormData({ ...formData, weeklyPacksAvailable: e.target.value })}
+                  <input type="number" min="0" value={formData.weeklyPacksAvailable || ''} onChange={e => setFormData({ ...formData, weeklyPacksAvailable: e.target.value })}
                     className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="0" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Monthly Packs</label>
-                  <input type="number" min="0" value={formData.monthlyPacksAvailable} onChange={e => setFormData({ ...formData, monthlyPacksAvailable: e.target.value })}
+                  <input type="number" min="0" value={formData.monthlyPacksAvailable || ''} onChange={e => setFormData({ ...formData, monthlyPacksAvailable: e.target.value })}
                     className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="0" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Single Units</label>
-                  <input type="number" min="0" value={formData.singleUnitsAvailable} onChange={e => setFormData({ ...formData, singleUnitsAvailable: e.target.value })}
+                  <input type="number" min="0" value={formData.singleUnitsAvailable || ''} onChange={e => setFormData({ ...formData, singleUnitsAvailable: e.target.value })}
                     className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="0" />
                 </div>
                 <div>

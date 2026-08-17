@@ -170,11 +170,11 @@ export default function CRM() {
           {tiers.map((t, i) => (
             <div key={i} className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm">
               <span className="text-gray-500">{t.label} · up to</span>
-              <input type="number" value={t.maxDays === Infinity ? '' : t.maxDays} placeholder="∞"
+              <input type="number" value={t.maxDays === Infinity ? '' : t.maxDays || ''} placeholder="∞"
                 onChange={e => setTiers(prev => prev.map((x, xi) => xi === i ? { ...x, maxDays: e.target.value === '' ? Infinity : parseInt(e.target.value) } : x))}
                 className="w-14 border rounded px-1.5 py-1 text-center" disabled={t.maxDays === Infinity && i === tiers.length - 1} />
               <span className="text-gray-500">days late →</span>
-              <input type="number" value={t.discount}
+              <input type="number" value={t.discount || ''}
                 onChange={e => setTiers(prev => prev.map((x, xi) => xi === i ? { ...x, discount: parseFloat(e.target.value) || 0 } : x))}
                 className="w-14 border rounded px-1.5 py-1 text-center font-semibold" />
               <span className="text-gray-500">%</span>
