@@ -19,6 +19,11 @@ function extractPhone(text) {
 const NAME_LABEL_RE = /^(?:my\s+)?(?:full\s*)?name\b\s*(?:is)?\s*(.*)$/i;
 const SALUTATION_ONLY_RE = /^(to|hi|dear|hello)\s*[:,]?\s*$/i;
 const ADDRESSY_RE = /\d{3}[\s-]?\d{3}|pincode|pin\s*code|street|nagar|road|colony|door\s*no|to:|address|ph\s*:|phone|mobile|cell|apartment|flat\s*no|block/i;
+// House/door number lines like "No :2/11", "No 2/11", "No.12/3", "#45" —
+// these are the start of the address, not a name, but they don't contain
+// any of the ADDRESSY_RE keywords so they were slipping through and being
+// mistaken for the customer's name when no separate "Name:" line was given.
+const HOUSE_NO_RE = /^(?:no|door\s*no\.?|house\s*no\.?|h\.?no\.?|d\.?no\.?|plot\s*no\.?|#)\s*[:.]?\s*\d/i;
 const PHONE_LABEL_PREFIX = '(?:ph\\.?\\s*:?\\s*no\\.?|phone(?:\\s*num(?:ber)?)?|mobile(?:\\s*no\\.?)?|cell|contact)\\s*[:\\-]?\\s*';
 
 const stripLeadingPunct = (s) => s.replace(/^[:\-\s]+/, '').replace(/[.,]+$/, '').trim();
@@ -34,7 +39,9 @@ function extractName(lines) {
   }
   for (const line of lines) {
     if (SALUTATION_ONLY_RE.test(line)) continue;
-    if (line.length < 40 && !ADDRESSY_RE.test(line)) return { name: stripLeadingPunct(line), matchedLine: line };
+    if (line.length < 40 && !ADDRESSY_RE.test(line) && !HOUSE_NO_RE.test(line)) {
+      return { name: stripLeadingPunct(line), matchedLine: line };
+    }
     break; // first substantive line looked address-y — stop, no name found
   }
   return { name: '', matchedLine: null };
