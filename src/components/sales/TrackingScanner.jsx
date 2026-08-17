@@ -119,10 +119,23 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
     setScannedCode(decodedText.trim());
   };
 
+  // One physical consignment slip = one shipment, so the same tracking
+  // number can never legitimately belong to two orders. Nothing previously
+  // checked for this — a re-scan (or two orders that happen to share a
+  // first name) could silently attach the same tracking number to a second
+  // order on top of whoever already had it, with no warning either time.
+  const findDuplicateTrackingOrder = (code, excludeOrderId) =>
+    orders.find(o => o.tracking_number === code && String(o.id) !== String(excludeOrderId));
+
   // Saves the tracking number onto an order. Returns true/false so batch
   // processing can decide whether to move on or fall back to the review
   // list. Pure side-effect function — no queue/UI logic in here.
   const doLink = async (order, code, extracted = {}) => {
+    const duplicate = findDuplicateTrackingOrder(code, order.id);
+    if (duplicate) {
+      showToast(`Tracking ${code} is already on ${duplicate.order_number} (${duplicate.customer_name}) — not linking it to a second order`, 'error');
+      return false;
+    }
     const updatedOrder = {
       id: order.id,
       trackingNumber: code,
@@ -286,6 +299,12 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
       }
 
       if (match.order && (match.matchedVia === 'phone' || match.confidence >= 0.85)) {
+        const dup = findDuplicateTrackingOrder(match.trackingNumber, match.order.id);
+        if (dup) {
+          dbService.logAiScan({ outcome: 'failed', orderId: match.order.id, trackingNumber: match.trackingNumber, guessedName: match.guessedName });
+          newReview.push({ id: nextReviewId(), trackingNumber: match.trackingNumber, order: match.order, ...match, reason: `Tracking already on ${dup.order_number} (${dup.customer_name}) — pick the right one manually` });
+          continue;
+        }
         linkedIds.add(String(match.order.id)); // reserve before the await so nothing else in this batch can grab the same order
         const ok = await doLink(match.order, match.trackingNumber, match);
         if (ok) {
