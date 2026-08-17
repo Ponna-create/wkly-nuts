@@ -7,6 +7,7 @@ import {
   RefreshCw, TrendingUp, TrendingDown, Minus, ShoppingCart, Eye, Zap,
   BarChart3, ArrowRight, AlertTriangle, FileDown
 } from 'lucide-react';
+import { formatDate } from '../utils/dateFormat';
 import BillCSVImport from '../components/BillCSVImport';
 import { generatePurchaseOrderPDF } from '../utils/purchaseOrderPdf';
 
@@ -209,7 +210,7 @@ export default function PurchaseOrders() {
                         </div>
                         <div className="flex items-center gap-3 text-xs text-gray-400 mt-0.5">
                           <span>{po.vendor_name}</span>
-                          <span>{new Date(po.order_date).toLocaleDateString('en-IN')}</span>
+                          <span>{formatDate(po.order_date)}</span>
                           <span>{items.length} items</span>
                         </div>
                       </div>
@@ -264,7 +265,7 @@ export default function PurchaseOrders() {
                           </div>
                           <div>
                             <span className="text-gray-500 text-xs">Expected Delivery</span>
-                            <p className="font-medium">{po.expected_delivery_date ? new Date(po.expected_delivery_date).toLocaleDateString('en-IN') : '-'}</p>
+                            <p className="font-medium">{po.expected_delivery_date ? formatDate(po.expected_delivery_date) : '-'}</p>
                           </div>
                         </div>
 
@@ -724,7 +725,7 @@ function PriceWatchTab({ orders }) {
                 {t.last5.map((e, i) => (
                   <div key={i} className="flex items-center justify-between text-xs">
                     <span className="text-gray-500">
-                      {e.date ? new Date(e.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' }) : '-'}
+                      {e.date ? formatDate(e.date) : '-'}
                     </span>
                     <span className="text-gray-400">{e.vendor}</span>
                     <span className="font-medium text-gray-700">₹{e.rate.toLocaleString('en-IN')}/kg</span>

@@ -3,6 +3,7 @@ import { Plus, Edit, Trash2, Calculator, X, Package, ChevronLeft, ChevronRight, 
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
 import logo from '../assets/wkly-nuts-logo.png';
+import { formatDate } from '../utils/dateFormat';
 
 const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 const DAY_COLORS = {
@@ -2664,11 +2665,7 @@ export default function SKUManagement() {
                       </div>
                     </div>
                     <div className="text-right text-xs print:text-xs text-gray-600">
-                      <div>{new Date().toLocaleDateString('en-IN', { 
-                        year: 'numeric', 
-                        month: '2-digit', 
-                        day: '2-digit' 
-                      })}</div>
+                      <div>{formatDate(new Date())}</div>
                       <div>{new Date().toLocaleTimeString('en-IN', { 
                         hour: '2-digit', 
                         minute: '2-digit',

@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Plus, Edit, Trash2, Search, X, User, Mail, Phone, MapPin, Building2, AlertTriangle, Merge, Download, Calendar, UserPlus, Clock } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
+import { formatDate } from '../utils/dateFormat';
 
 export default function CustomerManagement() {
   const { state, dispatch, showToast } = useApp();
@@ -316,7 +317,7 @@ export default function CustomerManagement() {
       customer.gstin || '',
       customer.customerType === 'business' ? 'Business' : 'Individual',
       customer.notes || '',
-      customer.createdAt ? new Date(customer.createdAt).toLocaleDateString('en-IN') : ''
+      customer.createdAt ? formatDate(customer.createdAt) : ''
     ]);
     
     // Combine headers and rows

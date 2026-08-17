@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { TrendingUp, BarChart3, Download } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { formatDate } from '../utils/dateFormat';
 
 export default function VendorComparison() {
   const { state } = useApp();
@@ -247,7 +248,7 @@ export default function VendorComparison() {
     
     const csvContent = [
       'Vendor Comparison Report',
-      `Generated: ${new Date().toLocaleDateString()}`,
+      `Generated: ${formatDate(new Date())}`,
       `SKU: ${skus.find(s => s.id == selectedSKU)?.name}`,
       '',
       'VENDOR COST COMPARISON',

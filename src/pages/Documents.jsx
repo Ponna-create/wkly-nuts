@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
+import { formatDate } from '../utils/dateFormat';
 import {
   Upload, Search, X, Trash2, FileText, Image, File, Download,
   Filter, Eye, FolderOpen
@@ -168,7 +169,7 @@ export default function Documents() {
                     <span className="text-xs text-gray-400">{formatFileSize(doc.file_size)}</span>
                   </div>
                   {doc.description && <p className="text-xs text-gray-500 mt-1 truncate">{doc.description}</p>}
-                  <p className="text-xs text-gray-400 mt-1">{new Date(doc.created_at).toLocaleDateString('en-IN')}</p>
+                  <p className="text-xs text-gray-400 mt-1">{formatDate(doc.created_at)}</p>
                 </div>
               </div>
             );

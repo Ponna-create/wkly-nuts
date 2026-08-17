@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
+import { formatDate } from '../utils/dateFormat';
 import {
   FileText, Download, Calendar, IndianRupee, Percent, TrendingUp,
   ChevronDown, ChevronUp, Building2, Share2, AlertCircle
@@ -117,7 +118,7 @@ export default function GSTFiling() {
     const rows = [
       ['WKLY Nuts - GST Filing Report'],
       [`Period: ${monthLabel}`],
-      [`Generated: ${new Date().toLocaleDateString('en-IN')}`],
+      [`Generated: ${formatDate(new Date())}`],
       [''],
       ['=== SALES SUMMARY ==='],
       ['Total Orders', gstData.invoiceCount],
@@ -389,7 +390,7 @@ Paid: ₹${gstData.totalPaid.toFixed(0)} | Pending: ₹${gstData.totalUnpaid.toF
                   {gstData.completedOrders.map(o => (
                     <tr key={o.id} className="border-b border-gray-50 hover:bg-gray-50">
                       <td className="p-3 font-medium">{o.order_number}</td>
-                      <td className="p-3 text-gray-500">{o.order_date ? new Date(o.order_date).toLocaleDateString('en-IN') : '-'}</td>
+                      <td className="p-3 text-gray-500">{o.order_date ? formatDate(o.order_date) : '-'}</td>
                       <td className="p-3">{o.customer_name}</td>
                       <td className="p-3 text-right">₹{(o.subtotal || 0).toFixed(0)}</td>
                       <td className="p-3 text-right text-red-600">₹{(o.gst_amount || 0).toFixed(0)}</td>

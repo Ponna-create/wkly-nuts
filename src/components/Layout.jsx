@@ -9,6 +9,7 @@ import {
 import { logout } from './Auth';
 import { isTestMode, setTestMode, resetTestData } from '../services/supabase';
 import logo from '../assets/wkly-nuts-logo.png';
+import { formatDate } from '../utils/dateFormat';
 
 const navGroups = [
   {
@@ -197,9 +198,7 @@ export default function Layout({ children }) {
                 )}
               </div>
               <div className="hidden sm:block text-sm text-gray-500">
-                {new Date().toLocaleDateString('en-IN', {
-                  weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
-                })}
+                {new Date().toLocaleDateString('en-IN', { weekday: 'long' })}, {formatDate(new Date())}
               </div>
               <button onClick={logout}
                 className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"

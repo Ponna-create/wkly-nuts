@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, Package, AlertTriangle, Search, X, Trash2, Edit2, ArrowUpCircle, ArrowDownCircle, History, Gauge, Calendar, RefreshCw } from 'lucide-react';
 import { dbService } from '../services/supabase';
 import { useApp } from '../context/AppContext';
+import { formatDate, formatDateShort } from '../utils/dateFormat';
 
 const CATEGORIES = {
   box_weekly: { label: 'Weekly Box', color: 'bg-blue-100 text-blue-800' },
@@ -276,7 +277,7 @@ export default function PackagingMaterials() {
                     {mat.last_purchase_date && (
                       <div>
                         <p className="text-gray-500">Purchased</p>
-                        <p className="font-medium text-gray-900">{new Date(mat.last_purchase_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</p>
+                        <p className="font-medium text-gray-900">{formatDateShort(mat.last_purchase_date)}</p>
                       </div>
                     )}
                   </div>
@@ -322,7 +323,7 @@ export default function PackagingMaterials() {
                           {t.type === 'purchase' ? '+' : t.type === 'usage' ? '-' : ''}{t.quantity}
                         </span>
                         <span className="text-gray-500">{t.type}</span>
-                        <span className="text-gray-400">{new Date(t.transaction_date).toLocaleDateString('en-IN')}</span>
+                        <span className="text-gray-400">{formatDate(t.transaction_date)}</span>
                       </div>
                     ))}
                   </div>
@@ -567,7 +568,7 @@ function NitrogenTracker({ materials, transactions, onRefill }) {
                 <div>
                   <span className="text-gray-500">Last Refill</span>
                   <p className="font-medium text-gray-900">
-                    {lastRefillDate ? new Date(lastRefillDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'Never'}
+                    {lastRefillDate ? formatDateShort(lastRefillDate) : 'Never'}
                   </p>
                 </div>
                 <div>
