@@ -470,7 +470,7 @@ export default function SalesRevenue() {
               <label className="label text-sm">Target Units</label>
               <input
                 type="number"
-                value={newRow.targetUnits}
+                value={newRow.targetUnits || ''}
                 onChange={(e) => setNewRow({ ...newRow, targetUnits: e.target.value })}
                 className="input-field"
                 placeholder="100"
@@ -543,7 +543,7 @@ export default function SalesRevenue() {
               </span>
               <input
                 type="number"
-                value={fixedCosts.rent}
+                value={fixedCosts.rent || ''}
                 onChange={(e) => setFixedCosts({ ...fixedCosts, rent: e.target.value })}
                 className="input-field pl-8"
                 placeholder="10000"
@@ -558,7 +558,7 @@ export default function SalesRevenue() {
               </span>
               <input
                 type="number"
-                value={fixedCosts.salaries}
+                value={fixedCosts.salaries || ''}
                 onChange={(e) => setFixedCosts({ ...fixedCosts, salaries: e.target.value })}
                 className="input-field pl-8"
                 placeholder="20000"
@@ -573,7 +573,7 @@ export default function SalesRevenue() {
               </span>
               <input
                 type="number"
-                value={fixedCosts.utilities}
+                value={fixedCosts.utilities || ''}
                 onChange={(e) => setFixedCosts({ ...fixedCosts, utilities: e.target.value })}
                 className="input-field pl-8"
                 placeholder="5000"
@@ -588,7 +588,7 @@ export default function SalesRevenue() {
               </span>
               <input
                 type="number"
-                value={fixedCosts.other}
+                value={fixedCosts.other || ''}
                 onChange={(e) => setFixedCosts({ ...fixedCosts, other: e.target.value })}
                 className="input-field pl-8"
                 placeholder="5000"

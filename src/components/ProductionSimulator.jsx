@@ -128,7 +128,7 @@ export default function ProductionSimulator() {
                         type="number"
                         min="1"
                         className="input-field"
-                        value={quantity}
+                        value={quantity || ''}
                         onChange={e => setQuantity(e.target.value)}
                         disabled={isProducing}
                     />

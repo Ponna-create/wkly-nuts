@@ -325,7 +325,7 @@ function StaffDirectory({ staff, onChanged, showToast }) {
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">₹/hour *</label>
-            <input type="number" min="0" value={form.ratePerHour} onChange={e => setForm(f => ({ ...f, ratePerHour: e.target.value }))}
+            <input type="number" min="0" value={form.ratePerHour || ''} onChange={e => setForm(f => ({ ...f, ratePerHour: e.target.value }))}
               className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="40" />
           </div>
           <div>

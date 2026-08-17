@@ -456,7 +456,7 @@ export default function PricingStrategy() {
                     <input
                       type="number"
                       step="0.01"
-                      value={formData.sachetPackagingCost}
+                      value={formData.sachetPackagingCost || ''}
                       onChange={(e) =>
                         setFormData({ ...formData, sachetPackagingCost: e.target.value })
                       }
@@ -478,7 +478,7 @@ export default function PricingStrategy() {
                     <input
                       type="number"
                       step="0.01"
-                      value={formData.packBoxCost}
+                      value={formData.packBoxCost || ''}
                       onChange={(e) => setFormData({ ...formData, packBoxCost: e.target.value })}
                       className="input-field pl-8"
                       placeholder="15.00"
@@ -495,7 +495,7 @@ export default function PricingStrategy() {
                     <input
                       type="number"
                       step="0.01"
-                      value={formData.operatingCost}
+                      value={formData.operatingCost || ''}
                       onChange={(e) => setFormData({ ...formData, operatingCost: e.target.value })}
                       className="input-field pl-8"
                       placeholder="10.00"
@@ -512,7 +512,7 @@ export default function PricingStrategy() {
                     <input
                       type="number"
                       step="0.01"
-                      value={formData.marketingCost}
+                      value={formData.marketingCost || ''}
                       onChange={(e) =>
                         setFormData({ ...formData, marketingCost: e.target.value })
                       }
@@ -531,7 +531,7 @@ export default function PricingStrategy() {
                     <input
                       type="number"
                       step="0.01"
-                      value={formData.shippingCost}
+                      value={formData.shippingCost || ''}
                       onChange={(e) =>
                         setFormData({ ...formData, shippingCost: e.target.value })
                       }
@@ -550,7 +550,7 @@ export default function PricingStrategy() {
                     <input
                       type="number"
                       step="0.01"
-                      value={formData.otherCosts}
+                      value={formData.otherCosts || ''}
                       onChange={(e) => setFormData({ ...formData, otherCosts: e.target.value })}
                       className="input-field pl-8"
                       placeholder="0.00"
@@ -657,7 +657,7 @@ export default function PricingStrategy() {
                     <input
                       type="number"
                       step="0.01"
-                      value={formData.sellingPrice}
+                      value={formData.sellingPrice || ''}
                       onChange={(e) =>
                         setFormData({ ...formData, sellingPrice: e.target.value })
                       }

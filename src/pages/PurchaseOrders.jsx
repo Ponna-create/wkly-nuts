@@ -519,7 +519,7 @@ function SmartPOModal({ skus, vendors, onClose, onCreatePO }) {
                   </div>
                   <div className="w-20">
                     <label className="block text-xs text-gray-500 mb-1">{idx === 0 ? 'Units' : ''}</label>
-                    <input type="number" min="1" value={sel.quantity} onChange={e => updateSKU(idx, 'quantity', parseInt(e.target.value) || 1)}
+                    <input type="number" min="1" value={sel.quantity || ''} onChange={e => updateSKU(idx, 'quantity', parseInt(e.target.value) || 1)}
                       className="w-full border rounded-lg px-3 py-2 text-sm" />
                   </div>
                   <button onClick={() => removeSKU(idx)} className="p-2 text-red-400 hover:text-red-600 mb-0.5">
@@ -569,7 +569,7 @@ function SmartPOModal({ skus, vendors, onClose, onCreatePO }) {
                           {s.shortage_grams > 0 ? `${(s.shortage_grams / 1000).toFixed(2)} kg` : '✓ OK'}
                         </td>
                         <td className="py-2 text-right">
-                          <input type="number" step="0.1" min="0" value={s.editable_kg}
+                          <input type="number" step="0.1" min="0" value={s.editable_kg || ''}
                             onChange={e => updateShortageQty(i, e.target.value)}
                             className="w-20 border rounded px-2 py-1 text-sm text-right" />
                         </td>
@@ -1083,9 +1083,9 @@ function POForm({ po, vendors, onClose, onSave }) {
                   <input type="text" placeholder="Ingredient name" value={item.ingredient_name} onChange={e => updateItem(idx, 'ingredient_name', e.target.value)}
                     list="po-ingredient-list"
                     className="col-span-4 border rounded-lg px-2 py-1.5 text-sm" />
-                  <input type="number" step="0.1" placeholder="Qty (kg)" value={item.quantity_kg} onChange={e => updateItem(idx, 'quantity_kg', e.target.value)}
+                  <input type="number" step="0.1" placeholder="Qty (kg)" value={item.quantity_kg || ''} onChange={e => updateItem(idx, 'quantity_kg', e.target.value)}
                     className="col-span-2 border rounded-lg px-2 py-1.5 text-sm" />
-                  <input type="number" step="0.01" placeholder="Rate/kg" value={item.unit_price} onChange={e => updateItem(idx, 'unit_price', e.target.value)}
+                  <input type="number" step="0.01" placeholder="Rate/kg" value={item.unit_price || ''} onChange={e => updateItem(idx, 'unit_price', e.target.value)}
                     className="col-span-2 border rounded-lg px-2 py-1.5 text-sm" />
                   <div className="col-span-3 text-sm font-medium text-right">
                     {parseFloat(item.total || 0).toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}
@@ -1113,7 +1113,7 @@ function POForm({ po, vendors, onClose, onSave }) {
             <div className="flex justify-between"><span className="text-gray-500">GST (5%)</span><span>{gstAmount.toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}</span></div>
             <div className="flex justify-between items-center">
               <span className="text-gray-500">Shipping</span>
-              <input type="number" step="0.01" value={form.shipping_charge} onChange={e => setForm(f => ({ ...f, shipping_charge: e.target.value }))}
+              <input type="number" step="0.01" value={form.shipping_charge || ''} onChange={e => setForm(f => ({ ...f, shipping_charge: e.target.value }))}
                 className="w-24 border rounded px-2 py-1 text-sm text-right" />
             </div>
             <div className="flex justify-between font-bold text-base border-t pt-1 mt-1">

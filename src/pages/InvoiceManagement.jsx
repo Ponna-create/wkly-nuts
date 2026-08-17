@@ -2201,7 +2201,7 @@ export default function InvoiceManagement() {
                   type="number"
                   min="0.01"
                   step="0.01"
-                  value={currentItem.quantity}
+                  value={currentItem.quantity || ''}
                   onChange={(e) => setCurrentItem({ ...currentItem, quantity: e.target.value })}
                   className="input-field"
                   placeholder="0"
@@ -2228,7 +2228,7 @@ export default function InvoiceManagement() {
                     type="number"
                     min="0"
                     step="0.01"
-                    value={currentItem.unitPrice}
+                    value={currentItem.unitPrice || ''}
                     onChange={(e) => handlePriceChange(e.target.value)}
                     className="input-field pl-9"
                     placeholder="0.00"
@@ -2320,7 +2320,7 @@ export default function InvoiceManagement() {
                       type="number"
                       min="0"
                       step="0.01"
-                      value={formData.gstRate}
+                      value={formData.gstRate || ''}
                       onChange={(e) => setFormData({ ...formData, gstRate: e.target.value })}
                       className="input-field"
                       placeholder="5"
@@ -2332,7 +2332,7 @@ export default function InvoiceManagement() {
                       type="number"
                       min="0"
                       step="0.01"
-                      value={formData.discountPercent}
+                      value={formData.discountPercent || ''}
                       onChange={(e) => setFormData({ ...formData, discountPercent: e.target.value, discountAmount: 0 })}
                       className="input-field"
                       placeholder="0.00"
@@ -2344,7 +2344,7 @@ export default function InvoiceManagement() {
                       type="number"
                       min="0"
                       step="0.01"
-                      value={formData.discountAmount}
+                      value={formData.discountAmount || ''}
                       onChange={(e) => setFormData({ ...formData, discountAmount: e.target.value, discountPercent: 0 })}
                       className="input-field"
                       placeholder="0.00"
@@ -2356,7 +2356,7 @@ export default function InvoiceManagement() {
                       type="number"
                       min="0"
                       step="0.01"
-                      value={formData.shippingCharge}
+                      value={formData.shippingCharge || ''}
                       onChange={(e) => setFormData({ ...formData, shippingCharge: e.target.value })}
                       className="input-field"
                       placeholder="0.00"
@@ -2368,7 +2368,7 @@ export default function InvoiceManagement() {
                       type="number"
                       min="0"
                       step="0.01"
-                      value={formData.advancePaid}
+                      value={formData.advancePaid || ''}
                       onChange={(e) => setFormData({ ...formData, advancePaid: e.target.value })}
                       className="input-field"
                       placeholder="0.00"

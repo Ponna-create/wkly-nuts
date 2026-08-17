@@ -273,7 +273,7 @@ export default function Marketing() {
             {FEE_CHANNELS.map(ch => (
               <label key={ch} className="flex items-center gap-2 text-sm">
                 <span className="font-medium text-gray-700">{SOURCE_LABELS[ch]} fee %</span>
-                <input type="number" min="0" max="100" step="0.1" value={channelFees[ch] || 0}
+                <input type="number" min="0" max="100" step="0.1" value={channelFees[ch] || ''}
                   onChange={e => updateChannelFee(ch, e.target.value)}
                   className="w-20 border rounded-lg px-2 py-1 text-sm text-right" />
                 <span className="text-xs text-gray-400">{ch === 'amazon' ? 'referral fee' : 'gateway cut'}</span>
@@ -453,7 +453,7 @@ export default function Marketing() {
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Followers</label>
-                      <input type="number" value={contactForm.followers} onChange={e => setContactForm(p => ({...p, followers: parseInt(e.target.value) || 0}))}
+                      <input type="number" value={contactForm.followers || ''} onChange={e => setContactForm(p => ({...p, followers: parseInt(e.target.value) || 0}))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
                     </div>
                     <div>
@@ -494,17 +494,17 @@ export default function Marketing() {
                   <div className="grid grid-cols-3 gap-3">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Fee (₹ cash)</label>
-                      <input type="number" value={contactForm.fee} onChange={e => setContactForm(p => ({...p, fee: parseFloat(e.target.value) || 0}))}
+                      <input type="number" value={contactForm.fee || ''} onChange={e => setContactForm(p => ({...p, fee: parseFloat(e.target.value) || 0}))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Orders</label>
-                      <input type="number" value={contactForm.ordersGenerated} onChange={e => setContactForm(p => ({...p, ordersGenerated: parseInt(e.target.value) || 0}))}
+                      <input type="number" value={contactForm.ordersGenerated || ''} onChange={e => setContactForm(p => ({...p, ordersGenerated: parseInt(e.target.value) || 0}))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Revenue (₹)</label>
-                      <input type="number" value={contactForm.revenueGenerated} onChange={e => setContactForm(p => ({...p, revenueGenerated: parseFloat(e.target.value) || 0}))}
+                      <input type="number" value={contactForm.revenueGenerated || ''} onChange={e => setContactForm(p => ({...p, revenueGenerated: parseFloat(e.target.value) || 0}))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
                     </div>
                   </div>
@@ -551,12 +551,12 @@ export default function Marketing() {
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Budget (₹)</label>
-                      <input type="number" value={campaignForm.budget} onChange={e => setCampaignForm(p => ({...p, budget: parseFloat(e.target.value) || 0}))}
+                      <input type="number" value={campaignForm.budget || ''} onChange={e => setCampaignForm(p => ({...p, budget: parseFloat(e.target.value) || 0}))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Spend (₹)</label>
-                      <input type="number" value={campaignForm.spend} onChange={e => setCampaignForm(p => ({...p, spend: parseFloat(e.target.value) || 0}))}
+                      <input type="number" value={campaignForm.spend || ''} onChange={e => setCampaignForm(p => ({...p, spend: parseFloat(e.target.value) || 0}))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
                     </div>
                   </div>
@@ -575,24 +575,24 @@ export default function Marketing() {
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Impressions</label>
-                      <input type="number" value={campaignForm.impressions} onChange={e => setCampaignForm(p => ({...p, impressions: parseInt(e.target.value) || 0}))}
+                      <input type="number" value={campaignForm.impressions || ''} onChange={e => setCampaignForm(p => ({...p, impressions: parseInt(e.target.value) || 0}))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Clicks</label>
-                      <input type="number" value={campaignForm.clicks} onChange={e => setCampaignForm(p => ({...p, clicks: parseInt(e.target.value) || 0}))}
+                      <input type="number" value={campaignForm.clicks || ''} onChange={e => setCampaignForm(p => ({...p, clicks: parseInt(e.target.value) || 0}))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Orders Attributed</label>
-                      <input type="number" value={campaignForm.ordersAttributed} onChange={e => setCampaignForm(p => ({...p, ordersAttributed: parseInt(e.target.value) || 0}))}
+                      <input type="number" value={campaignForm.ordersAttributed || ''} onChange={e => setCampaignForm(p => ({...p, ordersAttributed: parseInt(e.target.value) || 0}))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Revenue (₹)</label>
-                      <input type="number" value={campaignForm.revenueAttributed} onChange={e => setCampaignForm(p => ({...p, revenueAttributed: parseFloat(e.target.value) || 0}))}
+                      <input type="number" value={campaignForm.revenueAttributed || ''} onChange={e => setCampaignForm(p => ({...p, revenueAttributed: parseFloat(e.target.value) || 0}))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
                     </div>
                   </div>

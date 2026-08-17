@@ -390,17 +390,17 @@ export default function PackagingMaterials() {
               <div className="grid grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-semibold text-gray-900 mb-1">Current Stock</label>
-                  <input type="number" value={form.current_stock} onChange={e => setForm({...form, current_stock: Number(e.target.value)})}
+                  <input type="number" value={form.current_stock || ''} onChange={e => setForm({...form, current_stock: Number(e.target.value)})}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg" min="0" />
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-gray-900 mb-1">Min Stock</label>
-                  <input type="number" value={form.min_stock} onChange={e => setForm({...form, min_stock: Number(e.target.value)})}
+                  <input type="number" value={form.min_stock || ''} onChange={e => setForm({...form, min_stock: Number(e.target.value)})}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg" min="0" />
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-gray-900 mb-1">Cost/Unit</label>
-                  <input type="number" value={form.cost_per_unit} onChange={e => setForm({...form, cost_per_unit: Number(e.target.value)})}
+                  <input type="number" value={form.cost_per_unit || ''} onChange={e => setForm({...form, cost_per_unit: Number(e.target.value)})}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg" min="0" step="0.01" />
                 </div>
               </div>
@@ -478,14 +478,14 @@ export default function PackagingMaterials() {
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-gray-900 mb-1">Quantity *</label>
-                  <input type="number" value={txnForm.quantity} onChange={e => setTxnForm({...txnForm, quantity: Number(e.target.value)})}
+                  <input type="number" value={txnForm.quantity || ''} onChange={e => setTxnForm({...txnForm, quantity: Number(e.target.value)})}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg" min="0" />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-semibold text-gray-900 mb-1">Cost/Unit</label>
-                  <input type="number" value={txnForm.unit_cost} onChange={e => setTxnForm({...txnForm, unit_cost: Number(e.target.value)})}
+                  <input type="number" value={txnForm.unit_cost || ''} onChange={e => setTxnForm({...txnForm, unit_cost: Number(e.target.value)})}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg" min="0" step="0.01" />
                 </div>
                 <div>

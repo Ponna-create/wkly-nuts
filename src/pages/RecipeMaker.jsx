@@ -267,7 +267,7 @@ export default function RecipeMaker() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Target Weight / Sachet (g)</label>
-                <input type="number" value={targetWeight} onChange={e => setTargetWeight(e.target.value)}
+                <input type="number" value={targetWeight || ''} onChange={e => setTargetWeight(e.target.value)}
                   className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500" placeholder="e.g. 30" min="1" />
               </div>
             </div>
@@ -333,7 +333,7 @@ export default function RecipeMaker() {
                           <option key={ai.id} value={ai.name}>{ai.name}</option>
                         ))}
                       </select>
-                      <input type="number" value={item.grams} onChange={e => updateIngredient(idx, 'grams', e.target.value)}
+                      <input type="number" value={item.grams || ''} onChange={e => updateIngredient(idx, 'grams', e.target.value)}
                         className="w-20 border rounded-lg px-2 py-1.5 text-sm bg-white" placeholder="grams" min="0" step="0.5" />
                       <span className="text-xs text-gray-500 w-6">g</span>
                       {rate && cost > 0 && (
@@ -364,7 +364,7 @@ export default function RecipeMaker() {
                 <input type="text" value={item.name} onChange={e => {
                   const u = [...processingIngredients]; u[idx] = { ...u[idx], name: e.target.value }; setProcessingIngredients(u);
                 }} className="flex-1 border rounded-lg px-2 py-1.5 text-sm" placeholder="e.g. Ghee, Honey" />
-                <input type="number" value={item.quantity} onChange={e => {
+                <input type="number" value={item.quantity || ''} onChange={e => {
                   const u = [...processingIngredients]; u[idx] = { ...u[idx], quantity: e.target.value }; setProcessingIngredients(u);
                 }} className="w-20 border rounded-lg px-2 py-1.5 text-sm" placeholder="Qty" min="0" step="0.1" />
                 <select value={item.unit} onChange={e => {
@@ -400,7 +400,7 @@ export default function RecipeMaker() {
                 <input type="text" value={pkg.name} onChange={e => {
                   const u = [...packagingMaterials]; u[idx] = { ...u[idx], name: e.target.value }; setPackagingMaterials(u);
                 }} className="flex-1 border rounded-lg px-2 py-1.5 text-sm" placeholder="e.g. Weekly Box, Sachet 100g" />
-                <input type="number" value={pkg.quantity_per_pack} onChange={e => {
+                <input type="number" value={pkg.quantity_per_pack || ''} onChange={e => {
                   const u = [...packagingMaterials]; u[idx] = { ...u[idx], quantity_per_pack: e.target.value }; setPackagingMaterials(u);
                 }} className="w-20 border rounded-lg px-2 py-1.5 text-sm" placeholder="Qty" min="0" />
                 <select value={pkg.unit} onChange={e => {
@@ -444,7 +444,7 @@ export default function RecipeMaker() {
               {/* Selling Price */}
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Selling Price / Pack</label>
-                <input type="number" value={sellingPrice} onChange={e => setSellingPrice(e.target.value)}
+                <input type="number" value={sellingPrice || ''} onChange={e => setSellingPrice(e.target.value)}
                   className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500" placeholder="e.g. 399" min="0" />
               </div>
 

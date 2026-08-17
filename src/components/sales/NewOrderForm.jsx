@@ -663,7 +663,7 @@ export default function NewOrderForm({ onClose }) {
                       type="number"
                       placeholder="Qty"
                       min="1"
-                      value={newItem.quantity}
+                      value={newItem.quantity || ''}
                       onChange={(e) => setNewItem(prev => ({ ...prev, quantity: parseInt(e.target.value) || 0 }))}
                       className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
                     />
@@ -729,7 +729,7 @@ export default function NewOrderForm({ onClose }) {
                     placeholder="Discount %"
                     min="0"
                     max="100"
-                    value={formData.discountPercent}
+                    value={formData.discountPercent || ''}
                     onChange={(e) => setFormData(prev => ({ ...prev, discountPercent: parseFloat(e.target.value) || 0, discountAmount: 0 }))}
                     className="flex-1 px-2 py-1 border border-gray-300 rounded text-sm"
                   />
@@ -740,7 +740,7 @@ export default function NewOrderForm({ onClose }) {
                   <input
                     type="number"
                     min="0"
-                    value={formData.shippingCharge}
+                    value={formData.shippingCharge || ''}
                     onChange={(e) => setFormData(prev => ({ ...prev, shippingCharge: parseFloat(e.target.value) || 0 }))}
                     className="w-20 px-2 py-1 border border-gray-300 rounded text-sm text-right"
                   />
