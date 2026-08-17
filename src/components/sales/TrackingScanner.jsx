@@ -5,11 +5,44 @@ import { useApp } from '../../context/AppContext';
 import { dbService } from '../../services/supabase';
 import { findBestOrderMatch } from '../../utils/ocrMatch';
 
+// Phone camera photos routinely come in at 3-8MB — sent raw, base64 encoding
+// inflates that by another ~33%, and Vercel's serverless functions reject
+// oversized request bodies before the function code (and Gemini) ever sees
+// the image. That failure looks identical to a genuinely-unreadable photo —
+// both just show "Couldn't read anything" — so a real photo could be
+// silently getting rejected on size alone with zero indication that's what
+// happened. Downscaling to a max dimension well within OCR-legible range
+// before upload avoids the limit entirely and also makes the Gemini call
+// faster/cheaper, since text stays perfectly readable far below full camera
+// resolution.
+const MAX_DIMENSION = 1600;
 const fileToBase64 = (file) => new Promise((resolve, reject) => {
-  const reader = new FileReader();
-  reader.onload = () => resolve(reader.result);
-  reader.onerror = reject;
-  reader.readAsDataURL(file);
+  const img = new Image();
+  const objectUrl = URL.createObjectURL(file);
+  img.onload = () => {
+    URL.revokeObjectURL(objectUrl);
+    let { width, height } = img;
+    if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
+      const scale = MAX_DIMENSION / Math.max(width, height);
+      width = Math.round(width * scale);
+      height = Math.round(height * scale);
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+    resolve(canvas.toDataURL('image/jpeg', 0.85));
+  };
+  img.onerror = () => {
+    URL.revokeObjectURL(objectUrl);
+    // Fall back to the raw file rather than failing outright — some formats
+    // (e.g. HEIC) can't be drawn to a canvas in every browser.
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  };
+  img.src = objectUrl;
 });
 
 let reviewIdCounter = 0;
@@ -192,7 +225,11 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
         ocrResults[i] = { ok: res.ok, status: res.status, data };
       } catch (err) {
         console.error('AI scan error:', err);
-        ocrResults[i] = { ok: false, error: err };
+        // A network-level failure (request too large, connection reset,
+        // timeout) throws here rather than resolving with a status code —
+        // record which so it doesn't get reported as the same generic
+        // "couldn't read it" as a photo Gemini genuinely couldn't make out.
+        ocrResults[i] = { ok: false, networkError: err?.message || 'Network error' };
       }
       completed++;
       setBatchProgress({ current: completed, total: files.length });
@@ -211,7 +248,13 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
     for (let i = 0; i < files.length; i++) {
       const result = ocrResults[i];
       if (!result || !result.ok) {
-        const reason = result?.status === 429 ? "Rate limited — wait a minute and re-upload this one" : "Couldn't read anything in this photo";
+        const reason = result?.status === 429
+          ? "Rate limited — wait a minute and re-upload this one"
+          : result?.networkError
+            ? `Upload failed (${result.networkError}) — try again, or a smaller photo`
+            : result?.status
+              ? `Server error (${result.status}) — try re-uploading this one`
+              : "Couldn't read anything in this photo";
         dbService.logAiScan({ outcome: 'failed' });
         newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, reason });
         continue;
