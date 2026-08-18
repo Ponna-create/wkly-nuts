@@ -55,11 +55,12 @@ const nextReviewId = () => `rv-${Date.now()}-${reviewIdCounter++}`;
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-// Reads one slip photo via Gemini, retrying up to 3x with backoff (3s, 6s) —
-// long enough for a per-minute quota to recover, but not for a sustained
-// "model overloaded" stretch. Shared by the batch pass and the per-photo
-// Retry button, so a single failed photo can be re-read later without
-// re-uploading the whole stack.
+// Reads one slip photo — server tries Groq first, then falls back to
+// Gemini — retrying up to 3x with backoff (3s, 6s) if every provider fails.
+// Long enough for a per-minute quota to recover, but not for a sustained
+// "model overloaded"/quota-exhausted stretch. Shared by the batch pass and
+// the per-photo Retry button, so a single failed photo can be re-read
+// later without re-uploading the whole stack.
 const readSlipWithRetry = async (file) => {
   let lastResult;
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -76,14 +77,15 @@ const readSlipWithRetry = async (file) => {
       lastResult = { ok: false, networkError: err?.message || 'Network error' };
     }
     // Our own /api/scan-slip route always answers with HTTP 502 on any
-    // Gemini failure (so lastResult.status is never actually 429/400/404
-    // here) — the REAL upstream status Gemini sent is nested inside the
-    // body as geminiStatus. Checking the wrong one meant we were retrying
-    // 3 times even for a quota-exceeded or "model no longer exists" error
-    // that could never succeed no matter how many times we asked — wasted
-    // time and burned through the free quota even faster.
-    const geminiStatus = lastResult.data?.geminiStatus;
-    if (lastResult.ok || geminiStatus === 429 || geminiStatus === 400 || geminiStatus === 404) break;
+    // provider failure (so lastResult.status is never actually 429/400/404
+    // here) — the REAL upstream status is nested inside the body as
+    // groqStatus/geminiStatus (whichever provider was last tried). Checking
+    // the wrong one meant we were retrying 3 times even for a quota-exceeded
+    // or "model no longer exists" error that could never succeed no matter
+    // how many times we asked — wasted time and burned through the free
+    // quota even faster.
+    const status = lastResult.data?.geminiStatus ?? lastResult.data?.groqStatus;
+    if (lastResult.ok || status === 429 || status === 400 || status === 404) break;
     if (attempt < 2) await sleep(3000 * (attempt + 1));
   }
   return lastResult;
@@ -94,11 +96,13 @@ const readSlipWithRetry = async (file) => {
 // and the single-photo Retry button.
 const describeFailure = (result) => {
   if (result?.networkError) return `Upload failed (${result.networkError}) — try again, or a smaller photo`;
-  const geminiStatus = result?.data?.geminiStatus;
-  const detail = result?.data?.geminiDetail;
-  if (geminiStatus === 429) return 'Free quota used up for now — wait a while (or tomorrow) and retry, or switch to a paid plan';
-  if (geminiStatus === 404) return `Model no longer available (${detail ? detail.slice(0, 150) : 'not found'}) — the app needs updating, tell Claude`;
-  if (result?.status) return `Server error (${result.status})${detail ? `: ${detail}` : ''} — retried, still failing`;
+  const status = result?.data?.geminiStatus ?? result?.data?.groqStatus;
+  const detail = result?.data?.geminiDetail ?? result?.data?.groqDetail;
+  const bothFailed = result?.data?.groqStatus != null && result?.data?.geminiStatus != null;
+  const suffix = bothFailed ? ' — both Groq and Gemini failed' : '';
+  if (status === 429) return `Free quota used up for now${suffix} — wait a while (or tomorrow) and retry, or switch to a paid plan`;
+  if (status === 404) return `Model no longer available (${detail ? detail.slice(0, 150) : 'not found'})${suffix} — the app needs updating, tell Claude`;
+  if (result?.status) return `Server error (${result.status})${detail ? `: ${detail}` : ''}${suffix} — retried, still failing`;
   return "Couldn't read anything in this photo";
 };
 
