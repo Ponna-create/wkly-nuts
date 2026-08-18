@@ -2397,6 +2397,40 @@ const _realDbService = {
     }
   },
 
+  // CRM reorder nudges — tracks which "due to reorder" WhatsApp messages
+  // have already been sent, centrally (not per-device), keyed by the exact
+  // order+SKU+pack-type combination a CRM row represents. A genuinely new
+  // order for that customer/SKU naturally gets a fresh row (new order_id),
+  // so this never needs manual resetting.
+  async getReorderNudges() {
+    if (!isSupabaseAvailable()) return { data: [], error: null };
+    try {
+      const { data, error } = await supabase.from('crm_reorder_nudges').select('*');
+      if (error) throw error;
+      return { data: data || [], error: null };
+    } catch (error) {
+      console.error('Error fetching reorder nudges:', error);
+      return { data: [], error };
+    }
+  },
+
+  async markReorderNudgeSent(orderId, skuId, packType) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    try {
+      const { data, error } = await supabase
+        .from('crm_reorder_nudges')
+        .upsert([{ order_id: orderId, sku_id: skuId, pack_type: packType, sent_at: new Date().toISOString() }],
+          { onConflict: 'order_id,sku_id,pack_type' })
+        .select()
+        .single();
+      if (error) throw error;
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error marking reorder nudge sent:', error);
+      return { data: null, error };
+    }
+  },
+
   async getSalesOrdersByStatus(status) {
     if (!isSupabaseAvailable()) return { data: [], error: null };
 
