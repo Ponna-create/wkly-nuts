@@ -75,10 +75,31 @@ const readSlipWithRetry = async (file) => {
     } catch (err) {
       lastResult = { ok: false, networkError: err?.message || 'Network error' };
     }
-    if (lastResult.ok || lastResult.status === 429 || lastResult.status === 400) break; // don't retry a rate-limit or a request Gemini actively rejected
+    // Our own /api/scan-slip route always answers with HTTP 502 on any
+    // Gemini failure (so lastResult.status is never actually 429/400/404
+    // here) — the REAL upstream status Gemini sent is nested inside the
+    // body as geminiStatus. Checking the wrong one meant we were retrying
+    // 3 times even for a quota-exceeded or "model no longer exists" error
+    // that could never succeed no matter how many times we asked — wasted
+    // time and burned through the free quota even faster.
+    const geminiStatus = lastResult.data?.geminiStatus;
+    if (lastResult.ok || geminiStatus === 429 || geminiStatus === 400 || geminiStatus === 404) break;
     if (attempt < 2) await sleep(3000 * (attempt + 1));
   }
   return lastResult;
+};
+
+// One place for turning a failed read into a message she can actually act
+// on, instead of a generic "server error" — used by both the batch pass
+// and the single-photo Retry button.
+const describeFailure = (result) => {
+  if (result?.networkError) return `Upload failed (${result.networkError}) — try again, or a smaller photo`;
+  const geminiStatus = result?.data?.geminiStatus;
+  const detail = result?.data?.geminiDetail;
+  if (geminiStatus === 429) return 'Free quota used up for now — wait a while (or tomorrow) and retry, or switch to a paid plan';
+  if (geminiStatus === 404) return `Model no longer available (${detail ? detail.slice(0, 150) : 'not found'}) — the app needs updating, tell Claude`;
+  if (result?.status) return `Server error (${result.status})${detail ? `: ${detail}` : ''} — retried, still failing`;
+  return "Couldn't read anything in this photo";
 };
 
 // Upload a whole stack of courier slip photos and it should feel like
@@ -280,16 +301,8 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
     for (let i = 0; i < files.length; i++) {
       const result = ocrResults[i];
       if (!result || !result.ok) {
-        const detail = result?.data?.geminiDetail;
-        const reason = result?.status === 429
-          ? "Rate limited — wait a minute and re-upload this one"
-          : result?.networkError
-            ? `Upload failed (${result.networkError}) — try again, or a smaller photo`
-            : result?.status
-              ? `Server error (${result.status})${detail ? `: ${detail}` : ''} — retried 3x, still failing`
-              : "Couldn't read anything in this photo";
         dbService.logAiScan({ outcome: 'failed' });
-        newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, reason, file: files[i] });
+        newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, reason: describeFailure(result), file: files[i] });
         continue;
       }
       const data = result.data;
@@ -384,15 +397,7 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
     setRetryingId(item.id);
     const result = await readSlipWithRetry(item.file);
     if (!result.ok) {
-      const detail = result?.data?.geminiDetail;
-      const reason = result.status === 429
-        ? "Rate limited — wait a minute and retry this one"
-        : result.networkError
-          ? `Upload failed (${result.networkError}) — try again`
-          : result.status
-            ? `Server error (${result.status})${detail ? `: ${detail}` : ''} — retried 3x, still failing`
-            : "Couldn't read anything in this photo";
-      setReviewQueue(prev => prev.map(r => r.id === item.id ? { ...r, reason } : r));
+      setReviewQueue(prev => prev.map(r => r.id === item.id ? { ...r, reason: describeFailure(result) } : r));
       setRetryingId(null);
       return;
     }

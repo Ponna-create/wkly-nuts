@@ -77,7 +77,13 @@ export default async function handler(req, res) {
   // pool three times in a row. Only used for a genuine "overloaded" (503) —
   // other error codes (400 bad request, 429 rate limit) mean trying a
   // different model wouldn't help, so those still fail through immediately.
-  const MODELS = ['gemini-flash-latest', 'gemini-2.5-flash'];
+  //
+  // gemini-2.5-flash was pinned here originally but Google retired it for
+  // new-user access shortly after (its own error response names the
+  // replacement) — pointing this at a second "-latest"-style alias instead
+  // of another hardcoded version number, so a future retirement doesn't
+  // silently break this fallback again.
+  const MODELS = ['gemini-flash-latest', 'gemini-3.6-flash'];
 
   try {
     let geminiRes, errText, usedModel;
