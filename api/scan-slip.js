@@ -145,6 +145,13 @@ async function tryGroq(apiKey, base64, mimeType) {
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
     body: JSON.stringify({
       model: GROQ_MODEL,
+      // qwen3.6-27b defaults to "thinking mode" (reasoning_effort: "default"),
+      // which mixes its internal reasoning into the response instead of just
+      // the clean 7-line answer we asked for — that's what produced garbled
+      // output like "Tracking: **" (fragments of its own reasoning/the
+      // prompt's instructions, not an actual read of the image). Turning
+      // thinking off gets a direct answer in the exact format we need.
+      reasoning_effort: 'none',
       messages: [{
         role: 'user',
         content: [
