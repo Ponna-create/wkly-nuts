@@ -1,16 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
+import { dbService } from '../services/supabase';
 import { Heart, MessageCircle, TrendingUp, Clock, Copy, Check, CheckCircle2 } from 'lucide-react';
 import { formatDateShort, formatDateTime } from '../utils/dateFormat';
-
-// Remembers which reorder nudges were already sent, so the WhatsApp button
-// visibly goes inactive after use instead of staying bright green forever —
-// keyed by row.id (order+SKU+packType), so a genuinely new order cycle for
-// the same customer naturally gets a fresh, un-sent row again.
-const SENT_KEY = 'wklynuts_crm_whatsapp_sent_v1';
-const loadSentMap = () => {
-  try { return JSON.parse(localStorage.getItem(SENT_KEY) || '{}'); } catch { return {}; }
-};
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const todayStart = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
@@ -46,11 +38,18 @@ export default function CRM() {
   const [messageTemplate, setMessageTemplate] = useState(DEFAULT_MESSAGE);
   const [showTemplateEditor, setShowTemplateEditor] = useState(false);
   const [copiedId, setCopiedId] = useState(null);
-  const [sentMap, setSentMap] = useState(loadSentMap);
+  // Keyed the same way as row.id (order+SKU+packType) so a genuinely new
+  // order cycle for the same customer naturally gets a fresh, un-sent row.
+  // Loaded from the DB, not localStorage, so it's the same on any device.
+  const [sentMap, setSentMap] = useState({});
 
   useEffect(() => {
-    localStorage.setItem(SENT_KEY, JSON.stringify(sentMap));
-  }, [sentMap]);
+    dbService.getReorderNudges().then(({ data }) => {
+      const map = {};
+      (data || []).forEach(n => { map[`${n.order_id}-${n.sku_id}-${n.pack_type}`] = n.sent_at; });
+      setSentMap(map);
+    });
+  }, []);
 
   const discountFor = (daysLapsed) => {
     const tier = tiers.find(t => daysLapsed <= t.maxDays) || tiers[tiers.length - 1];
@@ -105,6 +104,8 @@ export default function CRM() {
       if (daysLapsed >= -3) { // due within 3 days, or already overdue
         dueRows.push({
           id: `${latest.order.id}-${latest.sku.id}-${latest.packType}`,
+          orderId: latest.order.id,
+          skuId: latest.sku.id,
           customerName: latest.order.customer_name || 'Customer',
           phone: latest.order.phone || '',
           productName: latest.sku.name,
@@ -138,7 +139,9 @@ export default function CRM() {
     const formatted = phone.startsWith('91') ? phone : `91${phone}`;
     const msg = encodeURIComponent(buildMessage(row));
     window.open(`https://wa.me/${formatted}?text=${msg}`, '_blank');
-    setSentMap(prev => ({ ...prev, [row.id]: new Date().toISOString() }));
+    const sentAt = new Date().toISOString();
+    setSentMap(prev => ({ ...prev, [row.id]: sentAt })); // optimistic, so the button flips instantly
+    dbService.markReorderNudgeSent(row.orderId, row.skuId, row.packType).catch(() => {});
   };
 
   const copyMessage = (row) => {
