@@ -1,6 +1,6 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
-import { X, Camera, Image as ImageIcon, CheckCircle, AlertCircle, Package, Search } from 'lucide-react';
+import { X, Camera, Image as ImageIcon, CheckCircle, AlertCircle, Package, Search, RefreshCw } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { dbService } from '../../services/supabase';
 import { findBestOrderMatch } from '../../utils/ocrMatch';
@@ -53,6 +53,34 @@ const fileToBase64 = (file) => new Promise((resolve, reject) => {
 let reviewIdCounter = 0;
 const nextReviewId = () => `rv-${Date.now()}-${reviewIdCounter++}`;
 
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+// Reads one slip photo via Gemini, retrying up to 3x with backoff (3s, 6s) —
+// long enough for a per-minute quota to recover, but not for a sustained
+// "model overloaded" stretch. Shared by the batch pass and the per-photo
+// Retry button, so a single failed photo can be re-read later without
+// re-uploading the whole stack.
+const readSlipWithRetry = async (file) => {
+  let lastResult;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const base64 = await fileToBase64(file);
+      const res = await fetch('/api/scan-slip', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: base64 }),
+      });
+      const data = await res.json();
+      lastResult = { ok: res.ok, status: res.status, data };
+    } catch (err) {
+      lastResult = { ok: false, networkError: err?.message || 'Network error' };
+    }
+    if (lastResult.ok || lastResult.status === 429 || lastResult.status === 400) break; // don't retry a rate-limit or a request Gemini actively rejected
+    if (attempt < 2) await sleep(3000 * (attempt + 1));
+  }
+  return lastResult;
+};
+
 // Upload a whole stack of courier slip photos and it should feel like
 // dropping a pile of paper on the desk and having it sort itself — every
 // photo gets OCR'd and matched in the background with no pausing per
@@ -72,6 +100,7 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
   const [reviewQueue, setReviewQueue] = useState([]); // items that need a manual pick after the batch
   const [pickerOpenFor, setPickerOpenFor] = useState(null); // review item id whose "assign manually" search is open
   const [pickerSearch, setPickerSearch] = useState('');
+  const [retryingId, setRetryingId] = useState(null); // review item currently being re-read
   const html5QrCodeRef = useRef(null);
   const lastScanTimeRef = useRef(0);
   const processingRef = useRef(false);
@@ -236,30 +265,11 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
     // and that self-inflicted overload was showing up as opaque 502s rather
     // than a clean 429. One at a time is slower but far more reliable, and
     // batches here are small enough that it doesn't meaningfully cost time.
-    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-    const readOne = async (i) => {
-      let lastResult;
-      for (let attempt = 0; attempt < 3; attempt++) {
-        try {
-          const base64 = await fileToBase64(files[i]);
-          const res = await fetch('/api/scan-slip', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ image: base64 }),
-          });
-          const data = await res.json();
-          lastResult = { ok: res.ok, status: res.status, data };
-        } catch (err) {
-          lastResult = { ok: false, networkError: err?.message || 'Network error' };
-        }
-        if (lastResult.ok || lastResult.status === 429 || lastResult.status === 400) break; // don't retry a rate-limit or a request Gemini actively rejected
-        if (attempt < 2) await sleep(3000 * (attempt + 1)); // 3s, then 6s — long enough for a per-minute quota to actually recover
-      }
-      ocrResults[i] = lastResult;
+    for (let i = 0; i < files.length; i++) {
+      ocrResults[i] = await readSlipWithRetry(files[i]);
       completed++;
       setBatchProgress({ current: completed, total: files.length });
-    };
-    for (let i = 0; i < files.length; i++) await readOne(i);
+    }
 
     // Phase 2: match + link in original order, sequentially and fast (no
     // more waiting on Gemini here).
@@ -279,14 +289,14 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
               ? `Server error (${result.status})${detail ? `: ${detail}` : ''} — retried 3x, still failing`
               : "Couldn't read anything in this photo";
         dbService.logAiScan({ outcome: 'failed' });
-        newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, reason });
+        newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, reason, file: files[i] });
         continue;
       }
       const data = result.data;
       if (!data.trackingNumber && !data.customerName && !data.rawText) {
         dbService.logAiScan({ outcome: 'failed' });
         const reason = data.emptyReason ? `Nothing readable (${data.emptyReason})` : "Couldn't read anything in this photo";
-        newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, reason });
+        newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, reason, file: files[i] });
         continue;
       }
 
@@ -295,7 +305,7 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
 
       if (!match.trackingNumber) {
         dbService.logAiScan({ outcome: 'failed', guessedName: match.guessedName });
-        newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, guessedName: match.guessedName, reason: 'No tracking number found in this photo' });
+        newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, guessedName: match.guessedName, reason: 'No tracking number found in this photo', file: files[i] });
         continue;
       }
 
@@ -363,6 +373,72 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
     setReviewQueue(prev => prev.filter(r => r.id !== item.id));
     setPickerOpenFor(null);
     setPickerSearch('');
+  };
+
+  // Re-reads one failed photo without re-uploading the whole batch — useful
+  // when the earlier failure was Gemini's free tier being overloaded (the
+  // server now also falls back to a second model internally, so this often
+  // succeeds even if the first pass hit a sustained overload).
+  const retryReviewItem = async (item) => {
+    if (!item.file || retryingId) return;
+    setRetryingId(item.id);
+    const result = await readSlipWithRetry(item.file);
+    if (!result.ok) {
+      const detail = result?.data?.geminiDetail;
+      const reason = result.status === 429
+        ? "Rate limited — wait a minute and retry this one"
+        : result.networkError
+          ? `Upload failed (${result.networkError}) — try again`
+          : result.status
+            ? `Server error (${result.status})${detail ? `: ${detail}` : ''} — retried 3x, still failing`
+            : "Couldn't read anything in this photo";
+      setReviewQueue(prev => prev.map(r => r.id === item.id ? { ...r, reason } : r));
+      setRetryingId(null);
+      return;
+    }
+
+    const data = result.data;
+    if (!data.trackingNumber && !data.customerName && !data.rawText) {
+      const reason = data.emptyReason ? `Nothing readable (${data.emptyReason})` : "Couldn't read anything in this photo";
+      setReviewQueue(prev => prev.map(r => r.id === item.id ? { ...r, reason } : r));
+      setRetryingId(null);
+      return;
+    }
+
+    const match = findBestOrderMatch(data, unlinkedOrders, skus);
+    if (!match.trackingNumber) {
+      setReviewQueue(prev => prev.map(r => r.id === item.id
+        ? { ...r, guessedName: match.guessedName, reason: 'No tracking number found in this photo' }
+        : r));
+      setRetryingId(null);
+      return;
+    }
+
+    if (match.order && (match.matchedVia === 'phone' || match.confidence >= 0.85)) {
+      const dup = findDuplicateTrackingOrder(match.trackingNumber, match.order.id);
+      if (!dup) {
+        const ok = await doLink(match.order, match.trackingNumber, match);
+        if (ok) {
+          dbService.logAiScan({ outcome: 'auto_linked', orderId: match.order.id, orderNumber: match.order.order_number, trackingNumber: match.trackingNumber, matchedVia: match.matchedVia, confidence: match.confidence, guessedName: match.guessedName });
+          setReviewQueue(prev => prev.filter(r => r.id !== item.id));
+          showToast(`${match.order.order_number} → ${match.trackingNumber}`, 'success');
+          setRetryingId(null);
+          return;
+        }
+      }
+    }
+
+    // Read succeeded this time but still needs a human pick/confirm —
+    // update in place with whatever it found now.
+    const reason = match.order
+      ? `${Math.round(match.confidence * 100)}% name match — please confirm`
+      : match.guessedName
+        ? `Couldn't confidently match "${match.guessedName}" — check the handwriting`
+        : "Couldn't read a name on this slip — pick manually";
+    setReviewQueue(prev => prev.map(r => r.id === item.id
+      ? { ...r, trackingNumber: match.trackingNumber, order: match.order, confidence: match.confidence, matchedVia: match.matchedVia, guessedName: match.guessedName, weight: match.weight, amount: match.amount, slipDate: match.slipDate, reason }
+      : r));
+    setRetryingId(null);
   };
 
   const dismissReviewItem = (id) => {
@@ -512,6 +588,16 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
                         className="flex items-center gap-1 px-2.5 py-1.5 bg-teal-600 text-white rounded text-xs font-medium hover:bg-teal-700 disabled:opacity-50"
                       >
                         <CheckCircle className="w-3.5 h-3.5" /> Confirm
+                      </button>
+                    )}
+                    {!item.trackingNumber && item.file && (
+                      <button
+                        onClick={() => retryReviewItem(item)}
+                        disabled={retryingId === item.id}
+                        title="Re-read this photo — worth trying again if the earlier failure was Gemini being overloaded"
+                        className="flex items-center gap-1 px-2.5 py-1.5 bg-white border border-gray-300 rounded text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${retryingId === item.id ? 'animate-spin' : ''}`} /> {retryingId === item.id ? 'Retrying...' : 'Retry'}
                       </button>
                     )}
                     {item.trackingNumber && (

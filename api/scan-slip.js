@@ -68,35 +68,50 @@ export default async function handler(req, res) {
   const mimeMatch = image.match(/^data:(image\/\w+);base64,/);
   const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
 
+  // Free-tier "flash" models are a shared capacity pool across every Gemini
+  // user worldwide — at peak-demand hours the primary alias can return a
+  // sustained 503 "model overloaded" for a long stretch, not just a one-off
+  // blip that a few seconds of retrying clears. Falling back to a second,
+  // specifically-pinned model (a separate capacity pool from the "-latest"
+  // alias) gives a real second chance instead of hitting the same congested
+  // pool three times in a row. Only used for a genuine "overloaded" (503) —
+  // other error codes (400 bad request, 429 rate limit) mean trying a
+  // different model wouldn't help, so those still fail through immediately.
+  const MODELS = ['gemini-flash-latest', 'gemini-2.5-flash'];
+
   try {
-    const geminiRes = await fetch(
-      // "-latest" alias always points at the current recommended Flash
-      // model so this doesn't silently break again the next time Google
-      // retires a model version (gemini-2.0-flash, used here originally,
-      // was retired March 2026).
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            parts: [
-              { text: PROMPT },
-              { inline_data: { mime_type: mimeType, data: base64 } },
-            ],
-          }],
-          // No responseSchema this time, deliberately — see file header.
-          // Plain text out, parsed below.
-        }),
-      }
-    );
+    let geminiRes, errText, usedModel;
+    for (let i = 0; i < MODELS.length; i++) {
+      usedModel = MODELS[i];
+      geminiRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${usedModel}:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              parts: [
+                { text: PROMPT },
+                { inline_data: { mime_type: mimeType, data: base64 } },
+              ],
+            }],
+            // No responseSchema this time, deliberately — see file header.
+            // Plain text out, parsed below.
+          }),
+        }
+      );
+      if (geminiRes.ok) break;
+      errText = await geminiRes.text();
+      console.error('Gemini API error:', usedModel, geminiRes.status, errText);
+      const isOverloaded = geminiRes.status === 503;
+      if (isOverloaded && i < MODELS.length - 1) continue; // try the next model
+      break; // not an overload, or no more models left to try
+    }
 
     if (!geminiRes.ok) {
-      const errText = await geminiRes.text();
-      console.error('Gemini API error:', geminiRes.status, errText);
       // Actually surface what Gemini said instead of a black-box "failed" —
       // this is the detail that was previously only in a log nobody could see.
-      return res.status(502).json({ error: 'Slip reading request failed', geminiStatus: geminiRes.status, geminiDetail: errText.slice(0, 300) });
+      return res.status(502).json({ error: 'Slip reading request failed', geminiStatus: geminiRes.status, geminiDetail: errText.slice(0, 300), model: usedModel });
     }
 
     const data = await geminiRes.json();
