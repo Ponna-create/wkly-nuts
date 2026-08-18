@@ -1,7 +1,16 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { Heart, MessageCircle, TrendingUp, Clock, Copy, Check } from 'lucide-react';
-import { formatDateShort } from '../utils/dateFormat';
+import { Heart, MessageCircle, TrendingUp, Clock, Copy, Check, CheckCircle2 } from 'lucide-react';
+import { formatDateShort, formatDateTime } from '../utils/dateFormat';
+
+// Remembers which reorder nudges were already sent, so the WhatsApp button
+// visibly goes inactive after use instead of staying bright green forever —
+// keyed by row.id (order+SKU+packType), so a genuinely new order cycle for
+// the same customer naturally gets a fresh, un-sent row again.
+const SENT_KEY = 'wklynuts_crm_whatsapp_sent_v1';
+const loadSentMap = () => {
+  try { return JSON.parse(localStorage.getItem(SENT_KEY) || '{}'); } catch { return {}; }
+};
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const todayStart = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
@@ -37,6 +46,11 @@ export default function CRM() {
   const [messageTemplate, setMessageTemplate] = useState(DEFAULT_MESSAGE);
   const [showTemplateEditor, setShowTemplateEditor] = useState(false);
   const [copiedId, setCopiedId] = useState(null);
+  const [sentMap, setSentMap] = useState(loadSentMap);
+
+  useEffect(() => {
+    localStorage.setItem(SENT_KEY, JSON.stringify(sentMap));
+  }, [sentMap]);
 
   const discountFor = (daysLapsed) => {
     const tier = tiers.find(t => daysLapsed <= t.maxDays) || tiers[tiers.length - 1];
@@ -124,6 +138,7 @@ export default function CRM() {
     const formatted = phone.startsWith('91') ? phone : `91${phone}`;
     const msg = encodeURIComponent(buildMessage(row));
     window.open(`https://wa.me/${formatted}?text=${msg}`, '_blank');
+    setSentMap(prev => ({ ...prev, [row.id]: new Date().toISOString() }));
   };
 
   const copyMessage = (row) => {
@@ -229,9 +244,19 @@ export default function CRM() {
                   <button onClick={() => copyMessage(row)} className="flex items-center gap-1 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 border rounded-lg">
                     {copiedId === row.id ? <><Check className="w-3.5 h-3.5 text-green-600" /> Copied</> : <><Copy className="w-3.5 h-3.5" /> Copy</>}
                   </button>
-                  <button onClick={() => openWhatsApp(row)} disabled={!row.phone}
-                    className="flex items-center gap-1 px-3 py-1.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-40">
-                    <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
+                  <button
+                    onClick={() => openWhatsApp(row)}
+                    disabled={!row.phone}
+                    title={sentMap[row.id] ? `Sent ${formatDateTime(sentMap[row.id])} — click to send again` : undefined}
+                    className={`flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg disabled:opacity-40 ${
+                      sentMap[row.id]
+                        ? 'bg-gray-100 text-gray-500 border border-gray-200 hover:bg-gray-200'
+                        : 'bg-green-600 text-white hover:bg-green-700'
+                    }`}
+                  >
+                    {sentMap[row.id]
+                      ? <><CheckCircle2 className="w-3.5 h-3.5" /> Sent</>
+                      : <><MessageCircle className="w-3.5 h-3.5" /> WhatsApp</>}
                   </button>
                 </div>
               </div>
