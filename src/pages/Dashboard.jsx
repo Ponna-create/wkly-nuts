@@ -112,17 +112,27 @@ export default function Dashboard() {
   // Weekly vs Monthly tracked separately per SKU, not just a combined
   // total — a SKU selling 18 units could be all-Weekly, all-Monthly, or a
   // mix, and that split matters for production planning (Monthly is 4x the
-  // ingredients of a Weekly box).
+  // ingredients of a Weekly box). Only Recipe Pack SKUs (skuType 'weekly' —
+  // Day Pack, Nutrition Pack, Night Soak) actually have a real
+  // Weekly/Monthly distinction. Every order item still carries a pack_type
+  // of 'weekly' as an internal placeholder even for single-price SKUs
+  // (Seed Cycle, Dates, Mexican Bites, etc.), so without checking the SKU's
+  // real type those were wrongly showing up as "all Weekly" too.
+  const recipePackNames = useMemo(() =>
+    new Set(skus.filter(s => s.skuType === 'weekly').map(s => s.name)),
+    [skus]
+  );
   const topSelling = useMemo(() => {
     const byItem = {};
     monthOrders.forEach(o => {
       (o.items || []).forEach(it => {
         const name = itemName(it);
         const qty = itemQty(it);
-        const isMonthly = (it.pack_type || it.packType || '').toLowerCase() === 'monthly';
-        if (!byItem[name]) byItem[name] = { name, qty: 0, weekly: 0, monthly: 0 };
+        const isRecipePack = recipePackNames.has(name);
+        const isMonthly = isRecipePack && (it.pack_type || it.packType || '').toLowerCase() === 'monthly';
+        if (!byItem[name]) byItem[name] = { name, qty: 0, weekly: 0, monthly: 0, isRecipePack };
         byItem[name].qty += qty;
-        if (isMonthly) byItem[name].monthly += qty; else byItem[name].weekly += qty;
+        if (isMonthly) byItem[name].monthly += qty; else if (isRecipePack) byItem[name].weekly += qty;
       });
     });
     return Object.values(byItem).sort((a, b) => b.qty - a.qty).slice(0, 5);
