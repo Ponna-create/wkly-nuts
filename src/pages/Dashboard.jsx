@@ -109,15 +109,23 @@ export default function Dashboard() {
   const [actionsTab, setActionsTab] = useState('pending');
 
   // ---- Top Selling ----
+  // Weekly vs Monthly tracked separately per SKU, not just a combined
+  // total — a SKU selling 18 units could be all-Weekly, all-Monthly, or a
+  // mix, and that split matters for production planning (Monthly is 4x the
+  // ingredients of a Weekly box).
   const topSelling = useMemo(() => {
     const byItem = {};
     monthOrders.forEach(o => {
       (o.items || []).forEach(it => {
         const name = itemName(it);
-        byItem[name] = (byItem[name] || 0) + itemQty(it);
+        const qty = itemQty(it);
+        const isMonthly = (it.pack_type || it.packType || '').toLowerCase() === 'monthly';
+        if (!byItem[name]) byItem[name] = { name, qty: 0, weekly: 0, monthly: 0 };
+        byItem[name].qty += qty;
+        if (isMonthly) byItem[name].monthly += qty; else byItem[name].weekly += qty;
       });
     });
-    return Object.entries(byItem).map(([name, qty]) => ({ name, qty })).sort((a, b) => b.qty - a.qty).slice(0, 5);
+    return Object.values(byItem).sort((a, b) => b.qty - a.qty).slice(0, 5);
   }, [monthOrders]);
 
   // ---- Cash Flow ----
@@ -341,7 +349,12 @@ export default function Dashboard() {
               {topSelling.map((t, i) => (
                 <div key={t.name} className="flex items-center justify-between text-sm">
                   <span className="flex items-center gap-2 text-gray-700"><span className="text-xs text-gray-400 w-4">{i + 1}.</span>{t.name}</span>
-                  <span className="font-semibold text-gray-900">{t.qty} units</span>
+                  <span className="text-right">
+                    <span className="font-semibold text-gray-900">{t.qty} units</span>
+                    {t.weekly > 0 && t.monthly > 0 && (
+                      <span className="block text-[11px] text-gray-400">{t.weekly} Weekly · {t.monthly} Monthly</span>
+                    )}
+                  </span>
                 </div>
               ))}
             </div>
