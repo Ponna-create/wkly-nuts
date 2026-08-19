@@ -94,15 +94,29 @@ const readSlipWithRetry = async (file) => {
 // One place for turning a failed read into a message she can actually act
 // on, instead of a generic "server error" — used by both the batch pass
 // and the single-photo Retry button.
+//
+// When both providers failed, show EACH one's real status/detail
+// separately instead of collapsing them into one vague "quota used up"
+// line — a Groq failure isn't necessarily a quota problem just because
+// Gemini's was, and hiding that made it impossible to tell what actually
+// went wrong on Groq's side specifically.
+const describeOne = (label, status, detail) => {
+  if (status == null) return null;
+  if (status === 429) return `${label}: quota/rate limit hit`;
+  if (status === 404) return `${label}: model not found (app needs updating)`;
+  return `${label}: error ${status}${detail ? ` — ${detail.slice(0, 150)}` : ''}`;
+};
+
 const describeFailure = (result) => {
   if (result?.networkError) return `Upload failed (${result.networkError}) — try again, or a smaller photo`;
-  const status = result?.data?.geminiStatus ?? result?.data?.groqStatus;
-  const detail = result?.data?.geminiDetail ?? result?.data?.groqDetail;
-  const bothFailed = result?.data?.groqStatus != null && result?.data?.geminiStatus != null;
-  const suffix = bothFailed ? ' — both Groq and Gemini failed' : '';
-  if (status === 429) return `Free quota used up for now${suffix} — wait a while (or tomorrow) and retry, or switch to a paid plan`;
-  if (status === 404) return `Model no longer available (${detail ? detail.slice(0, 150) : 'not found'})${suffix} — the app needs updating, tell Claude`;
-  if (result?.status) return `Server error (${result.status})${detail ? `: ${detail}` : ''}${suffix} — retried, still failing`;
+  const groqStatus = result?.data?.groqStatus;
+  const geminiStatus = result?.data?.geminiStatus;
+  const parts = [
+    describeOne('Groq', groqStatus, result?.data?.groqDetail),
+    describeOne('Gemini', geminiStatus, result?.data?.geminiDetail),
+  ].filter(Boolean);
+  if (parts.length) return `${parts.join(' · ')} — retried, still failing`;
+  if (result?.status) return `Server error (${result.status}) — retried, still failing`;
   return "Couldn't read anything in this photo";
 };
 
