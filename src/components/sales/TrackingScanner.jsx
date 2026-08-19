@@ -126,6 +126,7 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
   const [pickerOpenFor, setPickerOpenFor] = useState(null); // review item id whose "assign manually" search is open
   const [pickerSearch, setPickerSearch] = useState('');
   const [retryingId, setRetryingId] = useState(null); // review item currently being re-read
+  const [zoomedUrl, setZoomedUrl] = useState(null); // full-size photo preview overlay
   const html5QrCodeRef = useRef(null);
   const lastScanTimeRef = useRef(0);
   const processingRef = useRef(false);
@@ -247,14 +248,15 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
     for (let i = 0; i < files.length; i++) {
       setBatchProgress({ current: i + 1, total: files.length });
       if (!html5QrCodeRef.current) html5QrCodeRef.current = new Html5Qrcode('tracking-scan-reader');
+      const previewUrl = URL.createObjectURL(files[i]);
       try {
         const decodedText = await html5QrCodeRef.current.scanFile(files[i], false);
         const code = decodedText.trim();
         const { data: logRow } = await dbService.logAiScan({ trackingNumber: code, outcome: 'pending_review' });
-        newReview.push({ id: nextReviewId(), logId: logRow?.id, trackingNumber: code, order: null, reason: 'Barcode only — no name on it, pick the order' });
+        newReview.push({ id: nextReviewId(), logId: logRow?.id, trackingNumber: code, order: null, reason: 'Barcode only — no name on it, pick the order', file: files[i], previewUrl });
       } catch {
         dbService.logAiScan({ outcome: 'failed' });
-        newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, reason: "Couldn't find a barcode in this photo" });
+        newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, reason: "Couldn't find a barcode in this photo", file: files[i], previewUrl });
       }
     }
     setBatchProgress(null);
@@ -304,16 +306,20 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
 
     for (let i = 0; i < files.length; i++) {
       const result = ocrResults[i];
+      // Kept for every review item, not just failures — the whole point is
+      // to let her read the actual handwriting herself when the AI's name
+      // guess is wrong, rather than trust text that turned out unreliable.
+      const previewUrl = URL.createObjectURL(files[i]);
       if (!result || !result.ok) {
         dbService.logAiScan({ outcome: 'failed' });
-        newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, reason: describeFailure(result), file: files[i] });
+        newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, reason: describeFailure(result), file: files[i], previewUrl });
         continue;
       }
       const data = result.data;
       if (!data.trackingNumber && !data.customerName && !data.rawText) {
         dbService.logAiScan({ outcome: 'failed' });
         const reason = data.emptyReason ? `Nothing readable (${data.emptyReason})` : "Couldn't read anything in this photo";
-        newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, reason, file: files[i] });
+        newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, reason, file: files[i], previewUrl });
         continue;
       }
 
@@ -322,7 +328,7 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
 
       if (!match.trackingNumber) {
         dbService.logAiScan({ outcome: 'failed', guessedName: match.guessedName });
-        newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, guessedName: match.guessedName, reason: 'No tracking number found in this photo', file: files[i] });
+        newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, guessedName: match.guessedName, reason: 'No tracking number found in this photo', file: files[i], previewUrl });
         continue;
       }
 
@@ -330,7 +336,7 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
         const dup = findDuplicateTrackingOrder(match.trackingNumber, match.order.id);
         if (dup) {
           dbService.logAiScan({ outcome: 'failed', orderId: match.order.id, trackingNumber: match.trackingNumber, guessedName: match.guessedName });
-          newReview.push({ id: nextReviewId(), trackingNumber: match.trackingNumber, order: match.order, ...match, reason: `Tracking already on ${dup.order_number} (${dup.customer_name}) — pick the right one manually` });
+          newReview.push({ id: nextReviewId(), trackingNumber: match.trackingNumber, order: match.order, ...match, reason: `Tracking already on ${dup.order_number} (${dup.customer_name}) — pick the right one manually`, file: files[i], previewUrl });
           continue;
         }
         linkedIds.add(String(match.order.id)); // reserve before the await so nothing else in this batch can grab the same order
@@ -338,10 +344,11 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
         if (ok) {
           autoLinked++;
           dbService.logAiScan({ outcome: 'auto_linked', orderId: match.order.id, orderNumber: match.order.order_number, trackingNumber: match.trackingNumber, matchedVia: match.matchedVia, confidence: match.confidence, guessedName: match.guessedName });
+          URL.revokeObjectURL(previewUrl); // linked straight away — nothing will ever show this preview
         } else {
           linkedIds.delete(String(match.order.id));
           const { data: logRow } = await dbService.logAiScan({ orderId: match.order.id, orderNumber: match.order.order_number, trackingNumber: match.trackingNumber, matchedVia: match.matchedVia, confidence: match.confidence, guessedName: match.guessedName, outcome: 'pending_review' });
-          newReview.push({ id: nextReviewId(), logId: logRow?.id, trackingNumber: match.trackingNumber, order: match.order, ...match, reason: 'Matched but saving failed — try confirming again' });
+          newReview.push({ id: nextReviewId(), logId: logRow?.id, trackingNumber: match.trackingNumber, order: match.order, ...match, reason: 'Matched but saving failed — try confirming again', file: files[i], previewUrl });
         }
         continue;
       }
@@ -354,7 +361,7 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
           ? `Couldn't confidently match "${match.guessedName}" — check the handwriting`
           : "Couldn't read a name on this slip — pick manually";
       const { data: logRow } = await dbService.logAiScan({ orderId: match.order?.id, orderNumber: match.order?.order_number, trackingNumber: match.trackingNumber, matchedVia: match.matchedVia, confidence: match.confidence, guessedName: match.guessedName, outcome: 'pending_review' });
-      newReview.push({ id: nextReviewId(), logId: logRow?.id, trackingNumber: match.trackingNumber, order: match.order, confidence: match.confidence, matchedVia: match.matchedVia, guessedName: match.guessedName, weight: match.weight, amount: match.amount, slipDate: match.slipDate, reason });
+      newReview.push({ id: nextReviewId(), logId: logRow?.id, trackingNumber: match.trackingNumber, order: match.order, confidence: match.confidence, matchedVia: match.matchedVia, guessedName: match.guessedName, weight: match.weight, amount: match.amount, slipDate: match.slipDate, reason, file: files[i], previewUrl });
     }
 
     setBatchProgress(null);
@@ -373,6 +380,7 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
     if (!ok) { showToast('Error saving tracking number', 'error'); return; }
     if (item.logId) dbService.resolveAiScan(item.logId, { outcome: 'user_confirmed', orderId: item.order.id, orderNumber: item.order.order_number });
     showToast(`${item.order.order_number} → ${item.trackingNumber}`, 'success');
+    if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
     setReviewQueue(prev => prev.filter(r => r.id !== item.id));
   };
 
@@ -387,6 +395,7 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
     // (barcode-only, or no name match at all) for accuracy tracking.
     if (item.logId) dbService.resolveAiScan(item.logId, { outcome: item.order ? 'user_reassigned' : 'user_assigned', orderId: order.id, orderNumber: order.order_number });
     showToast(`${order.order_number} → ${item.trackingNumber}`, 'success');
+    if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
     setReviewQueue(prev => prev.filter(r => r.id !== item.id));
     setPickerOpenFor(null);
     setPickerSearch('');
@@ -429,6 +438,7 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
         const ok = await doLink(match.order, match.trackingNumber, match);
         if (ok) {
           dbService.logAiScan({ outcome: 'auto_linked', orderId: match.order.id, orderNumber: match.order.order_number, trackingNumber: match.trackingNumber, matchedVia: match.matchedVia, confidence: match.confidence, guessedName: match.guessedName });
+          if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
           setReviewQueue(prev => prev.filter(r => r.id !== item.id));
           showToast(`${match.order.order_number} → ${match.trackingNumber}`, 'success');
           setRetryingId(null);
@@ -454,6 +464,7 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
     setReviewQueue(prev => {
       const item = prev.find(r => r.id === id);
       if (item?.logId) dbService.resolveAiScan(item.logId, { outcome: 'skipped' });
+      if (item?.previewUrl) URL.revokeObjectURL(item.previewUrl);
       return prev.filter(r => r.id !== id);
     });
   };
@@ -577,10 +588,27 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
               </h3>
               {reviewQueue.map(item => (
                 <div key={item.id} className="p-3 bg-amber-50 border border-amber-200 rounded-lg space-y-2">
-                  {item.trackingNumber && (
-                    <p className="text-xs font-mono text-gray-600">Tracking: {item.trackingNumber}</p>
-                  )}
-                  <p className="text-sm text-amber-800">{item.reason}</p>
+                  <div className="flex gap-2.5">
+                    {item.previewUrl && (
+                      // Don't trust the AI's name guess — let her read the
+                      // actual handwriting herself and pick from that,
+                      // instead of typing a name that might not match what's
+                      // actually written on the slip.
+                      <button
+                        onClick={() => setZoomedUrl(item.previewUrl)}
+                        className="flex-shrink-0 w-20 h-20 rounded border border-amber-300 overflow-hidden bg-gray-100"
+                        title="Tap to enlarge"
+                      >
+                        <img src={item.previewUrl} alt="Slip" className="w-full h-full object-cover" />
+                      </button>
+                    )}
+                    <div className="flex-1 min-w-0 space-y-1">
+                      {item.trackingNumber && (
+                        <p className="text-xs font-mono text-gray-600">Tracking: {item.trackingNumber}</p>
+                      )}
+                      <p className="text-sm text-amber-800">{item.reason}</p>
+                    </div>
+                  </div>
 
                   {item.order && (
                     <div className="p-2 bg-white border border-amber-200 rounded">
@@ -689,6 +717,18 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
           </div>
         </div>
       </div>
+
+      {zoomedUrl && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-80 z-[60] flex items-center justify-center p-4"
+          onClick={() => setZoomedUrl(null)}
+        >
+          <img src={zoomedUrl} alt="Slip, full size" className="max-w-full max-h-full rounded-lg" />
+          <button onClick={() => setZoomedUrl(null)} className="absolute top-4 right-4 text-white bg-black bg-opacity-40 rounded-full p-2">
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
