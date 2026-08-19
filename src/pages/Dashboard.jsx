@@ -179,16 +179,20 @@ export default function Dashboard() {
   }, [expenses, purchaseOrders]);
 
   // ---- Channel performance ----
+  // Scoped to the selected month, same as Top Selling and Cash Flow right
+  // next to it — this used to run off all-time orders regardless of the
+  // month picker, which quietly meant something different from its
+  // neighbors on the same dashboard row.
   const channelPerformance = useMemo(() => {
     const bySource = {};
-    orders.forEach(o => {
+    monthOrders.forEach(o => {
       const src = o.order_source || 'other';
       if (!bySource[src]) bySource[src] = { orders: 0, revenue: 0 };
       bySource[src].orders += 1;
       bySource[src].revenue += parseFloat(o.total_amount) || 0;
     });
     return Object.entries(bySource).map(([source, v]) => ({ source, label: SOURCE_LABELS[source] || source, ...v })).sort((a, b) => b.revenue - a.revenue);
-  }, [orders]);
+  }, [monthOrders]);
 
   // Backup reminder
   const lastBackupRaw = typeof localStorage !== 'undefined' ? localStorage.getItem('wklyNutsLastBackup') : null;
@@ -396,7 +400,7 @@ export default function Dashboard() {
       {/* Sales by Channel */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
         <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2 text-gray-700 text-sm font-bold"><PieChart className="w-4 h-4 text-teal-600" /> Sales by Channel</div>
+          <div className="flex items-center gap-2 text-gray-700 text-sm font-bold"><PieChart className="w-4 h-4 text-teal-600" /> Sales by Channel — {monthLabel(selectedMonth)}</div>
           <Link to="/marketing" className="text-xs text-teal-600 hover:text-teal-700 font-medium flex items-center">Full breakdown <ChevronRight className="w-3 h-3" /></Link>
         </div>
         {channelPerformance.length === 0 ? (
