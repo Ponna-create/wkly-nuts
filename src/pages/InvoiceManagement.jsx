@@ -1874,6 +1874,14 @@ export default function InvoiceManagement() {
       hsnSummary.set(hsn, existing);
     };
 
+    // Per-invoice HSN breakdown — when one invoice has products under 2+
+    // HSN codes, the main table above shows one merged total for the whole
+    // invoice (readable for her, but the auditor can't verify how that
+    // total splits across HSN codes/products from it alone). This captures
+    // the same byHsn split already being computed below, one row per
+    // (invoice, HSN) instead of collapsed into one row per invoice.
+    const breakdownRows = [];
+
     let si = 0;
     paidOrSent.forEach(inv => {
       const customer = inv.customer || (inv.customerId ? customers.find(c => String(c.id) === String(inv.customerId)) : null);
@@ -1919,6 +1927,16 @@ export default function InvoiceManagement() {
         allNames.push(...group.names);
         allHsn.push(hsn);
         addToHsnSummary(hsn, group.taxable, cgst, sgst, igst, tax);
+        // Only worth a separate breakdown row when the invoice actually has
+        // 2+ HSN codes mixed together — a single-HSN invoice already matches
+        // the main table exactly, no ambiguity to resolve.
+        if (byHsn.size > 1) {
+          breakdownRows.push([
+            inv.invoiceNumber || '', inv.invoiceDate ? formatDate(inv.invoiceDate) : '', customer?.name || '',
+            group.names.join(', '), hsn, group.qty, group.taxable.toFixed(2),
+            cgst.toFixed(2), sgst.toFixed(2), igst.toFixed(2), tax.toFixed(2), (group.taxable + tax).toFixed(2),
+          ]);
+        }
       });
       totalTaxable += invTaxable; totalCGST += invCGST; totalSGST += invSGST; totalIGST += invIGST; totalTax += invTax; grandTotal += invTaxable + invTax;
 
@@ -1934,6 +1952,19 @@ export default function InvoiceManagement() {
 
     csvRows.push('');
     csvRows.push(['', '', '', '', '', '', '', '', 'TOTALS', totalTaxable.toFixed(2), totalCGST.toFixed(2), totalSGST.toFixed(2), totalIGST.toFixed(2), totalTax.toFixed(2), grandTotal.toFixed(2), ''].join(','));
+
+    // Invoice-wise HSN Breakdown — for the auditor: every invoice above that
+    // mixes 2+ HSN codes gets split back out here into one row per HSN, so
+    // the per-product taxable value is traceable instead of only showing
+    // one combined total for the whole invoice.
+    if (breakdownRows.length > 0) {
+      csvRows.push('');
+      csvRows.push('Invoice-wise HSN Breakdown (only invoices with 2+ HSN codes — everything else already matches the main table above exactly)');
+      csvRows.push(['Invoice #', 'Date', 'Customer', 'Product', 'HSN Code', 'Qty', 'Taxable Value', 'CGST @2.5%', 'SGST @2.5%', 'IGST @5%', 'Total Tax', 'Line Total'].join(','));
+      breakdownRows.forEach(r => {
+        csvRows.push(r.map(c => { const s = String(c || ''); return s.includes(',') ? `"${s}"` : s; }).join(','));
+      });
+    }
 
     // HSN-wise Summary — same section your auditor's own register ends with,
     // so this export can go straight to him in the format he already expects.
