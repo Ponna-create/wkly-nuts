@@ -8,6 +8,7 @@ import { useApp } from '../../context/AppContext';
 import { buildInvoiceDataFromOrder } from '../../utils/invoiceFromOrder';
 import { getBusinessInfo } from '../../utils/settings';
 import DateRangePicker from '../common/DateRangePicker';
+import { generateA4LabelSheet } from '../../utils/a4LabelSheet';
 
 export default function BulkLabelPrint({ orders, onClose, onPrinted, showToast }) {
   const { state, dispatch } = useApp();
@@ -98,35 +99,41 @@ export default function BulkLabelPrint({ orders, onClose, onPrinted, showToast }
       if (onPrinted) onPrinted();
     }
 
-    const printContent = printRef.current;
-    const printWindow = window.open('', '_blank');
+    if (isA4) {
+      // A4 uses the same compact multi-per-page grid (6 labels/sheet) as the
+      // "A4 Sheet" button and Quick Order's A4 print — not the detailed
+      // one-label-per-page layout below, which only makes sense for an
+      // actual 4x6 thermal sticker printer.
+      generateA4LabelSheet(selectedOrders);
+      showToast(`${selectedOrders.length} label(s) downloaded as an A4 sheet`, 'success');
+    } else {
+      const printContent = printRef.current;
+      const printWindow = window.open('', '_blank');
 
-    const pageWidth = isA4 ? '210mm' : '152mm';
-    const pageHeight = isA4 ? '297mm' : '102mm';
-
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Bulk Labels - ${dateFrom}${dateTo && dateTo !== dateFrom ? ' to ' + dateTo : ''}</title>
-          <style>
-            @page { size: ${pageWidth} ${pageHeight}; margin: 0; }
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: Arial, Helvetica, sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            .label-page { page-break-after: always; }
-            .label-page:last-child { page-break-after: avoid; }
-          </style>
-        </head>
-        <body>
-          ${sanitizeHtml(printContent.innerHTML)}
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-    setTimeout(() => {
-      printWindow.print();
-      printWindow.close();
-    }, 400);
-    showToast(`Printing ${selectedOrders.length} labels`, 'success');
+      printWindow.document.write(`
+        <html>
+          <head>
+            <title>Bulk Labels - ${dateFrom}${dateTo && dateTo !== dateFrom ? ' to ' + dateTo : ''}</title>
+            <style>
+              @page { size: 152mm 102mm; margin: 0; }
+              * { margin: 0; padding: 0; box-sizing: border-box; }
+              body { font-family: Arial, Helvetica, sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+              .label-page { page-break-after: always; }
+              .label-page:last-child { page-break-after: avoid; }
+            </style>
+          </head>
+          <body>
+            ${sanitizeHtml(printContent.innerHTML)}
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+      setTimeout(() => {
+        printWindow.print();
+        printWindow.close();
+      }, 400);
+      showToast(`Printing ${selectedOrders.length} labels`, 'success');
+    }
 
     // Single order: open its invoice PDF right after, same as the one-order flow.
     // For multiple orders, invoices are generated but not auto-opened (avoids N popup downloads).
