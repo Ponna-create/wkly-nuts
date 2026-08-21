@@ -1,5 +1,4 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { X, Printer, CheckSquare, Square } from 'lucide-react';
 import { sanitizeHtml } from '../../utils/sanitize';
@@ -12,7 +11,6 @@ import { generateA4LabelSheet } from '../../utils/a4LabelSheet';
 
 export default function BulkLabelPrint({ orders, onClose, onPrinted, showToast }) {
   const { state, dispatch } = useApp();
-  const navigate = useNavigate();
   const printRef = useRef(null);
   const [labelSize, setLabelSize] = useState('a4');
   const today = new Date().toISOString().split('T')[0];
@@ -73,9 +71,10 @@ export default function BulkLabelPrint({ orders, onClose, onPrinted, showToast }
     // ones already had a label printed vs which are still pending.
     await Promise.all(selectedOrders.map(o => dbService.updateSalesOrder({ id: o.id, label_printed_at: new Date().toISOString() })));
 
-    // Auto-generate the invoice alongside the label for any order that doesn't have one yet
+    // Auto-generate the invoice alongside the label for any order that
+    // doesn't have one yet — created and stored for GST filing, but not
+    // auto-downloaded/opened (see note after the print step below).
     const needsInvoice = selectedOrders.filter(o => !o.invoice_id);
-    let firstNewInvoiceId = null;
     if (needsInvoice.length > 0) {
       const results = await Promise.all(needsInvoice.map(async (o) => {
         try {
@@ -92,7 +91,6 @@ export default function BulkLabelPrint({ orders, onClose, onPrinted, showToast }
         }
       }));
       const created = results.filter(Boolean);
-      firstNewInvoiceId = created[0] || null;
       if (created.length > 0) {
         showToast(`${created.length} invoice(s) generated`, 'success');
       }
@@ -135,14 +133,11 @@ export default function BulkLabelPrint({ orders, onClose, onPrinted, showToast }
       showToast(`Printing ${selectedOrders.length} labels`, 'success');
     }
 
-    // Single order: open its invoice PDF right after, same as the one-order flow.
-    // For multiple orders, invoices are generated but not auto-opened (avoids N popup downloads).
-    if (selectedOrders.length === 1) {
-      const invoiceId = selectedOrders[0].invoice_id || firstNewInvoiceId;
-      if (invoiceId) {
-        navigate(`/invoices?autoprint=${invoiceId}`);
-      }
-    }
+    // Printing the label only downloads/prints the label itself — the
+    // invoice is still created and stored (above) so it exists for GST
+    // filing, but no longer force-opens/downloads automatically. Download
+    // or send it separately from the Invoices page whenever it's actually
+    // needed, instead of every label print also pushing out an invoice PDF.
   };
 
   const businessInfo = getBusinessInfo();
