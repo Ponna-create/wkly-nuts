@@ -32,6 +32,7 @@ export default function QuickOrder() {
   const [customItemMode, setCustomItemMode] = useState(false);
   const [customItemName, setCustomItemName] = useState('');
   const [customItemPrice, setCustomItemPrice] = useState('');
+  const [customItemWeight, setCustomItemWeight] = useState('');
 
   // The SKU's own Selling Price (set in SKU Management) is the master price
   // for orders — Weekly and Monthly are separate fields there. Pricing
@@ -131,6 +132,12 @@ export default function QuickOrder() {
 
   const removeItem = (key) => setItems(prev => prev.filter(i => i.key !== key));
 
+  // Name and weight only ever apply to custom (not-in-catalog) items — a
+  // real SKU's name should stay tied to the catalog, so those aren't
+  // editable here.
+  const setItemName = (key, name) => setItems(prev => prev.map(i => i.key === key ? { ...i, skuName: name } : i));
+  const setItemWeight = (key, grams) => setItems(prev => prev.map(i => i.key === key ? { ...i, weightGrams: grams === '' ? null : parseFloat(grams) || null } : i));
+
   // For items that aren't in the SKU catalog at all — loose stock sold
   // occasionally (Almonds, Figs, etc.) that don't have a Recipe Pack or
   // their own SKU set up. No skuId, so it's excluded from inventory
@@ -139,11 +146,13 @@ export default function QuickOrder() {
   const addCustomItem = () => {
     const name = customItemName.trim();
     const unitPrice = parseFloat(customItemPrice) || 0;
+    const weightGrams = customItemWeight === '' ? null : parseFloat(customItemWeight) || null;
     if (!name) return;
     const key = `custom-${Date.now()}`;
-    setItems(prev => [...prev, { key, skuId: null, skuName: name, packType: 'weekly', quantity: 1, unitPrice, total: unitPrice }]);
+    setItems(prev => [...prev, { key, skuId: null, skuName: name, packType: 'weekly', quantity: 1, unitPrice, total: unitPrice, weightGrams }]);
     setCustomItemName('');
     setCustomItemPrice('');
+    setCustomItemWeight('');
     setCustomItemMode(false);
   };
 
@@ -546,6 +555,17 @@ export default function QuickOrder() {
                       placeholder="Item name (e.g. Figs)"
                       className="flex-1 min-w-0 px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm"
                     />
+                    <div className="relative w-16 flex-shrink-0">
+                      <input
+                        type="number"
+                        value={customItemWeight}
+                        onChange={(e) => setCustomItemWeight(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && addCustomItem()}
+                        placeholder="Grams"
+                        className="w-full pl-1.5 pr-4 py-1.5 border border-gray-300 rounded-lg text-sm"
+                      />
+                      <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-xs text-gray-400">g</span>
+                    </div>
                     <div className="relative w-20 flex-shrink-0">
                       <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">₹</span>
                       <input
@@ -558,7 +578,7 @@ export default function QuickOrder() {
                       />
                     </div>
                     <button onClick={addCustomItem} className="px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-medium hover:bg-teal-700 flex-shrink-0">Add</button>
-                    <button onClick={() => { setCustomItemMode(false); setCustomItemName(''); setCustomItemPrice(''); }} className="px-2 py-1.5 text-gray-400 hover:text-gray-600 flex-shrink-0">✕</button>
+                    <button onClick={() => { setCustomItemMode(false); setCustomItemName(''); setCustomItemPrice(''); setCustomItemWeight(''); }} className="px-2 py-1.5 text-gray-400 hover:text-gray-600 flex-shrink-0">✕</button>
                   </div>
                 ) : (
                   <button
@@ -575,29 +595,56 @@ export default function QuickOrder() {
             {items.length > 0 && (
               <div className="space-y-1.5">
                 {items.map(item => (
-                  <div key={item.key} className={`flex items-center justify-between rounded-lg px-3 py-2 ${item.unitPrice <= 0 ? 'bg-amber-50 border border-amber-200' : 'bg-gray-50'}`}>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-gray-900 truncate">{item.skuName}</p>
-                      {skus.find(sk => String(sk.id) === String(item.skuId))?.skuType === 'weekly' && (
-                        <p className="text-xs text-gray-500 capitalize">{item.packType}</p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1.5 flex-shrink-0">
-                      <button onClick={() => adjustItem(item.key, -1)} className="p-1 rounded bg-white border hover:bg-gray-100"><Minus className="w-3.5 h-3.5" /></button>
-                      <span className="w-5 text-center text-sm font-semibold">{item.quantity}</span>
-                      <button onClick={() => adjustItem(item.key, 1)} className="p-1 rounded bg-white border hover:bg-gray-100"><Plus className="w-3.5 h-3.5" /></button>
-                      <div className="relative">
-                        <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-xs text-gray-400">₹</span>
-                        <input
-                          type="number"
-                          value={item.unitPrice || ''}
-                          onChange={(e) => setItemPrice(item.key, e.target.value)}
-                          className={`w-16 pl-4 pr-1 py-1 text-sm text-right border rounded ${item.unitPrice <= 0 ? 'border-amber-400' : 'border-gray-300'}`}
-                        />
+                  <div key={item.key} className={`rounded-lg px-3 py-2 ${item.unitPrice <= 0 ? 'bg-amber-50 border border-amber-200' : 'bg-gray-50'}`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        {item.skuId ? (
+                          <>
+                            <p className="text-sm font-medium text-gray-900 truncate">{item.skuName}</p>
+                            {skus.find(sk => String(sk.id) === String(item.skuId))?.skuType === 'weekly' && (
+                              <p className="text-xs text-gray-500 capitalize">{item.packType}</p>
+                            )}
+                          </>
+                        ) : (
+                          <input
+                            value={item.skuName}
+                            onChange={(e) => setItemName(item.key, e.target.value)}
+                            className="w-full px-1.5 py-0.5 -ml-1.5 text-sm font-medium text-gray-900 border border-transparent hover:border-gray-300 focus:border-teal-400 rounded bg-transparent focus:bg-white"
+                          />
+                        )}
                       </div>
-                      <span className="w-14 text-right text-sm font-semibold">₹{item.total.toFixed(0)}</span>
-                      <button onClick={() => removeItem(item.key)} className="p-1 text-red-500 hover:bg-red-50 rounded"><Trash2 className="w-3.5 h-3.5" /></button>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <button onClick={() => adjustItem(item.key, -1)} className="p-1 rounded bg-white border hover:bg-gray-100"><Minus className="w-3.5 h-3.5" /></button>
+                        <span className="w-5 text-center text-sm font-semibold">{item.quantity}</span>
+                        <button onClick={() => adjustItem(item.key, 1)} className="p-1 rounded bg-white border hover:bg-gray-100"><Plus className="w-3.5 h-3.5" /></button>
+                        <div className="relative">
+                          <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-xs text-gray-400">₹</span>
+                          <input
+                            type="number"
+                            value={item.unitPrice || ''}
+                            onChange={(e) => setItemPrice(item.key, e.target.value)}
+                            className={`w-16 pl-4 pr-1 py-1 text-sm text-right border rounded ${item.unitPrice <= 0 ? 'border-amber-400' : 'border-gray-300'}`}
+                          />
+                        </div>
+                        <span className="w-14 text-right text-sm font-semibold">₹{item.total.toFixed(0)}</span>
+                        <button onClick={() => removeItem(item.key)} className="p-1 text-red-500 hover:bg-red-50 rounded"><Trash2 className="w-3.5 h-3.5" /></button>
+                      </div>
                     </div>
+                    {!item.skuId && (
+                      <div className="flex items-center gap-1.5 mt-1">
+                        <span className="text-xs text-gray-400">Weight:</span>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            value={item.weightGrams || ''}
+                            onChange={(e) => setItemWeight(item.key, e.target.value)}
+                            placeholder="grams"
+                            className="w-20 pl-1.5 pr-4 py-0.5 text-xs border border-gray-300 rounded"
+                          />
+                          <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-gray-400">g</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
                 <div className="flex items-center justify-between text-sm pt-1 px-1">
