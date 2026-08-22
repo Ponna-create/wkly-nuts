@@ -1956,8 +1956,8 @@ export default function InvoiceManagement() {
           const igst = isTN ? 0 : tax;
           const qty = item.quantity || 1;
           breakdownRows.push([
-            inv.invoiceNumber || '', inv.invoiceDate ? formatDate(inv.invoiceDate) : '', customer?.name || '',
-            item.skuName || 'Unknown', hsn, qty, (taxable / qty).toFixed(2), taxable.toFixed(2),
+            inv.invoiceNumber || '', inv.invoiceDate ? formatDate(inv.invoiceDate) : '', customer?.name || '', placeOfSupply,
+            item.skuName || 'Unknown', qty, (taxable / qty).toFixed(2), taxable.toFixed(2), hsn,
             cgst.toFixed(2), sgst.toFixed(2), igst.toFixed(2), tax.toFixed(2), (taxable + tax).toFixed(2),
           ]);
         });
@@ -1984,7 +1984,7 @@ export default function InvoiceManagement() {
     if (breakdownRows.length > 0) {
       csvRows.push('');
       csvRows.push('Invoice-wise Product Breakdown (only invoices with 2+ items — everything else already matches the main table above exactly)');
-      csvRows.push(['Invoice #', 'Date', 'Customer', 'Product', 'HSN Code', 'Qty', 'Unit Price', 'Taxable Value', 'CGST @2.5%', 'SGST @2.5%', 'IGST @5%', 'Total Tax', 'Line Total'].join(','));
+      csvRows.push(['Invoice #', 'Date', 'Customer', 'Place of Supply', 'Product', 'Qty', 'Unit Price', 'Taxable Value', 'HSN Code', 'CGST @2.5%', 'SGST @2.5%', 'IGST @5%', 'Total Tax', 'Line Total'].join(','));
       breakdownRows.forEach(r => {
         csvRows.push(r.map(c => { const s = String(c || ''); return s.includes(',') ? `"${s}"` : s; }).join(','));
       });
