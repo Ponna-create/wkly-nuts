@@ -223,6 +223,8 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
     setEditForm(prev => {
       const items = prev.items.map((it, i) => {
         if (i !== idx) return it;
+        if (key === 'sku_name') return { ...it, sku_name: val };
+        if (key === 'weight_grams') return { ...it, weight_grams: val === '' ? null : parseFloat(val) || null };
         const quantity = key === 'quantity' ? parseFloat(val) || 0 : parseFloat(it.quantity) || 0;
         const unitPrice = key === 'unit_price' ? parseFloat(val) || 0 : parseFloat(it.unit_price ?? it.unitPrice) || 0;
         return { ...it, quantity, unit_price: unitPrice, total: quantity * unitPrice };
@@ -507,39 +509,67 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
             <h3 className="font-bold text-gray-900">Items</h3>
             {editingOrder ? (
               <div className="space-y-2">
-                {editForm.items.map((item, idx) => (
-                  <div key={idx} className="flex items-center justify-between gap-2 p-3 bg-gray-50 rounded-lg">
-                    <div className="flex-1">
-                      <p className="font-medium text-gray-900">{item.sku_name || item.skuName}</p>
-                      {(item.sku_id || item.skuId) && (
-                        <p className="text-sm text-gray-600 capitalize">{item.pack_type || item.packType} Pack</p>
-                      )}
-                    </div>
-                    <input
-                      type="number"
-                      min="1"
-                      value={item.quantity || ''}
-                      onChange={(e) => updateEditItem(idx, 'quantity', e.target.value)}
-                      className="w-14 px-2 py-1 border border-gray-300 rounded text-sm text-center"
-                    />
-                    <div className="flex items-center">
-                      <span className="text-sm text-gray-500 mr-1">₹</span>
+                {editForm.items.map((item, idx) => {
+                  const isCustom = !(item.sku_id || item.skuId);
+                  return (
+                  <div key={idx} className="p-3 bg-gray-50 rounded-lg">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        {isCustom ? (
+                          <input
+                            value={item.sku_name || item.skuName || ''}
+                            onChange={(e) => updateEditItem(idx, 'sku_name', e.target.value)}
+                            className="w-full px-1.5 py-0.5 -ml-1.5 font-medium text-gray-900 border border-transparent hover:border-gray-300 focus:border-teal-400 rounded bg-transparent focus:bg-white"
+                          />
+                        ) : (
+                          <>
+                            <p className="font-medium text-gray-900">{item.sku_name || item.skuName}</p>
+                            <p className="text-sm text-gray-600 capitalize">{item.pack_type || item.packType} Pack</p>
+                          </>
+                        )}
+                      </div>
                       <input
                         type="number"
-                        min="0"
-                        value={(item.unit_price ?? item.unitPrice) || ''}
-                        onChange={(e) => updateEditItem(idx, 'unit_price', e.target.value)}
-                        className="w-20 px-2 py-1 border border-gray-300 rounded text-sm text-right"
+                        min="1"
+                        value={item.quantity || ''}
+                        onChange={(e) => updateEditItem(idx, 'quantity', e.target.value)}
+                        className="w-14 px-2 py-1 border border-gray-300 rounded text-sm text-center"
                       />
+                      <div className="flex items-center">
+                        <span className="text-sm text-gray-500 mr-1">₹</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={(item.unit_price ?? item.unitPrice) || ''}
+                          onChange={(e) => updateEditItem(idx, 'unit_price', e.target.value)}
+                          className="w-20 px-2 py-1 border border-gray-300 rounded text-sm text-right"
+                        />
+                      </div>
+                      <button
+                        onClick={() => removeEditItem(idx)}
+                        className="p-1 text-red-500 hover:bg-red-50 rounded"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
                     </div>
-                    <button
-                      onClick={() => removeEditItem(idx)}
-                      className="p-1 text-red-500 hover:bg-red-50 rounded"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
+                    {isCustom && (
+                      <div className="flex items-center gap-1.5 mt-1.5">
+                        <span className="text-xs text-gray-400">Weight:</span>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            value={item.weight_grams || ''}
+                            onChange={(e) => updateEditItem(idx, 'weight_grams', e.target.value)}
+                            placeholder="grams"
+                            className="w-20 pl-1.5 pr-4 py-0.5 text-xs border border-gray-300 rounded"
+                          />
+                          <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-gray-400">g</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                ))}
+                  );
+                })}
                 {editForm.items.length === 0 && (
                   <p className="text-gray-500 text-sm">All items removed — order will save with no items.</p>
                 )}

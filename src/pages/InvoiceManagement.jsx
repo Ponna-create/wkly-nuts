@@ -58,6 +58,16 @@ export default function InvoiceManagement() {
     priceOverridden: false,
   });
 
+  // Off-catalog items (Figs, loose Almonds, etc.) can carry a weight-in-grams
+  // set on the order — shown as part of the product name/description on
+  // invoices and the GST export, since that's the standard way a tax
+  // invoice represents a size variant (no separate "Weight" column).
+  const itemDisplayName = (item) => {
+    const name = item.skuName || item.sku_name || 'Unknown';
+    const grams = item.weightGrams ?? item.weight_grams;
+    return grams ? `${name} (${grams}g)` : name;
+  };
+
   // Format pack type for display (table, PDF, CSV)
   const getPackTypeLabel = (packType) => {
     if (!packType) return 'N/A';
@@ -1191,7 +1201,7 @@ export default function InvoiceManagement() {
         .filter(item => (item.total || (item.quantity || 0) * (item.unitPrice || 0)) > 0)
         .map((item, index) => [
           (index + 1).toString(),
-          item.skuName || 'Unknown SKU',
+          itemDisplayName(item),
           getPackTypeLabel(item.packType),
           (item.quantity || 0).toFixed(2),
           `Rs. ${(item.unitPrice || 0).toFixed(2)}`, // Using Rs. instead of ₹
@@ -1917,7 +1927,7 @@ export default function InvoiceManagement() {
           isFirstLine ? (customer?.name || '') : '',
           isFirstLine ? (customer?.gstin || '') : '',
           isFirstLine ? placeOfSupply : '',
-          `${item.skuName || 'Unknown'} x${qty}`, qty, (taxable / qty).toFixed(2), taxable.toFixed(2), hsn,
+          `${itemDisplayName(item)} x${qty}`, qty, (taxable / qty).toFixed(2), taxable.toFixed(2), hsn,
           cgst.toFixed(2), sgst.toFixed(2), igst.toFixed(2), tax.toFixed(2), (taxable + tax).toFixed(2),
           isFirstLine ? channel : '',
         ].map(c => { const s = String(c || ''); return s.includes(',') ? `"${s}"` : s; });
