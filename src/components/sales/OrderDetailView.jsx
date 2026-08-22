@@ -25,6 +25,8 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
   const [editingOrder, setEditingOrder] = useState(false);
   const [editForm, setEditForm] = useState(null);
   const [savingOrder, setSavingOrder] = useState(false);
+  const [addItemMode, setAddItemMode] = useState(false);
+  const [newItemName, setNewItemName] = useState('');
 
   // Sync with parent order prop when it changes (e.g., after BulkTrackingEntry updates)
   useEffect(() => {
@@ -212,6 +214,8 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
       shipping_charge: currentOrder.shipping_charge || 0,
       items: (currentOrder.items || []).map(i => ({ ...i })),
     });
+    setAddItemMode(false);
+    setNewItemName('');
     setEditingOrder(true);
   };
 
@@ -229,6 +233,18 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
 
   const removeEditItem = (idx) => {
     setEditForm(prev => ({ ...prev, items: prev.items.filter((_, i) => i !== idx) }));
+  };
+
+  // For items that aren't in the SKU catalog at all — loose stock sold
+  // occasionally (Almonds, Figs, etc.) that a customer sometimes asks for
+  // on top of their usual order, without a real SKU set up for it.
+  const addEditItem = (name) => {
+    const trimmed = (name || '').trim();
+    if (!trimmed) return;
+    setEditForm(prev => ({
+      ...prev,
+      items: [...prev.items, { sku_id: null, sku_name: trimmed, pack_type: 'weekly', quantity: 1, unit_price: 0, total: 0 }],
+    }));
   };
 
   const handleSaveOrderEdit = async () => {
@@ -495,7 +511,9 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
                   <div key={idx} className="flex items-center justify-between gap-2 p-3 bg-gray-50 rounded-lg">
                     <div className="flex-1">
                       <p className="font-medium text-gray-900">{item.sku_name || item.skuName}</p>
-                      <p className="text-sm text-gray-600 capitalize">{item.pack_type || item.packType} Pack</p>
+                      {(item.sku_id || item.skuId) && (
+                        <p className="text-sm text-gray-600 capitalize">{item.pack_type || item.packType} Pack</p>
+                      )}
                     </div>
                     <input
                       type="number"
@@ -525,6 +543,37 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
                 {editForm.items.length === 0 && (
                   <p className="text-gray-500 text-sm">All items removed — order will save with no items.</p>
                 )}
+
+                {/* Not-in-catalog items — loose stock (Almonds, Figs, etc.)
+                    a customer sometimes wants added, without a real SKU set
+                    up for it. Added at ₹0 — set the price right in the row above. */}
+                {addItemMode ? (
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      autoFocus
+                      value={newItemName}
+                      onChange={(e) => setNewItemName(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && (addEditItem(newItemName), setNewItemName(''), setAddItemMode(false))}
+                      placeholder="Item name (e.g. Figs)"
+                      className="flex-1 min-w-0 px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm"
+                    />
+                    <button
+                      onClick={() => { addEditItem(newItemName); setNewItemName(''); setAddItemMode(false); }}
+                      className="px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-medium hover:bg-teal-700 flex-shrink-0"
+                    >
+                      Add
+                    </button>
+                    <button onClick={() => { setAddItemMode(false); setNewItemName(''); }} className="px-2 py-1.5 text-gray-400 hover:text-gray-600 flex-shrink-0">✕</button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setAddItemMode(true)}
+                    className="flex items-center gap-1 px-3 py-1.5 border border-dashed border-gray-300 text-gray-500 rounded-lg text-xs font-medium hover:border-teal-400 hover:text-teal-600"
+                  >
+                    + Add Item — not in SKU list
+                  </button>
+                )}
+
                 <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                   <span className="text-sm text-gray-600">Shipping charge</span>
                   <div className="flex items-center">
