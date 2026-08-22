@@ -29,6 +29,9 @@ export default function QuickOrder() {
   const [justSaved, setJustSaved] = useState(null); // the last saved order, with phone attached for printing
   const [showLabelPrinter, setShowLabelPrinter] = useState(false);
   const [showTrackingScanner, setShowTrackingScanner] = useState(false);
+  const [customItemMode, setCustomItemMode] = useState(false);
+  const [customItemName, setCustomItemName] = useState('');
+  const [customItemPrice, setCustomItemPrice] = useState('');
 
   // The SKU's own Selling Price (set in SKU Management) is the master price
   // for orders — Weekly and Monthly are separate fields there. Pricing
@@ -127,6 +130,22 @@ export default function QuickOrder() {
   };
 
   const removeItem = (key) => setItems(prev => prev.filter(i => i.key !== key));
+
+  // For items that aren't in the SKU catalog at all — loose stock sold
+  // occasionally (Almonds, Figs, etc.) that don't have a Recipe Pack or
+  // their own SKU set up. No skuId, so it's excluded from inventory
+  // deduction and Top Selling by-SKU stats, same as the existing free-text
+  // items (Honey, Dates, Walnuts) already seen on real orders.
+  const addCustomItem = () => {
+    const name = customItemName.trim();
+    const unitPrice = parseFloat(customItemPrice) || 0;
+    if (!name) return;
+    const key = `custom-${Date.now()}`;
+    setItems(prev => [...prev, { key, skuId: null, skuName: name, packType: 'weekly', quantity: 1, unitPrice, total: unitPrice }]);
+    setCustomItemName('');
+    setCustomItemPrice('');
+    setCustomItemMode(false);
+  };
 
   // Selling Price already includes GST — never add GST on top here. Each
   // item's price is split back into taxable value + GST (using that SKU's
@@ -514,6 +533,42 @@ export default function QuickOrder() {
                   ))}
                 </div>
               )}
+
+              {/* Not-in-catalog items — loose stock (Almonds, Figs, etc.)
+                  sold occasionally without a real SKU set up for it yet */}
+              <div className="mt-2">
+                {customItemMode ? (
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      autoFocus
+                      value={customItemName}
+                      onChange={(e) => setCustomItemName(e.target.value)}
+                      placeholder="Item name (e.g. Figs)"
+                      className="flex-1 min-w-0 px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm"
+                    />
+                    <div className="relative w-20 flex-shrink-0">
+                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">₹</span>
+                      <input
+                        type="number"
+                        value={customItemPrice}
+                        onChange={(e) => setCustomItemPrice(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && addCustomItem()}
+                        placeholder="Price"
+                        className="w-full pl-5 pr-1.5 py-1.5 border border-gray-300 rounded-lg text-sm"
+                      />
+                    </div>
+                    <button onClick={addCustomItem} className="px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-medium hover:bg-teal-700 flex-shrink-0">Add</button>
+                    <button onClick={() => { setCustomItemMode(false); setCustomItemName(''); setCustomItemPrice(''); }} className="px-2 py-1.5 text-gray-400 hover:text-gray-600 flex-shrink-0">✕</button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setCustomItemMode(true)}
+                    className="flex items-center gap-1 px-3 py-1.5 border border-dashed border-gray-300 text-gray-500 rounded-lg text-xs font-medium hover:border-teal-400 hover:text-teal-600"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Add Item — not in SKU list
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Running item list */}
