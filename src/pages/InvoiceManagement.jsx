@@ -1184,14 +1184,19 @@ export default function InvoiceManagement() {
       yPos = invoiceTitleY + 15;
 
       // Items Table - Fixed column widths, using Rs. instead of ₹ to prevent rendering issues
-      const tableData = invoice.items.map((item, index) => [
-        (index + 1).toString(),
-        item.skuName || 'Unknown SKU',
-        getPackTypeLabel(item.packType),
-        (item.quantity || 0).toFixed(2),
-        `Rs. ${(item.unitPrice || 0).toFixed(2)}`, // Using Rs. instead of ₹
-        `Rs. ${(item.total || 0).toFixed(2)}`, // Using Rs. instead of ₹
-      ]);
+      // Zero-value items (a free bonus item bundled into a paid order) are
+      // left off the invoice entirely — per the auditor, a quantified
+      // zero-rate line isn't how GST invoices should represent a freebie.
+      const tableData = invoice.items
+        .filter(item => (item.total || (item.quantity || 0) * (item.unitPrice || 0)) > 0)
+        .map((item, index) => [
+          (index + 1).toString(),
+          item.skuName || 'Unknown SKU',
+          getPackTypeLabel(item.packType),
+          (item.quantity || 0).toFixed(2),
+          `Rs. ${(item.unitPrice || 0).toFixed(2)}`, // Using Rs. instead of ₹
+          `Rs. ${(item.total || 0).toFixed(2)}`, // Using Rs. instead of ₹
+        ]);
 
       // Use autoTable - Fixed widths to prevent overflow
       const autoTableOptions = {
@@ -1927,18 +1932,36 @@ export default function InvoiceManagement() {
         allNames.push(...group.names);
         allHsn.push(hsn);
         addToHsnSummary(hsn, group.taxable, cgst, sgst, igst, tax);
-        // Only worth a separate breakdown row when the invoice actually has
-        // 2+ HSN codes mixed together — a single-HSN invoice already matches
-        // the main table exactly, no ambiguity to resolve.
-        if (byHsn.size > 1) {
-          breakdownRows.push([
-            inv.invoiceNumber || '', inv.invoiceDate ? formatDate(inv.invoiceDate) : '', customer?.name || '',
-            group.names.join(', '), hsn, group.qty, group.taxable.toFixed(2),
-            cgst.toFixed(2), sgst.toFixed(2), igst.toFixed(2), tax.toFixed(2), (group.taxable + tax).toFixed(2),
-          ]);
-        }
       });
       totalTaxable += invTaxable; totalCGST += invCGST; totalSGST += invSGST; totalIGST += invIGST; totalTax += invTax; grandTotal += invTaxable + invTax;
+
+      // Per-product breakdown rows — one row per actual line item (not
+      // grouped by HSN), so two products sharing an HSN code (e.g. Mexican
+      // Bites + Party Mix, both 2106) still get their own separate rows
+      // with their own name, qty, and price exactly as entered — no
+      // computed/guessed weight, just whatever was typed or set on the SKU.
+      // Zero-value items (a free bonus item bundled into a paid order) are
+      // left out entirely, per the auditor: a quantified zero-rate line
+      // isn't how a GST invoice should represent something given free —
+      // only invoices with 2+ items get a breakdown at all; a single-item
+      // invoice already matches the main table row above exactly.
+      if (items.length > 1) {
+        items.forEach(item => {
+          const taxable = item.total || ((item.quantity || 1) * (item.unitPrice || 0));
+          if (!taxable) return; // free bonus item — not a taxable line, leave off the invoice
+          const hsn = item.hsnCode || getHSN(item.skuName);
+          const tax = taxable * (gstRate / 100);
+          const cgst = isTN ? tax / 2 : 0;
+          const sgst = isTN ? tax / 2 : 0;
+          const igst = isTN ? 0 : tax;
+          const qty = item.quantity || 1;
+          breakdownRows.push([
+            inv.invoiceNumber || '', inv.invoiceDate ? formatDate(inv.invoiceDate) : '', customer?.name || '',
+            item.skuName || 'Unknown', hsn, qty, (taxable / qty).toFixed(2), taxable.toFixed(2),
+            cgst.toFixed(2), sgst.toFixed(2), igst.toFixed(2), tax.toFixed(2), (taxable + tax).toFixed(2),
+          ]);
+        });
+      }
 
       const row = [
         si,
@@ -1953,14 +1976,15 @@ export default function InvoiceManagement() {
     csvRows.push('');
     csvRows.push(['', '', '', '', '', '', '', '', 'TOTALS', totalTaxable.toFixed(2), totalCGST.toFixed(2), totalSGST.toFixed(2), totalIGST.toFixed(2), totalTax.toFixed(2), grandTotal.toFixed(2), ''].join(','));
 
-    // Invoice-wise HSN Breakdown — for the auditor: every invoice above that
-    // mixes 2+ HSN codes gets split back out here into one row per HSN, so
-    // the per-product taxable value is traceable instead of only showing
-    // one combined total for the whole invoice.
+    // Invoice-wise Product Breakdown — for the auditor: every invoice above
+    // with 2+ items gets split back out here into one row per product, so
+    // the per-product price/taxable value is traceable instead of only
+    // showing one combined total for the whole invoice. Zero-value bonus
+    // items are left out (see note above).
     if (breakdownRows.length > 0) {
       csvRows.push('');
-      csvRows.push('Invoice-wise HSN Breakdown (only invoices with 2+ HSN codes — everything else already matches the main table above exactly)');
-      csvRows.push(['Invoice #', 'Date', 'Customer', 'Product', 'HSN Code', 'Qty', 'Taxable Value', 'CGST @2.5%', 'SGST @2.5%', 'IGST @5%', 'Total Tax', 'Line Total'].join(','));
+      csvRows.push('Invoice-wise Product Breakdown (only invoices with 2+ items — everything else already matches the main table above exactly)');
+      csvRows.push(['Invoice #', 'Date', 'Customer', 'Product', 'HSN Code', 'Qty', 'Unit Price', 'Taxable Value', 'CGST @2.5%', 'SGST @2.5%', 'IGST @5%', 'Total Tax', 'Line Total'].join(','));
       breakdownRows.forEach(r => {
         csvRows.push(r.map(c => { const s = String(c || ''); return s.includes(',') ? `"${s}"` : s; }).join(','));
       });
