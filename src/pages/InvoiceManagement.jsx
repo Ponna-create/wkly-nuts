@@ -1859,14 +1859,15 @@ export default function InvoiceManagement() {
     };
 
     const csvRows = [];
-    // One row per invoice, always — matches the auditor's own working
-    // register (SI No / Date / Invoice / Customer / GSTIN / Place of Supply
-    // / HSN / Basic Value / Rate / IGST / CGST / SGST / Total). Repeating the
-    // same invoice number across several rows (one per HSN code) was the
-    // confusing part; the per-HSN split that GST filing actually needs still
-    // lives in the HSN-wise Summary section below, it just doesn't need to
-    // fragment the main register too.
-    const headers = ['SI No', 'Date', 'Invoice #', 'Customer', 'GSTIN', 'Place of Supply', 'Product', 'HSN Code', 'Qty', 'Taxable Value', 'CGST @2.5%', 'SGST @2.5%', 'IGST @5%', 'Total Tax', 'Invoice Total', 'Channel'];
+    // One row per PRODUCT, not per invoice — a customer who bought 2-3
+    // items gets 2-3 rows, each with that item's own HSN code, qty, unit
+    // price, and taxable value, exactly like the auditor's reference
+    // format. Invoice #/Date/Customer/GSTIN/Place of Supply/Channel only
+    // print on the FIRST row of each invoice (blank on the rows after) so
+    // it still reads as one group per invoice rather than repeating the
+    // same customer name 2-3 times — that repetition was the original
+    // complaint this format is designed to avoid.
+    const headers = ['SI No', 'Date', 'Invoice #', 'Customer', 'GSTIN', 'Place of Supply', 'Product', 'Qty', 'Unit Price', 'Taxable Value', 'HSN Code', 'CGST @2.5%', 'SGST @2.5%', 'IGST @5%', 'Total Tax', 'Line Total', 'Channel'];
     csvRows.push(headers.join(','));
 
     let totalTaxable = 0, totalCGST = 0, totalSGST = 0, totalIGST = 0, totalTax = 0, grandTotal = 0;
@@ -1879,14 +1880,6 @@ export default function InvoiceManagement() {
       hsnSummary.set(hsn, existing);
     };
 
-    // Per-invoice HSN breakdown — when one invoice has products under 2+
-    // HSN codes, the main table above shows one merged total for the whole
-    // invoice (readable for her, but the auditor can't verify how that
-    // total splits across HSN codes/products from it alone). This captures
-    // the same byHsn split already being computed below, one row per
-    // (invoice, HSN) instead of collapsed into one row per invoice.
-    const breakdownRows = [];
-
     let si = 0;
     paidOrSent.forEach(inv => {
       const customer = inv.customer || (inv.customerId ? customers.find(c => String(c.id) === String(inv.customerId)) : null);
@@ -1898,97 +1891,42 @@ export default function InvoiceManagement() {
       const channel = getChannel(inv);
       si += 1;
 
-      // Group by HSN first purely to get the per-HSN taxable/tax split right
-      // (different HSN = different taxable bucket), then collapse that back
-      // into ONE row for the invoice — product/HSN cells just list everything
-      // touched, e.g. "Night Soak x1, Day Pack x2" / "2008 19 20, 1204".
-      const byHsn = new Map();
-      if (items.length === 0) {
-        const taxable = inv.subtotal || inv.totalAmount || 0;
-        byHsn.set('2008 19 20', { qty: 1, taxable, names: ['Mixed Products'] });
-      } else {
-        items.forEach(item => {
-          const qty = item.quantity || 1;
-          const taxable = item.total || (qty * (item.unitPrice || 0));
-          const hsn = item.hsnCode || getHSN(item.skuName);
-          const existing = byHsn.get(hsn) || { qty: 0, taxable: 0, names: [] };
-          existing.qty += qty;
-          existing.taxable += taxable;
-          existing.names.push(`${item.skuName || 'Unknown'} x${qty}`);
-          byHsn.set(hsn, existing);
-        });
-      }
+      // Zero-value bonus items (a free item thrown into an otherwise-paid
+      // order) are left off entirely — per the auditor, a quantified
+      // zero-rate line isn't how a GST invoice should represent a freebie.
+      const lineItems = items.length > 0
+        ? items.filter(item => (item.total || (item.quantity || 1) * (item.unitPrice || 0)) > 0)
+        : [{ skuName: 'Mixed Products', quantity: 1, total: inv.subtotal || inv.totalAmount || 0 }];
 
-      let invTaxable = 0, invCGST = 0, invSGST = 0, invIGST = 0, invTax = 0;
-      const allNames = [], allHsn = [];
-      let invQty = 0;
-      byHsn.forEach((group, hsn) => {
-        const tax = group.taxable * (gstRate / 100);
+      lineItems.forEach((item, itemIdx) => {
+        const qty = item.quantity || 1;
+        const taxable = item.total || (qty * (item.unitPrice || 0));
+        const hsn = item.hsnCode || getHSN(item.skuName);
+        const tax = taxable * (gstRate / 100);
         const cgst = isTN ? tax / 2 : 0;
         const sgst = isTN ? tax / 2 : 0;
         const igst = isTN ? 0 : tax;
-        invTaxable += group.taxable; invCGST += cgst; invSGST += sgst; invIGST += igst; invTax += tax;
-        invQty += group.qty;
-        allNames.push(...group.names);
-        allHsn.push(hsn);
-        addToHsnSummary(hsn, group.taxable, cgst, sgst, igst, tax);
+        totalTaxable += taxable; totalCGST += cgst; totalSGST += sgst; totalIGST += igst; totalTax += tax; grandTotal += taxable + tax;
+        addToHsnSummary(hsn, taxable, cgst, sgst, igst, tax);
+
+        const isFirstLine = itemIdx === 0;
+        const row = [
+          isFirstLine ? si : '',
+          isFirstLine && inv.invoiceDate ? formatDate(inv.invoiceDate) : '',
+          isFirstLine ? (inv.invoiceNumber || '') : '',
+          isFirstLine ? (customer?.name || '') : '',
+          isFirstLine ? (customer?.gstin || '') : '',
+          isFirstLine ? placeOfSupply : '',
+          `${item.skuName || 'Unknown'} x${qty}`, qty, (taxable / qty).toFixed(2), taxable.toFixed(2), hsn,
+          cgst.toFixed(2), sgst.toFixed(2), igst.toFixed(2), tax.toFixed(2), (taxable + tax).toFixed(2),
+          isFirstLine ? channel : '',
+        ].map(c => { const s = String(c || ''); return s.includes(',') ? `"${s}"` : s; });
+        csvRows.push(row.join(','));
       });
-      totalTaxable += invTaxable; totalCGST += invCGST; totalSGST += invSGST; totalIGST += invIGST; totalTax += invTax; grandTotal += invTaxable + invTax;
-
-      // Per-product breakdown rows — one row per actual line item (not
-      // grouped by HSN), so two products sharing an HSN code (e.g. Mexican
-      // Bites + Party Mix, both 2106) still get their own separate rows
-      // with their own name, qty, and price exactly as entered — no
-      // computed/guessed weight, just whatever was typed or set on the SKU.
-      // Zero-value items (a free bonus item bundled into a paid order) are
-      // left out entirely, per the auditor: a quantified zero-rate line
-      // isn't how a GST invoice should represent something given free —
-      // only invoices with 2+ items get a breakdown at all; a single-item
-      // invoice already matches the main table row above exactly.
-      if (items.length > 1) {
-        items.forEach(item => {
-          const taxable = item.total || ((item.quantity || 1) * (item.unitPrice || 0));
-          if (!taxable) return; // free bonus item — not a taxable line, leave off the invoice
-          const hsn = item.hsnCode || getHSN(item.skuName);
-          const tax = taxable * (gstRate / 100);
-          const cgst = isTN ? tax / 2 : 0;
-          const sgst = isTN ? tax / 2 : 0;
-          const igst = isTN ? 0 : tax;
-          const qty = item.quantity || 1;
-          breakdownRows.push([
-            inv.invoiceNumber || '', inv.invoiceDate ? formatDate(inv.invoiceDate) : '', customer?.name || '', placeOfSupply,
-            item.skuName || 'Unknown', qty, (taxable / qty).toFixed(2), taxable.toFixed(2), hsn,
-            cgst.toFixed(2), sgst.toFixed(2), igst.toFixed(2), tax.toFixed(2), (taxable + tax).toFixed(2),
-          ]);
-        });
-      }
-
-      const row = [
-        si,
-        inv.invoiceDate ? formatDate(inv.invoiceDate) : '',
-        inv.invoiceNumber || '', customer?.name || '', customer?.gstin || '', placeOfSupply,
-        allNames.join(', '), allHsn.join(', '), invQty, invTaxable.toFixed(2),
-        invCGST.toFixed(2), invSGST.toFixed(2), invIGST.toFixed(2), invTax.toFixed(2), (invTaxable + invTax).toFixed(2), channel
-      ].map(c => { const s = String(c || ''); return s.includes(',') ? `"${s}"` : s; });
-      csvRows.push(row.join(','));
     });
 
     csvRows.push('');
-    csvRows.push(['', '', '', '', '', '', '', '', 'TOTALS', totalTaxable.toFixed(2), totalCGST.toFixed(2), totalSGST.toFixed(2), totalIGST.toFixed(2), totalTax.toFixed(2), grandTotal.toFixed(2), ''].join(','));
-
-    // Invoice-wise Product Breakdown — for the auditor: every invoice above
-    // with 2+ items gets split back out here into one row per product, so
-    // the per-product price/taxable value is traceable instead of only
-    // showing one combined total for the whole invoice. Zero-value bonus
-    // items are left out (see note above).
-    if (breakdownRows.length > 0) {
-      csvRows.push('');
-      csvRows.push('Invoice-wise Product Breakdown (only invoices with 2+ items — everything else already matches the main table above exactly)');
-      csvRows.push(['Invoice #', 'Date', 'Customer', 'Place of Supply', 'Product', 'Qty', 'Unit Price', 'Taxable Value', 'HSN Code', 'CGST @2.5%', 'SGST @2.5%', 'IGST @5%', 'Total Tax', 'Line Total'].join(','));
-      breakdownRows.forEach(r => {
-        csvRows.push(r.map(c => { const s = String(c || ''); return s.includes(',') ? `"${s}"` : s; }).join(','));
-      });
-    }
+    csvRows.push(['', '', '', '', '', '', 'TOTALS', '', '', totalTaxable.toFixed(2), '', totalCGST.toFixed(2), totalSGST.toFixed(2), totalIGST.toFixed(2), totalTax.toFixed(2), grandTotal.toFixed(2), ''].join(','));
 
     // HSN-wise Summary — same section your auditor's own register ends with,
     // so this export can go straight to him in the format he already expects.
