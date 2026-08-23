@@ -81,13 +81,15 @@ export default function Marketing() {
   const channelPerformance = useMemo(() => {
     const orders = state.salesOrders || [];
     const skus = state.skus || [];
+    const ingredients = state.ingredients || [];
+    const aliases = state.ingredientAliases || [];
     const bySource = {};
     orders.forEach(o => {
       const src = o.order_source || 'other';
       if (!bySource[src]) bySource[src] = { orders: 0, revenue: 0, cogs: 0 };
       bySource[src].orders += 1;
       bySource[src].revenue += parseFloat(o.total_amount) || 0;
-      bySource[src].cogs += (o.items || []).reduce((s, it) => s + itemCost(it, skus), 0);
+      bySource[src].cogs += (o.items || []).reduce((s, it) => s + itemCost(it, skus, ingredients, aliases), 0);
     });
     return Object.entries(bySource)
       .map(([source, v]) => {

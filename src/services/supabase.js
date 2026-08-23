@@ -2024,6 +2024,47 @@ const _realDbService = {
     }
   },
 
+  // ============================================================================
+  // INGREDIENT ALIASES — maps a generic recipe ingredient name ("Almonds") to
+  // one or more specific graded ingredients actually tracked in stock
+  // ("Almonds Premium", "Almonds Regular"). See ingredient_aliases table comment.
+  // ============================================================================
+
+  async getIngredientAliases() {
+    if (!isSupabaseAvailable()) return { data: [], error: null };
+    try {
+      const { data, error } = await supabase
+        .from('ingredient_aliases')
+        .select('id, alias_name, ingredient_id, ingredients(name)')
+        .order('alias_name');
+      if (error) throw error;
+      return { data: data || [], error: null };
+    } catch (error) {
+      console.error('Error fetching ingredient aliases:', error);
+      return { data: [], error };
+    }
+  },
+
+  async setIngredientAlias(aliasName, ingredientIds) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    try {
+      // Replace this alias's mappings wholesale — simpler and safer than
+      // diffing add/remove for a handful of rows per alias.
+      const { error: delError } = await supabase.from('ingredient_aliases').delete().eq('alias_name', aliasName);
+      if (delError) throw delError;
+      if (ingredientIds.length === 0) return { data: [], error: null };
+      const { data, error } = await supabase
+        .from('ingredient_aliases')
+        .insert(ingredientIds.map(id => ({ alias_name: aliasName, ingredient_id: id })))
+        .select();
+      if (error) throw error;
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error setting ingredient alias:', error);
+      return { data: null, error };
+    }
+  },
+
   async addIngredientBatch(batch) {
     if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
     try {

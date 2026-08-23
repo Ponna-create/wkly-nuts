@@ -4,6 +4,7 @@ import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
 import logo from '../assets/wkly-nuts-logo.png';
 import { formatDate } from '../utils/dateFormat';
+import { liveRawMaterialCost } from '../utils/skuCost';
 
 const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 const DAY_COLORS = {
@@ -29,7 +30,7 @@ const DAY_COLORS_LIGHT = {
 export default function SKUManagement() {
   const { state, dispatch, showToast, isLoading } = useApp();
 
-  const { skus = [], vendors = [] } = state || {};
+  const { skus = [], vendors = [], ingredients = [], ingredientAliases = [] } = state || {};
 
   // Helper function for flexible ingredient matching
   const matchIngredient = (recipeName, vendorName) => {
@@ -2959,7 +2960,10 @@ export default function SKUManagement() {
                         const pc = parseFloat(sku.pouchCount) || 0, pw = parseFloat(sku.pouchWeight) || 0, u = sku.unitOfMeasure || 'g';
                         const ingSum = (sku.singleUnitIngredients || []).reduce((s, i) => s + (parseFloat(i.gramsPerUnit) || 0), 0);
                         const netStr = (pc > 0 && pw > 0) ? `${(pc * pw).toFixed(0)} ${u}` : (ingSum > 0 ? `${ingSum.toFixed(0)} g` : '—');
-                        const materialCost = (sku.singleUnitIngredients || []).reduce((s, i) => s + ((parseFloat(i.gramsPerUnit) || 0) * (parseFloat(i.pricePerGram) || 0)), 0);
+                        // Live — today's weighted-average stock rate (via alias mapping
+                        // where the recipe uses a generic name), not the snapshot frozen
+                        // when this recipe was last saved. See skuCost.js.
+                        const { cost: materialCost, unmatched } = liveRawMaterialCost(sku, ingredients, ingredientAliases);
                         const packagingCost = (sku.packagingMaterials || []).reduce((sum, pkg) =>
                           sum + ((parseFloat(pkg.quantity_per_pack) || 0) * (parseFloat(pkg.price_per_unit) || 0)), 0);
                         const processCost = (sku.processCosts || []).reduce((sum, c) => sum + (parseFloat(c.cost_per_unit) || 0), 0);
@@ -2973,6 +2977,11 @@ export default function SKUManagement() {
                                 ₹{totalCost.toFixed(2)} per unit
                                 <span className="font-normal text-xs text-blue-500"> (₹{materialCost.toFixed(2)} material + ₹{packagingCost.toFixed(2)} packaging{processCost > 0 ? ` + ₹${processCost.toFixed(2)} process` : ''})</span>
                               </p>
+                            )}
+                            {unmatched.length > 0 ? (
+                              <p className="text-[10px] text-amber-600 mt-1">⚠ Not mapped to stock yet: {unmatched.join(', ')} — see Inventory → Recipe Mapping</p>
+                            ) : (
+                              <p className="text-[10px] text-blue-400 mt-1">Material cost is live — today's stock rate</p>
                             )}
                           </div>
                         );
@@ -3044,29 +3053,45 @@ export default function SKUManagement() {
                         ))}
                       </div>
 
-                      {/* Pack Details */}
-                      <div className="grid grid-cols-2 gap-4 pt-4 border-t">
-                        <div className="bg-blue-50 p-3 rounded-lg">
-                          <p className="text-xs text-blue-600 font-semibold mb-1">WEEKLY PACK</p>
-                          <p className="text-sm text-gray-700">7 different sachets</p>
-                          <p className="text-sm text-gray-700">
-                            {((sku.weeklyPack?.totalGrams || 0) / 1000).toFixed(2)} kg total
-                          </p>
-                          <p className="text-sm font-bold text-blue-700">
-                            ₹{(sku.weeklyPack?.rawMaterialCost || 0).toFixed(2)}
-                          </p>
-                        </div>
-                        <div className="bg-accent-50 p-3 rounded-lg">
-                          <p className="text-xs text-accent-600 font-semibold mb-1">MONTHLY PACK</p>
-                          <p className="text-sm text-gray-700">28 sachets (4 weeks)</p>
-                          <p className="text-sm text-gray-700">
-                            {((sku.monthlyPack?.totalGrams || 0) / 1000).toFixed(2)} kg total
-                          </p>
-                          <p className="text-sm font-bold text-accent-700">
-                            ₹{(sku.monthlyPack?.rawMaterialCost || 0).toFixed(2)}
-                          </p>
-                        </div>
-                      </div>
+                      {/* Pack Details — material cost is live (today's weighted-average
+                          stock rate, via alias mapping for generic recipe names), not
+                          the snapshot frozen when the recipe was last saved. See skuCost.js. */}
+                      {(() => {
+                        const weekly = liveRawMaterialCost(sku, ingredients, ingredientAliases, 'weekly');
+                        const monthly = liveRawMaterialCost(sku, ingredients, ingredientAliases, 'monthly');
+                        const unmatched = weekly.unmatched;
+                        return (
+                          <>
+                            <div className="grid grid-cols-2 gap-4 pt-4 border-t">
+                              <div className="bg-blue-50 p-3 rounded-lg">
+                                <p className="text-xs text-blue-600 font-semibold mb-1">WEEKLY PACK</p>
+                                <p className="text-sm text-gray-700">7 different sachets</p>
+                                <p className="text-sm text-gray-700">
+                                  {((sku.weeklyPack?.totalGrams || 0) / 1000).toFixed(2)} kg total
+                                </p>
+                                <p className="text-sm font-bold text-blue-700">
+                                  ₹{weekly.cost.toFixed(2)}
+                                </p>
+                              </div>
+                              <div className="bg-accent-50 p-3 rounded-lg">
+                                <p className="text-xs text-accent-600 font-semibold mb-1">MONTHLY PACK</p>
+                                <p className="text-sm text-gray-700">28 sachets (4 weeks)</p>
+                                <p className="text-sm text-gray-700">
+                                  {((sku.monthlyPack?.totalGrams || 0) / 1000).toFixed(2)} kg total
+                                </p>
+                                <p className="text-sm font-bold text-accent-700">
+                                  ₹{monthly.cost.toFixed(2)}
+                                </p>
+                              </div>
+                            </div>
+                            {unmatched.length > 0 ? (
+                              <p className="text-[10px] text-amber-600 mt-1">⚠ Not mapped to stock yet: {unmatched.join(', ')} — see Inventory → Recipe Mapping</p>
+                            ) : (
+                              <p className="text-[10px] text-gray-400 mt-1">Material cost is live — today's stock rate</p>
+                            )}
+                          </>
+                        );
+                      })()}
                     </>
                   )}
                 </div>
