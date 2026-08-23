@@ -58,7 +58,7 @@ function drawLabel(doc, x, y, w, h, order, business) {
   blockLabel('To');
   nameLine(order.customer_name || 'Customer', 15);
   addrLines(order.shipping_address, 9.5);
-  phoneLine(order.phone, 10.5);
+  phoneLine(order.courier_number || order.phone, 10.5);
 
   divider();
 

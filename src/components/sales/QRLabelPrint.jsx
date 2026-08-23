@@ -199,9 +199,9 @@ export default function QRLabelPrint({ order, onClose, labelSize = 'a4' }) {
                       {order.shipping_address}
                     </div>
                   )}
-                  {order.phone && (
+                  {(order.courier_number || order.phone) && (
                     <div className={`${isA4 ? 'text-sm' : 'text-xs'} text-gray-600 mb-3`}>
-                      Ph: {order.phone}
+                      Ph: {order.courier_number || order.phone}
                     </div>
                   )}
 

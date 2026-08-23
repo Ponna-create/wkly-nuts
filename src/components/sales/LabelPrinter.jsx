@@ -173,7 +173,7 @@ export default function LabelPrinter({ order, onClose, labelSize: initialSize = 
                   <div style={{ marginTop: `${6*s}px` }}>
                     <div style={{ fontSize: `${11*s}px`, fontWeight: '500', lineHeight: '1.5' }}>{order.customer_name}</div>
                     {address && <div style={{ fontSize: `${10*s}px`, color: '#333', lineHeight: '1.5', marginTop: `${2*s}px` }}>{address}</div>}
-                    {order.phone && <div style={{ fontSize: `${10*s}px`, color: '#333', marginTop: `${2*s}px` }}>Ph: {order.phone}</div>}
+                    {(order.courier_number || order.phone) && <div style={{ fontSize: `${10*s}px`, color: '#333', marginTop: `${2*s}px` }}>Ph: {order.courier_number || order.phone}</div>}
                   </div>
                 </div>
                 <div style={{ flex: 1, padding: `${10*s}px ${12*s}px` }}>
