@@ -6,7 +6,7 @@ import { dbService } from '../services/supabase';
 import { parseOrderPaste } from '../utils/orderPasteParser';
 import { generateA4LabelSheet } from '../utils/a4LabelSheet';
 import LabelPrinter from '../components/sales/LabelPrinter';
-import { buildInvoiceDataFromOrder } from '../utils/invoiceFromOrder';
+import { buildInvoiceDataFromOrder, isPromotionalOrder } from '../utils/invoiceFromOrder';
 import TrackingScanner from '../components/sales/TrackingScanner';
 
 const EMPTY_FIELDS = { name: '', phone: '', address: '', city: '', state: '', pincode: '', oldStylePostalCode: '' };
@@ -260,6 +260,7 @@ export default function QuickOrder() {
   // first time a label is printed for this order.
   const ensureInvoiceForJustSaved = async () => {
     if (!justSaved || justSaved.invoice_id) return;
+    if (isPromotionalOrder(justSaved)) return; // promo/collab sends aren't a real sale — no invoice
     try {
       const invoiceData = buildInvoiceDataFromOrder(justSaved, 'Auto-generated on label print', skus);
       const { data: autoInvoice, error } = await dbService.createInvoice(invoiceData);
@@ -306,7 +307,7 @@ export default function QuickOrder() {
     // Same as single-order printing — make sure every one of these has an
     // invoice record for GST filing, not just the ones already printed individually.
     for (const o of todaysOrders) {
-      if (o.invoice_id) continue;
+      if (o.invoice_id || isPromotionalOrder(o)) continue; // promo/collab sends aren't a real sale — no invoice
       try {
         const invoiceData = buildInvoiceDataFromOrder(o, 'Auto-generated on label print', skus);
         const { data: autoInvoice, error } = await dbService.createInvoice(invoiceData);

@@ -5,7 +5,7 @@ import { useApp } from '../../context/AppContext';
 import { dbService } from '../../services/supabase';
 import LabelPrinter from './LabelPrinter';
 import WhatsAppSender from './WhatsAppSender';
-import { buildInvoiceDataFromOrder } from '../../utils/invoiceFromOrder';
+import { buildInvoiceDataFromOrder, isPromotionalOrder } from '../../utils/invoiceFromOrder';
 import { formatDate } from '../../utils/dateFormat';
 
 export default function OrderDetailView({ order, onClose, onUpdate }) {
@@ -217,6 +217,7 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
   // returns the invoice id — used so printing a label also produces the invoice.
   const ensureInvoiceForOrder = async (targetOrder) => {
     if (targetOrder.invoice_id) return targetOrder.invoice_id;
+    if (isPromotionalOrder(targetOrder)) return null; // promo/collab sends aren't a real sale — no invoice
     try {
       const invoiceData = buildInvoiceDataFromOrder(targetOrder, 'Auto-generated on label print', state.skus);
       const { data: autoInvoice, error } = await dbService.createInvoice(invoiceData);
@@ -416,6 +417,11 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
       } catch (e) {
         console.warn('Could not fetch invoices:', e);
       }
+    }
+
+    if (isPromotionalOrder(currentOrder)) {
+      showToast('This is a promotional/collab order — no GST invoice is generated for it', 'error');
+      return;
     }
 
     setGeneratingInvoice(true);
