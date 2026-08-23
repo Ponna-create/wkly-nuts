@@ -1574,6 +1574,79 @@ const _realDbService = {
   },
 
   // ============================================================================
+  // CREDIT NOTES — for orders that were invoiced then refused/returned (RTO).
+  // The original invoice is never edited or deleted (it accurately reflects
+  // a real supply attempt at the time) — a credit note referencing it is the
+  // GST-correct way to reverse the taxable value in a later period. Own
+  // numbering series, own table, never touches the invoices table.
+  // ============================================================================
+
+  async getNextCreditNoteNumber(forDate) {
+    const { data: nextNum, error } = await supabase.rpc('nextval', { name: 'credit_note_number_seq' });
+    if (error) throw error;
+    const d = forDate ? new Date(forDate) : new Date();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    return `CN-${nextNum}/${mm}${yyyy}`;
+  },
+
+  async createCreditNote(cn) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    try {
+      const creditNoteNumber = cn.creditNoteNumber || await this.getNextCreditNoteNumber(cn.creditNoteDate);
+      const { data, error } = await supabase
+        .from('credit_notes')
+        .insert([{
+          credit_note_number: creditNoteNumber,
+          invoice_id: cn.invoiceId || null,
+          invoice_number: cn.invoiceNumber || null,
+          order_id: cn.orderId || null,
+          order_number: cn.orderNumber || null,
+          customer_name: cn.customerName || null,
+          reason: cn.reason || 'RTO / Customer Refused',
+          taxable_value: cn.taxableValue || 0,
+          cgst_amount: cn.cgstAmount || 0,
+          sgst_amount: cn.sgstAmount || 0,
+          igst_amount: cn.igstAmount || 0,
+          total_amount: cn.totalAmount || 0,
+          credit_note_date: cn.creditNoteDate || new Date().toISOString().split('T')[0],
+          notes: cn.notes || null,
+        }])
+        .select()
+        .single();
+      if (error) throw error;
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error creating credit note:', error);
+      return { data: null, error };
+    }
+  },
+
+  async getCreditNotes() {
+    if (!isSupabaseAvailable()) return { data: [], error: null };
+    try {
+      const { data, error } = await supabase.from('credit_notes').select('*').order('credit_note_date', { ascending: false });
+      if (error) throw error;
+      return { data: data || [], error: null };
+    } catch (error) {
+      console.error('Error fetching credit notes:', error);
+      return { data: [], error };
+    }
+  },
+
+  async getCreditNotesForOrder(orderId) {
+    if (!isSupabaseAvailable()) return { data: [], error: null };
+    try {
+      const { data, error } = await supabase.from('credit_notes').select('*').eq('order_id', orderId).order('created_at', { ascending: false });
+      if (error) throw error;
+      return { data: data || [], error: null };
+    } catch (error) {
+      console.error('Error fetching credit notes for order:', error);
+      return { data: [], error };
+    }
+  },
+
+  // ============================================================================
   // INVENTORY/STOCK MANAGEMENT
   // ============================================================================
 
