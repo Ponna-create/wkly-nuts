@@ -3,6 +3,18 @@ import { BarChart3, TrendingUp, Package, ShoppingCart, Calendar, Download, India
 import { dbService } from '../services/supabase';
 import { useApp } from '../context/AppContext';
 
+// Identifies a customer by mobile number, not name — names get typed
+// differently between orders (WhatsApp/phone orders, "Priya S" vs "Priya
+// Sharma"), which silently split one real repeat customer into two "new"
+// ones. Phone number is the one field that's actually stable across orders.
+// Normalizes to the last 10 digits so "+91 98765 43210", "919876543210" and
+// "9876543210" all match. Falls back to name only when there's no phone at all.
+function customerKey(order) {
+  const digits = (order.phone || '').replace(/\D/g, '');
+  if (digits.length >= 10) return digits.slice(-10);
+  return (order.customer_name || '').toLowerCase().trim();
+}
+
 // Simple bar chart component (no external library)
 function SimpleBar({ label, value, maxValue, color = 'bg-teal-500' }) {
   const pct = maxValue > 0 ? Math.min((value / maxValue) * 100, 100) : 0;
@@ -133,16 +145,17 @@ export default function Reports() {
       byStatus[o.status] = (byStatus[o.status] || 0) + 1;
     });
 
-    // Top customers
+    // Top customers — grouped by phone number so the same person doesn't
+    // get split across rows by a differently-typed name (see customerKey)
     const byCustomer = {};
     filteredOrders.forEach(o => {
-      const name = o.customer_name || 'Unknown';
-      if (!byCustomer[name]) byCustomer[name] = { count: 0, amount: 0 };
-      byCustomer[name].count++;
-      byCustomer[name].amount += (o.total_amount || 0);
+      const key = customerKey(o);
+      if (!key) return;
+      if (!byCustomer[key]) byCustomer[key] = { name: o.customer_name || 'Unknown', count: 0, amount: 0 };
+      byCustomer[key].count++;
+      byCustomer[key].amount += (o.total_amount || 0);
     });
-    const topCustomers = Object.entries(byCustomer)
-      .map(([name, data]) => ({ name, ...data }))
+    const topCustomers = Object.values(byCustomer)
       .sort((a, b) => b.amount - a.amount)
       .slice(0, 8);
 
@@ -218,8 +231,10 @@ export default function Reports() {
 
   // === CUSTOMER RETENTION ===
   const customerRetention = useMemo(() => {
-    // Customers who ordered in the filtered period
-    const periodCustomers = new Set(filteredOrders.map(o => (o.customer_name || '').toLowerCase().trim()).filter(Boolean));
+    // Customers who ordered in the filtered period — keyed by phone number
+    // (see customerKey) so the same person isn't double-counted as "new"
+    // twice just because their name was typed differently on two orders.
+    const periodCustomers = new Set(filteredOrders.map(customerKey).filter(Boolean));
 
     // A customer is "repeat" if they have more than one order up through the
     // end of the selected range — not just orders strictly before rangeFrom.
@@ -233,8 +248,8 @@ export default function Reports() {
     });
     const orderCountsUpToRangeEnd = {};
     ordersUpToRangeEnd.forEach(o => {
-      const name = (o.customer_name || '').toLowerCase().trim();
-      if (name) orderCountsUpToRangeEnd[name] = (orderCountsUpToRangeEnd[name] || 0) + 1;
+      const key = customerKey(o);
+      if (key) orderCountsUpToRangeEnd[key] = (orderCountsUpToRangeEnd[key] || 0) + 1;
     });
 
     const repeatCustomers = [...periodCustomers].filter(c => (orderCountsUpToRangeEnd[c] || 0) > 1);
@@ -243,8 +258,8 @@ export default function Reports() {
     // Repeat order frequency within just the filtered period itself
     const orderCounts = {};
     filteredOrders.forEach(o => {
-      const name = (o.customer_name || '').toLowerCase().trim();
-      if (name) orderCounts[name] = (orderCounts[name] || 0) + 1;
+      const key = customerKey(o);
+      if (key) orderCounts[key] = (orderCounts[key] || 0) + 1;
     });
     const multiOrderCustomers = Object.values(orderCounts).filter(c => c > 1).length;
 
