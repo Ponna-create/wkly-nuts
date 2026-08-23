@@ -315,6 +315,7 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
       customer_name: currentOrder.customer_name || '',
       order_source: currentOrder.order_source || '',
       shipping_address: currentOrder.shipping_address || '',
+      courier_number: currentOrder.courier_number || '',
       shipping_charge: currentOrder.shipping_charge || 0,
       items: (currentOrder.items || []).map(i => ({ ...i })),
     });
@@ -375,6 +376,7 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
       customer_name: editForm.customer_name,
       order_source: editForm.order_source,
       shipping_address: editForm.shipping_address,
+      courier_number: editForm.courier_number || null,
       items: editForm.items,
       shipping_charge: shippingCharge,
       subtotal,
@@ -610,6 +612,24 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
             <div>
               <p className="text-xs font-semibold text-gray-500 uppercase">Shipping Address</p>
               <p className="text-sm text-gray-700 mt-1">{currentOrder.shipping_address}</p>
+            </div>
+          )}
+
+          {editingOrder ? (
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase">Courier Number (only if different from the phone above)</p>
+              <input
+                type="text"
+                value={editForm.courier_number}
+                onChange={(e) => setEditForm(prev => ({ ...prev, courier_number: e.target.value }))}
+                placeholder="Leave blank to print the phone number above"
+                className="w-full mt-1 px-2 py-1 border border-gray-300 rounded text-sm"
+              />
+            </div>
+          ) : currentOrder.courier_number && (
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase">Courier Number</p>
+              <p className="text-sm text-gray-700 mt-1">📦 {currentOrder.courier_number} <span className="text-xs text-gray-400">(prints on label instead of {currentOrder.phone || 'the phone number'})</span></p>
             </div>
           )}
 

@@ -9,7 +9,7 @@ import LabelPrinter from '../components/sales/LabelPrinter';
 import { buildInvoiceDataFromOrder, isPromotionalOrder } from '../utils/invoiceFromOrder';
 import TrackingScanner from '../components/sales/TrackingScanner';
 
-const EMPTY_FIELDS = { name: '', phone: '', address: '', city: '', state: '', pincode: '', oldStylePostalCode: '' };
+const EMPTY_FIELDS = { name: '', phone: '', courierNumber: '', address: '', city: '', state: '', pincode: '', oldStylePostalCode: '' };
 
 export default function QuickOrder() {
   const { state, dispatch, showToast } = useApp();
@@ -91,8 +91,22 @@ export default function QuickOrder() {
   const handlePasteChange = (val) => {
     setPasteText(val);
     const parsed = parseOrderPaste(val);
-    setFields(prev => ({ ...prev, ...parsed }));
-    if (parsed.phone) runPhoneLookup(parsed.phone);
+    const existingPhone = fields.phone?.trim();
+    const phoneDiffers = existingPhone && parsed.phone && parsed.phone !== existingPhone;
+
+    setFields(prev => ({
+      ...prev,
+      ...parsed,
+      // The Number box is the WhatsApp/identity number — if she's already
+      // typed one, a pasted address never overwrites it. A different number
+      // found in the pasted address goes into Courier Number instead (the
+      // customer gave a different contact for delivery), not the main field.
+      phone: prev.phone || parsed.phone,
+      courierNumber: phoneDiffers ? parsed.phone : prev.courierNumber,
+    }));
+
+    const lookupPhone = existingPhone || parsed.phone;
+    if (lookupPhone) runPhoneLookup(lookupPhone);
   };
 
   const phoneLookupTimer = useRef(null);
@@ -238,6 +252,7 @@ export default function QuickOrder() {
       balanceDue: isCod ? totalAmount : 0,
       status: 'confirmed',
       shippingAddress: fields.address,
+      courierNumber: fields.courierNumber || null,
     });
 
     setSaving(false);
@@ -512,6 +527,17 @@ export default function QuickOrder() {
                   <p className="text-xs font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-md px-2 py-1 mt-1.5 inline-block">
                     🔁 Repeat customer — {ordinal(repeatStats.orderNumber)} order · ₹{repeatStats.totalSpent.toFixed(0)} lifetime
                   </p>
+                )}
+              </div>
+              <div className="col-span-2">
+                <input
+                  value={fields.courierNumber}
+                  onChange={(e) => handleFieldChange('courierNumber', e.target.value)}
+                  placeholder="Courier number (only if different from above)"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                />
+                {fields.courierNumber && (
+                  <p className="text-xs text-amber-700 mt-0.5">📦 This number prints on the label instead of the mobile number above</p>
                 )}
               </div>
               <textarea

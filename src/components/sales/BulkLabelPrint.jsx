@@ -178,7 +178,7 @@ export default function BulkLabelPrint({ orders, onClose, onPrinted, showToast }
               <div style={{ marginTop: `${4*s}px` }}>
                 <div style={{ fontSize: `${10*s}px`, fontWeight: '500', lineHeight: '1.4' }}>{order.customer_name}</div>
                 {address && <div style={{ fontSize: `${9*s}px`, color: '#333', lineHeight: '1.4', marginTop: '2px' }}>{address}</div>}
-                {order.phone && <div style={{ fontSize: `${9*s}px`, color: '#333', marginTop: '2px' }}>Ph: {order.phone}</div>}
+                {(order.courier_number || order.phone) && <div style={{ fontSize: `${9*s}px`, color: '#333', marginTop: '2px' }}>Ph: {order.courier_number || order.phone}</div>}
               </div>
             </div>
             <div style={{ flex: 1, padding: `${8*s}px ${10*s}px` }}>
