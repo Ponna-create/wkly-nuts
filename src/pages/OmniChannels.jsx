@@ -54,12 +54,14 @@ export default function OmniChannels() {
 
   const channels = useMemo(() => {
     const skus = state.skus || [];
+    const ingredients = state.ingredients || [];
+    const aliases = state.ingredientAliases || [];
     const orders = (state.salesOrders || []).filter(o => (o.order_date || '').slice(0, 7) === monthKey);
 
     return channelKeys.map(key => {
       const channelOrders = orders.filter(o => (o.order_source || 'other') === key);
       const revenue = channelOrders.reduce((s, o) => s + (parseFloat(o.total_amount) || 0), 0);
-      const cogs = channelOrders.reduce((s, o) => s + orderCost(o, skus), 0);
+      const cogs = channelOrders.reduce((s, o) => s + orderCost(o, skus, ingredients, aliases), 0);
 
       const channelExpenses = expenses.filter(e => e.channel === key);
       const recurringMonthly = channelExpenses

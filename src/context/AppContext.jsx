@@ -56,6 +56,7 @@ const initialState = {
   invoices: [],
   inventory: [],
   ingredients: [],
+  ingredientAliases: [],
   salesOrders: [],
   expenses: [],
   purchaseOrders: [],
@@ -249,6 +250,8 @@ function appReducer(state, action) {
     // Ingredient Actions
     case 'LOAD_INGREDIENTS':
       return { ...state, ingredients: action.payload };
+    case 'LOAD_INGREDIENT_ALIASES':
+      return { ...state, ingredientAliases: action.payload };
     case 'UPDATE_INGREDIENT':
       return {
         ...state,
@@ -471,7 +474,7 @@ export function AppProvider({ children }) {
           // from localStorage elsewhere (label/invoice PDFs), so it has to
           // land there before load finishes, otherwise a second device
           // never sees changes made on the first one.
-          const [, vendorsRes, skusRes, pricingRes, targetsRes, customersRes, invoicesRes, inventoryRes, ingredientsRes, salesOrdersRes, expensesRes, purchaseOrdersRes, documentsRes, productionRunsRes] = await Promise.all([
+          const [, vendorsRes, skusRes, pricingRes, targetsRes, customersRes, invoicesRes, inventoryRes, ingredientsRes, ingredientAliasesRes, salesOrdersRes, expensesRes, purchaseOrdersRes, documentsRes, productionRunsRes] = await Promise.all([
             syncBusinessInfoFromCloud(),
             dbService.getVendors(),
             dbService.getSKUs(),
@@ -481,6 +484,7 @@ export function AppProvider({ children }) {
             dbService.getInvoices(),
             dbService.getInventory(),
             dbService.getIngredients(),
+            dbService.getIngredientAliases(),
             dbService.getSalesOrders(),
             dbService.getExpenses(),
             dbService.getPurchaseOrders(),
@@ -511,6 +515,7 @@ export function AppProvider({ children }) {
               invoices: invoicesRes.data || [],
               inventory: inventoryRes.data || [],
               ingredients: ingredientsRes.data || [],
+              ingredientAliases: ingredientAliasesRes.data || [],
               salesOrders: salesOrdersRes.data || [],
               expenses: expensesRes.data || [],
               purchaseOrders: purchaseOrdersRes.data || [],
