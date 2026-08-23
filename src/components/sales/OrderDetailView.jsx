@@ -27,6 +27,10 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
   const [savingOrder, setSavingOrder] = useState(false);
   const [addItemMode, setAddItemMode] = useState(false);
   const [newItemName, setNewItemName] = useState('');
+  const [showCreditNoteModal, setShowCreditNoteModal] = useState(false);
+  const [cnForm, setCnForm] = useState(null);
+  const [savingCreditNote, setSavingCreditNote] = useState(false);
+  const [creditNotes, setCreditNotes] = useState([]);
 
   // Sync with parent order prop when it changes (e.g., after BulkTrackingEntry updates)
   useEffect(() => {
@@ -34,6 +38,12 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
     setTrackingInput(order.tracking_number || '');
     setCourierInput(order.courier_name || 'ST Courier');
   }, [order, order.tracking_number, order.courier_name, order.status, order.invoice_id]);
+
+  // Any credit note(s) already issued for this order — shown so it's obvious
+  // at a glance whether a returned/refused order has already been reversed.
+  useEffect(() => {
+    dbService.getCreditNotesForOrder(currentOrder.id).then(({ data }) => setCreditNotes(data || []));
+  }, [currentOrder.id]);
 
   // Find linked invoice - check by ID with both formats
   const linkedInvoice = currentOrder.invoice_id
@@ -92,6 +102,13 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
         if (restock.restocked > 0) {
           showToast(`${restock.restocked} item(s) returned to stock`, 'success');
         }
+        // Never edit or delete the original invoice — a Credit Note against
+        // it is the GST-correct way to reverse the taxable value. Only
+        // prompt when there's actually an invoice to reverse, and skip if
+        // one's already been issued for this order.
+        if (currentOrder.invoice_id && creditNotes.length === 0) {
+          openCreditNoteModal();
+        }
       }
       // Deduct finished goods from inventory once fulfilled (scanned/boxed for courier)
       if (newStatus === 'fulfilled') {
@@ -108,6 +125,92 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
       onUpdate();
     }
     setLoading(false);
+  };
+
+  const handlePaymentMethodChange = async (method) => {
+    const updateData = { id: currentOrder.id, paymentMethod: method };
+    // Switching to COD means the cash hasn't actually been collected yet —
+    // don't leave it showing as "received" from whatever it was before.
+    if (method === 'cod' && currentOrder.payment_status === 'received' && !currentOrder.amount_paid) {
+      updateData.paymentStatus = 'pending';
+    }
+    const { error } = await dbService.updateSalesOrder(updateData);
+    if (error) {
+      showToast('Error updating payment method', 'error');
+      return;
+    }
+    setCurrentOrder(prev => ({ ...prev, payment_method: method, ...(updateData.paymentStatus ? { payment_status: updateData.paymentStatus } : {}) }));
+    onUpdate();
+  };
+
+  // Cash actually collected at the door — records it as paid in full now,
+  // separate from order creation time when a COD order genuinely hasn't
+  // been paid yet.
+  const handleMarkCodCollected = async () => {
+    setLoading(true);
+    const total = currentOrder.total_amount || 0;
+    const { error } = await dbService.updateSalesOrder({
+      id: currentOrder.id,
+      paymentStatus: 'received',
+      amountPaid: total,
+      balanceDue: 0,
+    });
+    setLoading(false);
+    if (error) {
+      showToast('Error updating payment', 'error');
+      return;
+    }
+    setCurrentOrder(prev => ({ ...prev, payment_status: 'received', amount_paid: total, balance_due: 0 }));
+    showToast('Marked as collected', 'success');
+    onUpdate();
+  };
+
+  // Pre-fills a full reversal of the linked invoice — she can edit any
+  // amount before confirming (e.g. a partial return). Default CGST/SGST
+  // split assumes Tamil Nadu (the overwhelming majority of orders); flip to
+  // IGST manually for an interstate customer.
+  const openCreditNoteModal = () => {
+    const taxableValue = linkedInvoice?.subtotal || currentOrder.subtotal || 0;
+    const gstAmount = linkedInvoice?.gstAmount || currentOrder.gst_amount || 0;
+    const totalAmount = linkedInvoice?.totalAmount || currentOrder.total_amount || 0;
+    setCnForm({
+      taxableValue: taxableValue.toFixed(2),
+      cgstAmount: (gstAmount / 2).toFixed(2),
+      sgstAmount: (gstAmount / 2).toFixed(2),
+      igstAmount: '0.00',
+      totalAmount: totalAmount.toFixed(2),
+      reason: 'RTO / Customer Refused',
+      notes: '',
+      date: new Date().toISOString().split('T')[0],
+    });
+    setShowCreditNoteModal(true);
+  };
+
+  const handleSaveCreditNote = async () => {
+    setSavingCreditNote(true);
+    const { data, error } = await dbService.createCreditNote({
+      invoiceId: currentOrder.invoice_id,
+      invoiceNumber: linkedInvoice?.invoiceNumber || linkedInvoice?.invoice_number || '',
+      orderId: currentOrder.id,
+      orderNumber: currentOrder.order_number,
+      customerName: currentOrder.customer_name,
+      reason: cnForm.reason,
+      taxableValue: parseFloat(cnForm.taxableValue) || 0,
+      cgstAmount: parseFloat(cnForm.cgstAmount) || 0,
+      sgstAmount: parseFloat(cnForm.sgstAmount) || 0,
+      igstAmount: parseFloat(cnForm.igstAmount) || 0,
+      totalAmount: parseFloat(cnForm.totalAmount) || 0,
+      creditNoteDate: cnForm.date,
+      notes: cnForm.notes,
+    });
+    setSavingCreditNote(false);
+    if (error || !data) {
+      showToast('Error creating credit note', 'error');
+      return;
+    }
+    setCreditNotes(prev => [data, ...prev]);
+    showToast(`Credit note ${data.credit_note_number} issued`, 'success');
+    setShowCreditNoteModal(false);
   };
 
   // Creates the invoice for this order if it doesn't have one yet, links it, and
@@ -693,6 +796,29 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
                   Status: {linkedInvoice.status || 'N/A'} | ₹{linkedInvoice.totalAmount?.toFixed(2) || linkedInvoice.total_amount?.toFixed(2) || '0.00'}
                 </p>
               </div>
+              {creditNotes.length === 0 && (
+                <button
+                  onClick={openCreditNoteModal}
+                  className="text-xs font-medium text-blue-700 hover:text-blue-900 border border-blue-300 rounded-lg px-2.5 py-1.5 whitespace-nowrap"
+                  title="Order refused/returned but this invoice shouldn't be edited or deleted — issue a Credit Note against it instead"
+                >
+                  Issue Credit Note
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Credit Notes already issued — the original invoice above is
+              untouched; this is the GST-correct reversal record instead. */}
+          {creditNotes.length > 0 && (
+            <div className="space-y-1.5 p-3 bg-rose-50 border border-rose-200 rounded-lg">
+              <p className="text-xs font-semibold text-rose-700 uppercase">Credit Note{creditNotes.length > 1 ? 's' : ''} Issued</p>
+              {creditNotes.map(cn => (
+                <div key={cn.id} className="flex items-center justify-between text-sm">
+                  <span className="text-rose-900">{cn.credit_note_number} <span className="text-rose-500">· {formatDate(cn.credit_note_date)}</span></span>
+                  <span className="font-medium text-rose-900">-₹{parseFloat(cn.total_amount).toFixed(2)}</span>
+                </div>
+              ))}
             </div>
           )}
 
@@ -702,7 +828,16 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
             <div className="grid grid-cols-3 gap-4">
               <div>
                 <p className="text-xs font-semibold text-gray-500 uppercase">Method</p>
-                <p className="text-gray-900 capitalize">{currentOrder.payment_method || 'N/A'}</p>
+                <select
+                  value={currentOrder.payment_method || 'upi'}
+                  onChange={(e) => handlePaymentMethodChange(e.target.value)}
+                  className="text-gray-900 capitalize -ml-1 px-1 py-0.5 border border-transparent hover:border-gray-300 rounded bg-transparent text-sm"
+                >
+                  <option value="upi">UPI</option>
+                  <option value="cod">COD</option>
+                  <option value="cash">Cash</option>
+                  <option value="bank_transfer">Bank Transfer</option>
+                </select>
               </div>
               <div>
                 <p className="text-xs font-semibold text-gray-500 uppercase">Status</p>
@@ -717,6 +852,15 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
                 <p className="text-gray-900">₹{currentOrder.amount_paid?.toFixed(2) || '0.00'}</p>
               </div>
             </div>
+            {currentOrder.payment_method === 'cod' && currentOrder.payment_status !== 'received' && (
+              <button
+                onClick={handleMarkCodCollected}
+                disabled={loading}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700 disabled:opacity-50"
+              >
+                <CheckCircle className="w-3.5 h-3.5" /> Mark COD Collected — ₹{currentOrder.total_amount?.toFixed(2) || '0.00'}
+              </button>
+            )}
             {currentOrder.transaction_id && (
               <div>
                 <p className="text-xs font-semibold text-gray-500 uppercase">Transaction ID</p>
@@ -954,6 +1098,108 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
               <p className="text-xs text-gray-500 mt-3">
                 View full invoice details and PDF on the <strong>Invoices</strong> page.
               </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCreditNoteModal && cnForm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
+              <h2 className="text-lg font-bold text-gray-900">Issue Credit Note</h2>
+              <button onClick={() => setShowCreditNoteModal(false)} className="text-gray-500 hover:text-gray-700"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-4 space-y-3">
+              <p className="text-sm text-gray-600">
+                Reverses invoice <strong>{linkedInvoice?.invoiceNumber || linkedInvoice?.invoice_number}</strong> without editing or deleting it — the original stays exactly as filed. Adjust the amounts below if this is a partial return.
+              </p>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Reason</label>
+                <input
+                  value={cnForm.reason}
+                  onChange={(e) => setCnForm(f => ({ ...f, reason: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Date</label>
+                  <input
+                    type="date"
+                    value={cnForm.date}
+                    onChange={(e) => setCnForm(f => ({ ...f, date: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Taxable Value</label>
+                  <input
+                    type="number"
+                    value={cnForm.taxableValue}
+                    onChange={(e) => setCnForm(f => ({ ...f, taxableValue: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">CGST</label>
+                  <input
+                    type="number"
+                    value={cnForm.cgstAmount}
+                    onChange={(e) => setCnForm(f => ({ ...f, cgstAmount: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">SGST</label>
+                  <input
+                    type="number"
+                    value={cnForm.sgstAmount}
+                    onChange={(e) => setCnForm(f => ({ ...f, sgstAmount: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">IGST</label>
+                  <input
+                    type="number"
+                    value={cnForm.igstAmount}
+                    onChange={(e) => setCnForm(f => ({ ...f, igstAmount: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Total Amount</label>
+                <input
+                  type="number"
+                  value={cnForm.totalAmount}
+                  onChange={(e) => setCnForm(f => ({ ...f, totalAmount: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-semibold"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Notes (optional)</label>
+                <textarea
+                  value={cnForm.notes}
+                  onChange={(e) => setCnForm(f => ({ ...f, notes: e.target.value }))}
+                  rows={2}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                />
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={handleSaveCreditNote}
+                  disabled={savingCreditNote}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-rose-600 text-white rounded-lg font-medium text-sm hover:bg-rose-700 disabled:opacity-50"
+                >
+                  {savingCreditNote ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                  {savingCreditNote ? 'Issuing...' : 'Issue Credit Note'}
+                </button>
+                <button onClick={() => setShowCreditNoteModal(false)} className="px-4 py-2.5 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50">Skip for now</button>
+              </div>
             </div>
           </div>
         </div>

@@ -33,6 +33,7 @@ export default function QuickOrder() {
   const [customItemName, setCustomItemName] = useState('');
   const [customItemPrice, setCustomItemPrice] = useState('');
   const [customItemWeight, setCustomItemWeight] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState('upi'); // upi (prepaid, default) | cod
 
   // The SKU's own Selling Price (set in SKU Management) is the master price
   // for orders — Weekly and Monthly are separate fields there. Pricing
@@ -178,6 +179,7 @@ export default function QuickOrder() {
     setSelectedCustomer(null);
     setItems([]);
     setShippingCharge(0);
+    setPaymentMethod('upi');
   };
 
   const phoneDigits = fields.phone.replace(/\D/g, '');
@@ -216,6 +218,9 @@ export default function QuickOrder() {
       dispatch({ type: 'REPLACE_CUSTOMER', payload: { tempId: data.id, customer: data } });
     }
 
+    // COD: the cash isn't collected until delivery, so it starts unpaid —
+    // unlike UPI/prepaid, which is treated as paid in full at order time.
+    const isCod = paymentMethod === 'cod';
     const { data: order, error } = await dbService.createSalesOrder({
       customerId: customer.id,
       customerName: fields.name,
@@ -227,9 +232,10 @@ export default function QuickOrder() {
       gstAmount,
       shippingCharge: parseFloat(shippingCharge) || 0,
       totalAmount,
-      paymentMethod: 'upi',
-      paymentStatus: 'received',
-      amountPaid: totalAmount,
+      paymentMethod,
+      paymentStatus: isCod ? 'pending' : 'received',
+      amountPaid: isCod ? 0 : totalAmount,
+      balanceDue: isCod ? totalAmount : 0,
       status: 'confirmed',
       shippingAddress: fields.address,
     });
@@ -388,6 +394,30 @@ export default function QuickOrder() {
                   max={new Date().toISOString().split('T')[0]}
                   className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
                 />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1.5">Payment</label>
+                <div className="flex gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod('upi')}
+                    className={`px-2.5 py-2 rounded-lg text-xs font-medium border ${
+                      paymentMethod === 'upi' ? 'border-teal-500 bg-teal-50 text-teal-700' : 'border-gray-300 bg-white text-gray-600'
+                    }`}
+                  >
+                    ✅ Prepaid
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod('cod')}
+                    title="Cash collected at delivery — starts as unpaid"
+                    className={`px-2.5 py-2 rounded-lg text-xs font-medium border ${
+                      paymentMethod === 'cod' ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-gray-300 bg-white text-gray-600'
+                    }`}
+                  >
+                    💵 COD
+                  </button>
+                </div>
               </div>
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase mb-1.5">Source</label>
@@ -663,6 +693,11 @@ export default function QuickOrder() {
                   <span className="text-gray-500">Total (GST incl. in price) + Shipping</span>
                   <span className="font-bold text-teal-700">₹{totalAmount.toFixed(2)}</span>
                 </div>
+                {paymentMethod === 'cod' && (
+                  <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5 mt-1 text-center font-medium">
+                    💵 Collect ₹{totalAmount.toFixed(2)} cash at delivery
+                  </div>
+                )}
               </div>
             )}
           </div>

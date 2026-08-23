@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Search, Eye, Trash2, Zap, Camera, FileSpreadsheet, MessageCircle, Truck, Printer, LayoutGrid, ClipboardList, CheckCircle2 } from 'lucide-react';
+import DeleteOrderPanel from '../components/sales/DeleteOrderPanel';
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
 import { formatDate } from '../utils/dateFormat';
@@ -34,6 +35,7 @@ export default function SalesOrders() {
   const [showBulkLabelPrint, setShowBulkLabelPrint] = useState(false);
   const [showA4LabelSheet, setShowA4LabelSheet] = useState(false);
   const [showCourierDashboard, setShowCourierDashboard] = useState(false);
+  const [showDeletePanel, setShowDeletePanel] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [filterStatus, setFilterStatus] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
@@ -128,17 +130,6 @@ export default function SalesOrders() {
     const phone = order.phone?.replace(/[^0-9]/g, '') || '';
     const formattedPhone = phone.startsWith('91') ? phone : `91${phone}`;
     window.open(`https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`, '_blank');
-  };
-
-  const handleDeleteOrder = async (orderId) => {
-    if (!window.confirm('Are you sure you want to delete this order?')) return;
-    const { error } = await dbService.deleteSalesOrder(orderId);
-    if (error) {
-      showToast('Error deleting order', 'error');
-    } else {
-      showToast('Order deleted successfully', 'success');
-      loadOrders();
-    }
   };
 
   const handleScanComplete = (scannedOrders) => {
@@ -240,6 +231,14 @@ export default function SalesOrders() {
           >
             <Truck className="w-4 h-4" />
             Delivery
+          </button>
+          <button
+            onClick={() => setShowDeletePanel(true)}
+            className="flex items-center gap-2 px-3 py-2 bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 transition text-sm font-medium"
+            title="Search for an order and delete it safely"
+          >
+            <Trash2 className="w-4 h-4" />
+            Delete Order
           </button>
         </div>
       </div>
@@ -390,13 +389,6 @@ export default function SalesOrders() {
                           >
                             <Eye className="w-4 h-4" />
                           </button>
-                          <button
-                            onClick={() => handleDeleteOrder(order.id)}
-                            className="p-1.5 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded transition"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
                         </div>
                       </td>
                     </tr>
@@ -511,6 +503,15 @@ export default function SalesOrders() {
           orders={orders}
           onClose={() => setShowA4LabelSheet(false)}
           onPrinted={() => loadOrders()}
+          showToast={showToast}
+        />
+      )}
+
+      {showDeletePanel && (
+        <DeleteOrderPanel
+          orders={orders}
+          onClose={() => setShowDeletePanel(false)}
+          onDeleted={() => loadOrders()}
           showToast={showToast}
         />
       )}
