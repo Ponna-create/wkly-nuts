@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertCircle, Package, Truck, Users, ChevronRight, PieChart, TrendingUp, TrendingDown, Cloud, CloudOff } from 'lucide-react';
+import { AlertCircle, Package, Truck, Users, ChevronRight, PieChart, TrendingUp, TrendingDown, Cloud, CloudOff, RefreshCw } from 'lucide-react';
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { useApp } from '../context/AppContext';
 import { formatDate } from '../utils/dateFormat';
@@ -31,8 +31,24 @@ const monthLabel = (monthKey) => {
   return new Date(y, m - 1, 1).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
 };
 
+// Numbers here are only as fresh as the last time this browser tab pulled
+// from the database — if she added orders on her phone after this tab was
+// opened, the Dashboard won't know until it's told to check again. This
+// formats "how stale" in plain language so that's visible instead of silent.
+const relativeTime = (date) => {
+  if (!date) return null;
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (seconds < 45) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hr${hours === 1 ? '' : 's'} ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days === 1 ? '' : 's'} ago`;
+};
+
 export default function Dashboard() {
-  const { state, useDatabase, connectionError, isLoading } = useApp();
+  const { state, useDatabase, connectionError, isLoading, lastSyncedAt, refreshData } = useApp();
   const orders = state.salesOrders || [];
   const skus = state.skus || [];
   const inventory = state.inventory || [];
@@ -40,6 +56,21 @@ export default function Dashboard() {
   const purchaseOrders = state.purchaseOrders || [];
   const isCloudSynced = !!useDatabase;
   const isCheckingConnection = !!isLoading;
+
+  // Re-render every 30s purely so the "X min ago" text stays current without
+  // needing an actual data refresh.
+  const [, setTick] = useState(0);
+  React.useEffect(() => {
+    const id = setInterval(() => setTick(t => t + 1), 30000);
+    return () => clearInterval(id);
+  }, []);
+
+  const [manualRefreshing, setManualRefreshing] = useState(false);
+  const handleRefresh = async () => {
+    setManualRefreshing(true);
+    await refreshData();
+    setManualRefreshing(false);
+  };
 
   // Every calendar month from the earliest order through the current month —
   // not just months that happen to have orders. A month with zero sales is
@@ -212,6 +243,21 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
+      <div className="flex items-center justify-end gap-2 text-xs text-gray-400">
+        <span>
+          {lastSyncedAt ? `Refreshed ${relativeTime(lastSyncedAt)}` : isCloudSynced ? 'Refreshed just now' : 'Not synced to cloud yet'}
+        </span>
+        <button
+          onClick={handleRefresh}
+          disabled={manualRefreshing || isCheckingConnection}
+          className="flex items-center gap-1 px-2 py-1 rounded-md border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-700 disabled:opacity-50 font-medium"
+          title="Pull the latest orders/customers/etc from the database — useful if orders were added on another device or tab"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${manualRefreshing ? 'animate-spin' : ''}`} />
+          Refresh
+        </button>
+      </div>
+
       {isCheckingConnection ? (
         <div className="flex items-center gap-2 border rounded-xl px-4 py-2.5 text-sm bg-gray-50 border-gray-200 text-gray-500">
           <Cloud className="w-4 h-4 flex-shrink-0 animate-pulse" />
