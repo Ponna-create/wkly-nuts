@@ -11,6 +11,7 @@ import {
   Recycle, TrendingDown, ClipboardList
 } from 'lucide-react';
 import { escapeHtml } from '../utils/sanitize';
+import { getIngredientRatePerKg } from '../utils/skuCost';
 
 // Fallback SKU codes if no SKUs exist in database yet
 const FALLBACK_SKU_CODES = [
@@ -775,17 +776,9 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
     ...f, labourSessions: f.labourSessions.map((s, i) => i === idx ? { ...s, end: nowHM() } : s),
   }));
 
-  // Weighted-average ₹/kg across active batches (locked costing decision) — falls
-  // back to 0 if the ingredient isn't found so cost never silently guesses.
-  const getIngredientRatePerKg = (name) => {
-    const ing = availableIngredients.find(ai => ai.name === name);
-    if (!ing) return 0;
-    const batches = ing.ingredient_batches || [];
-    const totalQty = batches.reduce((s, b) => s + (parseFloat(b.quantity_remaining) || 0), 0);
-    if (totalQty <= 0) return 0;
-    const totalValue = batches.reduce((s, b) => s + ((parseFloat(b.quantity_remaining) || 0) * (parseFloat(b.price_per_unit) || 0)), 0);
-    return totalValue / totalQty;
-  };
+  // Weighted-average ₹/kg across active batches (locked costing decision, now shared
+  // with SKU Management's live cost display and order-level COGS via utils/skuCost.js
+  // — one calculation, no drift between pages).
   const getPackagingRate = (name) => availablePackaging.find(ap => ap.name === name)?.cost_per_unit || 0;
 
   // Real ingredient/packaging cost for this run — was previously two dead manual
@@ -793,7 +786,7 @@ function ProductionRunForm({ run, skus, onClose, onSave }) {
   const computedIngredientCost = form.ingredientsUsed.reduce((sum, ing) => {
     if (!ing.ingredient_name) return sum;
     const grams = parseFloat(ing.quantity_grams) || 0;
-    return sum + (grams / 1000) * getIngredientRatePerKg(ing.ingredient_name);
+    return sum + (grams / 1000) * getIngredientRatePerKg(ing.ingredient_name, availableIngredients);
   }, 0);
   const computedPackagingCost = form.packagingUsed.reduce((sum, pkg) => {
     if (!pkg.material_name) return sum;
