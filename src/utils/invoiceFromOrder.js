@@ -1,10 +1,10 @@
 // Promo/collab/influencer sends (order_source e.g. "Promotion", "promo",
 // free-text "Collab Package") aren't a real taxable sale — nothing was paid,
-// so no GST invoice should be auto-generated for them. Matches "promo"
-// anywhere in the source so both "Promotion" and "promo" catch it.
+// so no GST invoice should be auto-generated for them. Matches "promo" or
+// "collab" anywhere in the source.
 export function isPromotionalOrder(order) {
   const src = (order?.order_source || order?.orderSource || '').toLowerCase();
-  return src.includes('promo');
+  return src.includes('promo') || src.includes('collab');
 }
 
 // Maps a sales order onto the shape dbService.createInvoice() expects.
