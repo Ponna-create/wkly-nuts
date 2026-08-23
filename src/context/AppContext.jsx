@@ -317,6 +317,7 @@ export function AppProvider({ children }) {
   const [isLoading, setIsLoading] = useState(true);
   const [useDatabase, setUseDatabase] = useState(false);
   const [connectionError, setConnectionError] = useState(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState(null);
 
   // Wrapper dispatch that syncs with database
   const dispatch = useCallback((action) => {
@@ -441,9 +442,12 @@ export function AppProvider({ children }) {
     }
   }, [useDatabase, isLoading]);
 
-  // Smart database switching - check mode and availability
-  useEffect(() => {
-    const loadData = async () => {
+  // Smart database switching - check mode and availability. Pulled out of the
+  // useEffect below (which still just calls it once on mount) so the same
+  // function can also be triggered manually — e.g. a "Refresh" button on the
+  // Dashboard, whose numbers otherwise only reflect whatever was loaded when
+  // the tab was first opened, not orders added since on another device/tab.
+  const loadData = useCallback(async () => {
       setIsLoading(true);
       setConnectionError(null);
 
@@ -529,6 +533,7 @@ export function AppProvider({ children }) {
             ingredients: ingredientsRes.data || [],
           });
 
+          setLastSyncedAt(new Date());
         } catch (error) {
           console.error('Error loading from database:', error);
 
@@ -560,10 +565,11 @@ export function AppProvider({ children }) {
       }
 
       setIsLoading(false);
-    };
-
-    loadData();
   }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   // Save data to localStorage when state changes
   useEffect(() => {
@@ -603,6 +609,8 @@ export function AppProvider({ children }) {
     isLoading,
     useDatabase,
     connectionError,
+    lastSyncedAt,
+    refreshData: loadData,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
