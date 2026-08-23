@@ -1,3 +1,12 @@
+// Promo/collab/influencer sends (order_source e.g. "Promotion", "promo",
+// free-text "Collab Package") aren't a real taxable sale — nothing was paid,
+// so no GST invoice should be auto-generated for them. Matches "promo"
+// anywhere in the source so both "Promotion" and "promo" catch it.
+export function isPromotionalOrder(order) {
+  const src = (order?.order_source || order?.orderSource || '').toLowerCase();
+  return src.includes('promo');
+}
+
 // Maps a sales order onto the shape dbService.createInvoice() expects.
 // `skus` (optional) is state.skus — used to attach each item's HSN code for the GST invoice.
 export function buildInvoiceDataFromOrder(order, notePrefix, skus) {

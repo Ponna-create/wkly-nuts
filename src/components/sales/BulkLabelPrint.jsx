@@ -4,7 +4,7 @@ import { X, Printer, CheckSquare, Square } from 'lucide-react';
 import { sanitizeHtml } from '../../utils/sanitize';
 import { dbService } from '../../services/supabase';
 import { useApp } from '../../context/AppContext';
-import { buildInvoiceDataFromOrder } from '../../utils/invoiceFromOrder';
+import { buildInvoiceDataFromOrder, isPromotionalOrder } from '../../utils/invoiceFromOrder';
 import { getBusinessInfo } from '../../utils/settings';
 import DateRangePicker from '../common/DateRangePicker';
 import { generateA4LabelSheet } from '../../utils/a4LabelSheet';
@@ -74,7 +74,7 @@ export default function BulkLabelPrint({ orders, onClose, onPrinted, showToast }
     // Auto-generate the invoice alongside the label for any order that
     // doesn't have one yet — created and stored for GST filing, but not
     // auto-downloaded/opened (see note after the print step below).
-    const needsInvoice = selectedOrders.filter(o => !o.invoice_id);
+    const needsInvoice = selectedOrders.filter(o => !o.invoice_id && !isPromotionalOrder(o));
     if (needsInvoice.length > 0) {
       const results = await Promise.all(needsInvoice.map(async (o) => {
         try {
