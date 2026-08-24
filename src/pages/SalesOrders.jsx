@@ -60,13 +60,10 @@ export default function SalesOrders() {
     // Safety-net cleanup for stored Amazon PDFs left past their 25-day window
     // — not a cron job, just runs opportunistically whenever this page loads.
     dbService.purgeExpiredAmazonDocuments().catch(() => {});
-    // ST Courier status check — oldest-checked 3-5 active shipments, same
-    // "runs whenever the app loads" pattern, not a cron job. Reload the list
-    // afterward so a newly-detected "Delivered" shows up without her having
-    // to manually refresh.
-    dbService.checkStCourierBatch().then(result => {
-      if (result?.checked > 0) loadOrders();
-    }).catch(() => {});
+    // ST Courier status check is now a manual, visible trigger (Delivery
+    // Tracking & Feedback tab) instead of a silent background call — no way
+    // to tell if a silent one worked, and it was silently failing (AWB
+    // length bug). See TrackingChecker.jsx.
   }, []);
 
   const loadOrders = async () => {

@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Truck, RefreshCw, CheckCircle, ExternalLink, MessageCircle } from 'lucide-react';
+import { Truck, RefreshCw, CheckCircle, ExternalLink, MessageCircle, Zap } from 'lucide-react';
 import { dbService } from '../../services/supabase';
 import { formatDate } from '../../utils/dateFormat';
+
+const todayISO = () => new Date().toISOString().split('T')[0];
 
 // ST Courier's tracking page can't be pre-filled from outside their site —
 // their form does an AJAX call first (which just returns raw JSON) and then
@@ -20,6 +22,25 @@ export default function TrackingChecker({ orders, onOrderUpdate, showToast }) {
   const [results, setResults] = useState([]);
   const [lastChecked, setLastChecked] = useState(null);
   const [autoMode, setAutoMode] = useState(false);
+
+  // Auto-check state: a manual, visible trigger — not silent, not automatic
+  // on page load. Runs once, disables itself for the rest of the day (the
+  // "already ran today" state persists server-side via app_settings, so it
+  // stays disabled even across devices/reloads, not just this browser tab).
+  const [autoRunning, setAutoRunning] = useState(false);
+  const [autoProgress, setAutoProgress] = useState(null); // { current, total, label }
+  const [autoResults, setAutoResults] = useState([]); // [{ order, result?, error? }]
+  const [autoLastRunDate, setAutoLastRunDate] = useState(null);
+  const [autoLastRunAt, setAutoLastRunAt] = useState(null);
+
+  useEffect(() => {
+    dbService.getAppSetting('st_courier_auto_check').then(({ data }) => {
+      if (data?.date) setAutoLastRunDate(data.date);
+      if (data?.at) setAutoLastRunAt(data.at);
+    });
+  }, []);
+
+  const autoAlreadyRanToday = autoLastRunDate === todayISO();
 
   // Orders that are dispatched/collected/transit with tracking numbers —
   // 'transit' is the actual pipeline status (OrderDetailView.jsx), not
@@ -54,6 +75,49 @@ export default function TrackingChecker({ orders, onOrderUpdate, showToast }) {
     setLastChecked(new Date());
     setChecking(false);
     showToast(`Loaded ${checkResults.length} orders to check`, 'success');
+  };
+
+  // Oldest-checked-first, capped at 5 — same "small daily batch, rotate
+  // through the list" pacing as originally planned, just manually triggered
+  // now instead of silently running on page load.
+  const autoCandidates = [...trackableOrders]
+    .sort((a, b) => new Date(a.st_courier_last_checked_at || 0) - new Date(b.st_courier_last_checked_at || 0))
+    .slice(0, 5);
+
+  const handleAutoCheck = async () => {
+    if (autoCandidates.length === 0) {
+      showToast('No active shipments with tracking numbers to check', 'error');
+      return;
+    }
+    setAutoRunning(true);
+    setAutoResults([]);
+    let deliveredCount = 0;
+
+    for (let i = 0; i < autoCandidates.length; i++) {
+      const order = autoCandidates[i];
+      setAutoProgress({ current: i + 1, total: autoCandidates.length, label: `${order.customer_name} (${order.tracking_number})` });
+      const outcome = await dbService.checkOneStCourierAwb(order);
+      if (outcome.delivered) deliveredCount++;
+      setAutoResults(prev => [...prev, { order, ...outcome }]);
+      if (i < autoCandidates.length - 1) {
+        await new Promise(r => setTimeout(r, 2500 + Math.random() * 2000));
+      }
+    }
+
+    setAutoProgress(null);
+    setAutoRunning(false);
+    const now = new Date();
+    const today = todayISO();
+    await dbService.setAppSetting('st_courier_auto_check', { date: today, at: now.toISOString() });
+    setAutoLastRunDate(today);
+    setAutoLastRunAt(now.toISOString());
+    showToast(
+      deliveredCount > 0
+        ? `Checked ${autoCandidates.length} — ${deliveredCount} newly marked Delivered`
+        : `Checked ${autoCandidates.length} order(s)`,
+      'success'
+    );
+    if (onOrderUpdate) onOrderUpdate();
   };
 
   const handleMarkDelivered = async (order) => {
@@ -131,6 +195,51 @@ export default function TrackingChecker({ orders, onOrderUpdate, showToast }) {
           </div>
           <p className="text-xl font-bold text-amber-900">{recentlyDelivered.length}</p>
         </div>
+      </div>
+
+      {/* ST Courier Auto-Check */}
+      <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <Zap className="w-4 h-4 text-indigo-600" />
+          <h3 className="font-semibold text-gray-900 text-sm">ST Courier Auto-Check</h3>
+          <span className="text-xs text-gray-400">— pulls real status from ST Courier's site, no manual lookup</span>
+        </div>
+
+        {autoRunning && autoProgress ? (
+          <div className="flex items-center gap-2 text-sm text-indigo-700">
+            <RefreshCw className="w-4 h-4 animate-spin" />
+            Checking {autoProgress.current} of {autoProgress.total}... {autoProgress.label}
+          </div>
+        ) : autoAlreadyRanToday ? (
+          <div className="flex items-center gap-2 text-sm text-green-700">
+            <CheckCircle className="w-4 h-4" />
+            Already checked today{autoLastRunAt ? ` at ${new Date(autoLastRunAt).toLocaleTimeString('en-IN')}` : ''} — next check available tomorrow
+          </div>
+        ) : (
+          <button
+            onClick={handleAutoCheck}
+            disabled={autoCandidates.length === 0}
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium text-sm disabled:opacity-50"
+          >
+            <Zap className="w-4 h-4" />
+            Check Today's Batch ({autoCandidates.length} order{autoCandidates.length !== 1 ? 's' : ''})
+          </button>
+        )}
+
+        {autoResults.length > 0 && (
+          <div className="space-y-1 pt-1">
+            {autoResults.map(({ order, result, error, delivered }) => (
+              <div key={order.id} className="flex items-center gap-2 text-xs bg-white border border-gray-100 rounded px-2.5 py-1.5">
+                <span>{error ? '⚠️' : delivered ? '✅' : result?.found ? '🚚' : '❓'}</span>
+                <span className="font-medium text-gray-800">{order.customer_name}</span>
+                <span className="text-gray-400">({order.order_number})</span>
+                <span className="ml-auto text-gray-600">
+                  {error ? <span className="text-red-600">{error}</span> : result?.found ? result.status : (result?.error || 'Not found')}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Check Button */}
