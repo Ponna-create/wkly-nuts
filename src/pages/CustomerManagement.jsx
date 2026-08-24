@@ -3,6 +3,7 @@ import { Plus, Edit, Trash2, Search, X, User, Mail, Phone, MapPin, Building2, Al
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
 import { formatDate } from '../utils/dateFormat';
+import CustomerDetailModal from '../components/CustomerDetailModal';
 
 export default function CustomerManagement() {
   const { state, dispatch, showToast } = useApp();
@@ -283,6 +284,44 @@ export default function CustomerManagement() {
     (customer.email && customer.email.toLowerCase().includes(searchTerm.toLowerCase())) ||
     (customer.phone && customer.phone.includes(searchTerm))
   );
+
+  // Order count + LTV per customer, keyed by customer_id (falling back to
+  // name for orders that predate a linked customer record) — same shape
+  // CustomerDetailModal expects, so clicking a name here opens the exact
+  // same purchase-history view as Customer Explorer.
+  const customerOrderStats = useMemo(() => {
+    const stats = new Map();
+    (salesOrders || []).forEach(o => {
+      const key = o.customer_id || o.customer_name;
+      if (!key) return;
+      const date = new Date(o.order_date);
+      if (!stats.has(key)) stats.set(key, { orderCount: 0, ltv: 0, firstOrderDate: date, lastOrderDate: date });
+      const s = stats.get(key);
+      s.orderCount++;
+      s.ltv += parseFloat(o.total_amount) || 0;
+      if (date < s.firstOrderDate) s.firstOrderDate = date;
+      if (date > s.lastOrderDate) s.lastOrderDate = date;
+    });
+    return stats;
+  }, [salesOrders]);
+
+  const [selectedCustomerProfile, setSelectedCustomerProfile] = useState(null);
+  const openCustomerDetail = (customer) => {
+    const key = customer.id || customer.name;
+    const s = customerOrderStats.get(key) || { orderCount: 0, ltv: 0, firstOrderDate: null, lastOrderDate: null };
+    const today = new Date();
+    setSelectedCustomerProfile({
+      key,
+      name: customer.name,
+      phone: customer.phone,
+      city: customer.city,
+      orderCount: s.orderCount,
+      ltv: s.ltv,
+      firstOrderDate: s.firstOrderDate,
+      lastOrderDate: s.lastOrderDate,
+      daysSinceLast: s.lastOrderDate ? Math.floor((today - s.lastOrderDate) / (1000 * 60 * 60 * 24)) : null,
+    });
+  };
 
   // Export customers to CSV
   const exportCustomers = () => {
@@ -860,6 +899,7 @@ export default function CustomerManagement() {
                       <th className="text-left py-3 px-4 font-semibold text-gray-700">Name</th>
                       <th className="text-left py-3 px-4 font-semibold text-gray-700">Contact</th>
                       <th className="text-left py-3 px-4 font-semibold text-gray-700">Address</th>
+                      <th className="text-right py-3 px-4 font-semibold text-gray-700">Orders / LTV</th>
                       <th className="text-left py-3 px-4 font-semibold text-gray-700">Type</th>
                       <th className="text-right py-3 px-4 font-semibold text-gray-700">Actions</th>
                     </tr>
@@ -871,7 +911,9 @@ export default function CustomerManagement() {
                           <div className="font-semibold text-gray-600">{customer.rowNumber || ''}</div>
                         </td>
                         <td className="py-4 px-4">
-                          <div className="font-medium text-gray-900">{customer.name}</div>
+                          <button onClick={() => openCustomerDetail(customer)} className="text-left group">
+                            <div className="font-medium text-gray-900 group-hover:text-teal-600 group-hover:underline">{customer.name}</div>
+                          </button>
                           {customer.gstin && (
                             <div className="text-xs text-gray-500 mt-1">GST: {customer.gstin}</div>
                           )}
@@ -893,6 +935,17 @@ export default function CustomerManagement() {
                               </div>
                             )}
                           </div>
+                        </td>
+                        <td className="py-4 px-4 text-right">
+                          {(() => {
+                            const s = customerOrderStats.get(customer.id) || customerOrderStats.get(customer.name);
+                            return s ? (
+                              <>
+                                <div className="text-sm font-medium text-gray-900">{s.orderCount} order{s.orderCount !== 1 ? 's' : ''}</div>
+                                <div className="text-xs text-gray-500">₹{s.ltv.toFixed(0)}</div>
+                              </>
+                            ) : <span className="text-xs text-gray-300">—</span>;
+                          })()}
                         </td>
                         <td className="py-4 px-4">
                           <span className={`px-2 py-1 rounded-full text-xs font-medium ${
@@ -929,6 +982,10 @@ export default function CustomerManagement() {
             </>
           )}
         </div>
+      )}
+
+      {selectedCustomerProfile && (
+        <CustomerDetailModal profile={selectedCustomerProfile} orders={salesOrders} onClose={() => setSelectedCustomerProfile(null)} />
       )}
     </div>
   );

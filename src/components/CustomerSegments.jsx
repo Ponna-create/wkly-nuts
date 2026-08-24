@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Copy, Check, MessageCircle, Users, IndianRupee, TrendingUp, MapPin } from 'lucide-react';
 import DateRangePicker from './common/DateRangePicker';
+import CustomerDetailModal from './CustomerDetailModal';
 import { formatDateShort } from '../utils/dateFormat';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -49,6 +50,7 @@ export default function CustomerSegments({ orders, skus, nudges, showToast }) {
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('ltv'); // 'ltv' | 'orderCount' | 'lastOrder'
   const [copiedId, setCopiedId] = useState(null);
+  const [selectedProfile, setSelectedProfile] = useState(null);
 
   const { profiles, cities, sources, skuNames } = useMemo(() => {
     const fulfilled = (orders || []).filter(o =>
@@ -273,8 +275,10 @@ export default function CustomerSegments({ orders, skus, nudges, showToast }) {
                 {filtered.map(p => (
                   <tr key={p.key} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="px-4 py-2.5">
-                      <div className="font-medium text-gray-900">{p.name}</div>
-                      <div className="text-xs text-gray-400">{p.phone}</div>
+                      <button onClick={() => setSelectedProfile(p)} className="text-left group">
+                        <div className="font-medium text-gray-900 group-hover:text-teal-600 group-hover:underline">{p.name}</div>
+                        <div className="text-xs text-gray-400">{p.phone}</div>
+                      </button>
                     </td>
                     <td className="px-4 py-2.5">
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${SEGMENTS[p.segment].color}`}>{SEGMENTS[p.segment].label}</span>
@@ -301,6 +305,10 @@ export default function CustomerSegments({ orders, skus, nudges, showToast }) {
             </table>
           </div>
         </div>
+      )}
+
+      {selectedProfile && (
+        <CustomerDetailModal profile={selectedProfile} orders={orders} onClose={() => setSelectedProfile(null)} />
       )}
     </div>
   );
