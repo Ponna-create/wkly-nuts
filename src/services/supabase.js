@@ -27,6 +27,16 @@ const normalizePhone = (phone) => {
   return digits.length === 10 ? digits : phone;
 };
 
+// Title-cases a manually-typed city ("chennai", "CHENNAI") to match the
+// canonical casing the address parser already outputs ("Chennai") — without
+// this, "Chennai" and "chennai" silently split into two different cities in
+// every city-based report/filter (found via real data: 4 orders' worth of
+// Chennai customers were invisible to the "Chennai" bucket until fixed).
+const normalizeCity = (city) => {
+  if (!city) return city;
+  return String(city).trim().replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+};
+
 // A "box" is the one physical production unit (e.g. a Day Pack's 7-sachet box).
 // "Monthly" is not a separately-stocked item — it's just 4 of the same box sold
 // at once. This converts any weekly/monthly quantity into an equivalent box
@@ -1090,7 +1100,7 @@ const _realDbService = {
           email: customer.email,
           phone: normalizePhone(customer.phone),
           address: customer.address,
-          city: customer.city,
+          city: normalizeCity(customer.city),
           state: customer.state,
           pincode: customer.pincode,
           gstin: customer.gstin,
@@ -1149,7 +1159,7 @@ const _realDbService = {
           const updates = {};
           if (customer.address && (!existing.address || existing.address.length < customer.address.length)) updates.address = customer.address;
           if (customer.email && !existing.email) updates.email = customer.email;
-          if (customer.city && !existing.city) updates.city = customer.city;
+          if (customer.city && !existing.city) updates.city = normalizeCity(customer.city);
           if (customer.state && !existing.state) updates.state = customer.state;
           if (customer.pincode && !existing.pincode) updates.pincode = String(customer.pincode);
 
@@ -1190,7 +1200,7 @@ const _realDbService = {
           email: customer.email,
           phone: normalizePhone(customer.phone),
           address: customer.address,
-          city: customer.city,
+          city: normalizeCity(customer.city),
           state: customer.state,
           pincode: customer.pincode,
           gstin: customer.gstin,

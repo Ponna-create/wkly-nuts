@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
-import { Heart, MessageCircle, TrendingUp, Clock, Copy, Check, CheckCircle2, ArrowRightLeft } from 'lucide-react';
+import { Heart, MessageCircle, TrendingUp, Clock, Copy, Check, CheckCircle2, ArrowRightLeft, Users } from 'lucide-react';
 import { formatDateShort, formatDateTime } from '../utils/dateFormat';
+import CustomerSegments from '../components/CustomerSegments';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const todayStart = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
@@ -31,25 +32,27 @@ Reply here to place your order — same as before, or let us know if you'd like 
 WKLY Nuts Team 🥜`;
 
 export default function CRM() {
-  const { state } = useApp();
+  const { state, showToast } = useApp();
   const skus = state.skus || [];
   const orders = state.salesOrders || [];
   const [tiers, setTiers] = useState(DEFAULT_TIERS);
   const [messageTemplate, setMessageTemplate] = useState(DEFAULT_MESSAGE);
   const [showTemplateEditor, setShowTemplateEditor] = useState(false);
   const [copiedId, setCopiedId] = useState(null);
-  const [viewTab, setViewTab] = useState('due'); // 'due' | 'upgrades'
+  const [viewTab, setViewTab] = useState('due'); // 'due' | 'upgrades' | 'explorer'
   const [upgradeFilter, setUpgradeFilter] = useState('all'); // 'all' | 'up' | 'down'
   // Keyed the same way as row.id (order+SKU+packType) so a genuinely new
   // order cycle for the same customer naturally gets a fresh, un-sent row.
   // Loaded from the DB, not localStorage, so it's the same on any device.
   const [sentMap, setSentMap] = useState({});
+  const [nudges, setNudges] = useState([]); // raw rows, for the win-back conversion stat
 
   useEffect(() => {
     dbService.getReorderNudges().then(({ data }) => {
       const map = {};
       (data || []).forEach(n => { map[`${n.order_id}-${n.sku_id}-${n.pack_type}`] = n.sent_at; });
       setSentMap(map);
+      setNudges(data || []);
     });
   }, []);
 
@@ -246,6 +249,11 @@ export default function CRM() {
           title="Customers who switched between Weekly and Monthly packs">
           <ArrowRightLeft className="w-4 h-4" /> Pack Switches {upgradeRows.length > 0 ? `(${upgradeRows.length})` : ''}
         </button>
+        <button onClick={() => setViewTab('explorer')}
+          className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium flex-1 transition-all ${viewTab === 'explorer' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}
+          title="Segment every customer by recency/frequency/spend, filter by SKU/city/channel/payment">
+          <Users className="w-4 h-4" /> Customer Explorer
+        </button>
       </div>
 
       {trackedPairCount === 0 && (
@@ -400,6 +408,10 @@ export default function CRM() {
             </div>
           )}
         </>
+      )}
+
+      {viewTab === 'explorer' && (
+        <CustomerSegments orders={orders} skus={skus} nudges={nudges} showToast={showToast} />
       )}
     </div>
   );
