@@ -684,6 +684,32 @@ const _realDbService = {
     }
   },
 
+  async updateWorkLogEntry(entry) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    try {
+      const { data, error } = await supabase
+        .from('work_log')
+        .update({
+          work_date: entry.workDate,
+          activity: entry.activity,
+          start_time: entry.startTime || null,
+          end_time: entry.endTime || null,
+          staff: entry.staff || [],
+          hours: entry.hours || 0,
+          cost: entry.cost || 0,
+          notes: entry.notes || null,
+        })
+        .eq('id', entry.id)
+        .select()
+        .single();
+      if (error) throw error;
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error updating work log entry:', error);
+      return { data: null, error };
+    }
+  },
+
   async deleteWorkLogEntry(id) {
     if (!isSupabaseAvailable()) return { error: new Error('Supabase not configured') };
     try {

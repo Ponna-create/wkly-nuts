@@ -21,15 +21,17 @@ export default function WorkLog() {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [editingEntryId, setEditingEntryId] = useState(null);
 
-  const [form, setForm] = useState({
+  const BLANK_FORM = {
     workDate: new Date().toISOString().split('T')[0],
     activity: '',
     start: '',
     end: '',
     staff: [],
     notes: '',
-  });
+  };
+  const [form, setForm] = useState(BLANK_FORM);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -58,6 +60,21 @@ export default function WorkLog() {
     if (form.staff.length === 0) { showToast('Pick who did the work', 'error'); return; }
     if (hours <= 0) { showToast('Enter a valid start and end time', 'error'); return; }
     setSaving(true);
+
+    if (editingEntryId) {
+      const { data, error } = await dbService.updateWorkLogEntry({
+        id: editingEntryId, workDate: form.workDate, activity: form.activity,
+        startTime: form.start, endTime: form.end, staff: form.staff, hours, cost, notes: form.notes,
+      });
+      setSaving(false);
+      if (error) { showToast('Failed to update', 'error'); return; }
+      if (data) setEntries(prev => prev.map(e => e.id === editingEntryId ? data : e));
+      setEditingEntryId(null);
+      setForm(BLANK_FORM);
+      showToast('Entry updated', 'success');
+      return;
+    }
+
     const { data, error } = await dbService.createWorkLogEntry({
       workDate: form.workDate, activity: form.activity, startTime: form.start, endTime: form.end,
       staff: form.staff, hours, cost, notes: form.notes,
@@ -69,11 +86,30 @@ export default function WorkLog() {
     showToast('Work logged', 'success');
   };
 
+  const startEditEntry = (e) => {
+    setEditingEntryId(e.id);
+    setForm({
+      workDate: e.work_date || new Date().toISOString().split('T')[0],
+      activity: e.activity || '',
+      start: e.start_time || '',
+      end: e.end_time || '',
+      staff: e.staff || [],
+      notes: e.notes || '',
+    });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const cancelEditEntry = () => {
+    setEditingEntryId(null);
+    setForm(BLANK_FORM);
+  };
+
   const handleDelete = async (id) => {
     if (!confirm('Delete this entry?')) return;
     const { error } = await dbService.deleteWorkLogEntry(id);
     if (error) { showToast('Failed to delete', 'error'); return; }
     setEntries(prev => prev.filter(e => e.id !== id));
+    if (editingEntryId === id) cancelEditEntry();
   };
 
   // This-month totals + per-staff breakdown
@@ -142,7 +178,7 @@ export default function WorkLog() {
 
       {/* Add form */}
       <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 space-y-3">
-        <p className="text-sm font-semibold text-gray-700 flex items-center gap-2"><Clock className="w-4 h-4 text-teal-600" /> Log work</p>
+        <p className="text-sm font-semibold text-gray-700 flex items-center gap-2"><Clock className="w-4 h-4 text-teal-600" /> {editingEntryId ? 'Edit work entry' : 'Log work'}</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="block text-xs text-gray-500 mb-1">Date</label>
@@ -209,10 +245,15 @@ export default function WorkLog() {
           <span className="text-sm text-gray-500">
             {hours > 0 ? <>{hours.toFixed(2)} hr × {money(hourly)}/hr = <span className="font-bold text-teal-700">{money(cost)}</span></> : 'Pick staff and times'}
           </span>
-          <button onClick={handleAdd} disabled={saving}
-            className="px-4 py-2 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 font-medium">
-            {saving ? 'Saving...' : 'Add entry'}
-          </button>
+          <div className="flex items-center gap-2">
+            {editingEntryId && (
+              <button onClick={cancelEditEntry} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
+            )}
+            <button onClick={handleAdd} disabled={saving}
+              className="px-4 py-2 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 font-medium">
+              {saving ? 'Saving...' : editingEntryId ? 'Update entry' : 'Add entry'}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -245,7 +286,8 @@ export default function WorkLog() {
                   <td className="px-4 py-3 text-gray-600">{(e.staff || []).map(s => s.name).join(', ') || '—'}</td>
                   <td className="px-4 py-3 text-right text-gray-700">{(parseFloat(e.hours) || 0).toFixed(2)}</td>
                   <td className="px-4 py-3 text-right font-semibold text-teal-700">{money(e.cost)}</td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="px-4 py-3 text-right whitespace-nowrap">
+                    <button onClick={() => startEditEntry(e)} className="text-blue-500 hover:text-blue-700 mr-3"><Edit2 className="w-4 h-4" /></button>
                     <button onClick={() => handleDelete(e.id)} className="text-red-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
                   </td>
                 </tr>
