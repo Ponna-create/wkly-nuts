@@ -34,8 +34,12 @@ function getCorsOrigin(req) {
 const TRACK_URL = 'https://stcourier.com/track/doCheck';
 const SHIPMENT_URL = 'https://stcourier.com/track/shipment';
 
+// AWB length isn't fixed at 11 digits — real tracking numbers seen in this
+// account are 12 digits (the one reference example tested against happened
+// to be 11, which over-fit the original validation and silently rejected
+// every real AWB). Accept a reasonable range instead of one exact length.
 function isValidAwb(awb) {
-  return typeof awb === 'string' && /^\d{11}$/.test(awb.trim());
+  return typeof awb === 'string' && /^\d{10,13}$/.test(awb.trim());
 }
 
 // Pulls the session cookie(s) needed for the follow-up GET — fetch() doesn't

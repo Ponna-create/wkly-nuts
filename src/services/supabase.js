@@ -2593,59 +2593,45 @@ const _realDbService = {
     }
   },
 
-  // Background ST Courier status check — picks the oldest-checked 3-5 active
-  // shipments (tracking number set, not yet delivered/cancelled/returned),
-  // calls the isolated /api/st-courier-status endpoint, and writes results
-  // back. Auto-advances the order's own status to 'delivered' when ST
-  // Courier reports it delivered, so that's the one thing that syncs into
-  // the real pipeline automatically -- everything else just updates the
-  // st_courier_status display column. Called opportunistically (see
-  // SalesOrders.jsx), not a cron job -- runs whenever the app happens to load.
-  async checkStCourierBatch() {
-    if (!isSupabaseAvailable()) return { checked: 0 };
+  // Checks ST Courier's status for ONE order via the isolated
+  // /api/st-courier-status endpoint and writes the result back. One order
+  // per call (not batched) so the caller (TrackingChecker.jsx) can show
+  // live "checking N of 5" progress and a result the instant each one
+  // finishes, instead of a silent all-or-nothing background call — that
+  // silent version gave no way to tell it was working, and was, in fact,
+  // silently failing (AWB length validation bug). Auto-advances the order's
+  // own status to 'delivered' when ST Courier reports it delivered; every
+  // other status just updates the st_courier_status display column.
+  async checkOneStCourierAwb(order) {
+    if (!isSupabaseAvailable()) return { error: 'Supabase not configured' };
+    const awb = (order.tracking_number || '').replace(/\D/g, '');
+    if (!awb) return { error: 'No tracking number' };
     try {
-      const { data: candidates, error: fetchErr } = await supabase
-        .from('sales_orders')
-        .select('id, tracking_number, st_courier_last_checked_at')
-        .not('tracking_number', 'is', null)
-        .in('status', ['collected', 'dispatched', 'transit'])
-        .order('st_courier_last_checked_at', { ascending: true, nullsFirst: true })
-        .limit(5);
-      if (fetchErr) throw fetchErr;
-      if (!candidates || candidates.length === 0) return { checked: 0 };
-
-      const awbToOrder = new Map(candidates.map(o => [o.tracking_number.replace(/\D/g, ''), o]));
-      const awbNumbers = [...awbToOrder.keys()];
-
       const res = await fetch('/api/st-courier-status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ awbNumbers }),
+        body: JSON.stringify({ awbNumbers: [awb] }),
       });
-      if (!res.ok) return { checked: 0, error: `Status check failed (${res.status})` };
+      if (!res.ok) return { error: `Status check failed (HTTP ${res.status})` };
       const { results } = await res.json();
+      const r = (results || [])[0];
+      if (!r) return { error: 'No result returned' };
 
-      let delivered = 0;
-      for (const r of results || []) {
-        const order = awbToOrder.get(r.awb);
-        if (!order) continue;
-        const update = { id: order.id, stCourierLastCheckedAt: new Date().toISOString() };
-        if (r.found && r.status) {
-          update.stCourierStatus = r.status;
-          if (/delivered/i.test(r.status)) {
-            update.status = 'delivered';
-            update.actualDeliveryDate = new Date().toISOString().split('T')[0];
-            delivered++;
-          }
-        } else {
-          update.stCourierStatus = r.error || 'Not found';
+      const update = { id: order.id, stCourierLastCheckedAt: new Date().toISOString() };
+      const delivered = r.found && /delivered/i.test(r.status || '');
+      if (r.found && r.status) {
+        update.stCourierStatus = r.status;
+        if (delivered) {
+          update.status = 'delivered';
+          update.actualDeliveryDate = new Date().toISOString().split('T')[0];
         }
-        await this.updateSalesOrder(update);
+      } else {
+        update.stCourierStatus = r.error || 'Not found';
       }
-      return { checked: (results || []).length, delivered };
+      await this.updateSalesOrder(update);
+      return { result: r, delivered };
     } catch (error) {
-      console.warn('ST Courier batch check failed:', error);
-      return { checked: 0, error };
+      return { error: error.message || 'Request failed' };
     }
   },
 
