@@ -1,7 +1,9 @@
 import React, { useState, useMemo } from 'react';
-import { X, MessageCircle, ExternalLink, Search } from 'lucide-react';
+import { X, MessageCircle, ExternalLink, Search, History } from 'lucide-react';
 import { dbService } from '../../services/supabase';
 import { fillTemplate, loadTemplates } from './WhatsAppSender';
+import CustomerDetailModal from '../CustomerDetailModal';
+import { formatDateTime } from '../../utils/dateFormat';
 
 // ST Courier's tracking page can't be pre-filled via URL (their form does a
 // server-side AJAX round trip, not a plain GET) — so the closest thing to
@@ -18,7 +20,11 @@ const openTrackingPage = (awb) => {
 // herself via the Track button and updates the status here with one tap.
 export default function CourierDashboard({ orders, onClose, onUpdate, showToast }) {
   const [searchTerm, setSearchTerm] = useState('');
+  const [historyProfile, setHistoryProfile] = useState(null);
 
+  // Same "trackedOrders" list, but customer service needs to find someone by
+  // phone number too — e.g. a customer calls about a delivery issue and all
+  // she has is their number.
   const trackedOrders = useMemo(() => {
     const list = (orders || []).filter(o => o.tracking_number);
     const q = searchTerm.trim().toLowerCase();
@@ -26,9 +32,32 @@ export default function CourierDashboard({ orders, onClose, onUpdate, showToast 
     return list.filter(o =>
       (o.customer_name || '').toLowerCase().includes(q) ||
       (o.order_number || '').toLowerCase().includes(q) ||
-      (o.tracking_number || '').toLowerCase().includes(q)
+      (o.tracking_number || '').toLowerCase().includes(q) ||
+      (o.phone || '').includes(q)
     );
   }, [orders, searchTerm]);
+
+  // Builds the same profile shape CustomerDetailModal expects, from whatever
+  // orders this customer has (any status, not just courier-tracked ones) —
+  // so "View History" shows the full picture, not just this one shipment.
+  const openHistory = (order) => {
+    const key = order.customer_id || order.customer_name;
+    const customerOrders = (orders || []).filter(o => (o.customer_id || o.customer_name) === key);
+    const dates = customerOrders.map(o => new Date(o.order_date)).filter(d => !isNaN(d));
+    const ltv = customerOrders.reduce((s, o) => s + (parseFloat(o.total_amount) || 0), 0);
+    const lastOrderDate = dates.length ? new Date(Math.max(...dates)) : null;
+    setHistoryProfile({
+      key,
+      name: order.customer_name,
+      phone: order.phone,
+      city: order.shipping_city,
+      orderCount: customerOrders.length,
+      ltv,
+      firstOrderDate: dates.length ? new Date(Math.min(...dates)) : null,
+      lastOrderDate,
+      daysSinceLast: lastOrderDate ? Math.floor((new Date() - lastOrderDate) / (1000 * 60 * 60 * 24)) : null,
+    });
+  };
 
   const statusBadge = (status) => {
     const map = {
@@ -84,7 +113,7 @@ export default function CourierDashboard({ orders, onClose, onUpdate, showToast 
             <input
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search by customer, order #, or tracking #..."
+              placeholder="Search by customer, phone, order #, or tracking #..."
               className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm"
             />
           </div>
@@ -105,6 +134,7 @@ export default function CourierDashboard({ orders, onClose, onUpdate, showToast 
                     <th className="px-3 py-2 text-left">Pincode</th>
                     <th className="px-3 py-2 text-left">Tracking #</th>
                     <th className="px-3 py-2 text-left">Status</th>
+                    <th className="px-3 py-2 text-left">ST Courier (auto)</th>
                     <th className="px-3 py-2 text-left">Actions</th>
                   </tr>
                 </thead>
@@ -120,8 +150,25 @@ export default function CourierDashboard({ orders, onClose, onUpdate, showToast 
                       <td className="px-3 py-2 whitespace-nowrap">{o.shipping_pincode || '—'}</td>
                       <td className="px-3 py-2 font-mono text-xs whitespace-nowrap">{o.tracking_number}</td>
                       <td className="px-3 py-2 whitespace-nowrap">{statusBadge(o.status)}</td>
+                      <td className="px-3 py-2 whitespace-nowrap text-xs">
+                        {o.st_courier_status ? (
+                          <>
+                            <div className={/delivered/i.test(o.st_courier_status) ? 'text-green-700 font-medium' : 'text-gray-700'}>{o.st_courier_status}</div>
+                            {o.st_courier_last_checked_at && <div className="text-gray-400">checked {formatDateTime(o.st_courier_last_checked_at)}</div>}
+                          </>
+                        ) : (
+                          <span className="text-gray-400 italic">not checked yet</span>
+                        )}
+                      </td>
                       <td className="px-3 py-2 whitespace-nowrap">
                         <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => openHistory(o)}
+                            title="View this customer's full order history"
+                            className="p-1.5 bg-gray-50 text-gray-600 border border-gray-200 rounded hover:bg-gray-100"
+                          >
+                            <History className="w-3.5 h-3.5" />
+                          </button>
                           <button
                             onClick={() => handleSendWhatsApp(o)}
                             title="Send tracking on WhatsApp"
@@ -154,6 +201,10 @@ export default function CourierDashboard({ orders, onClose, onUpdate, showToast 
           )}
         </div>
       </div>
+
+      {historyProfile && (
+        <CustomerDetailModal profile={historyProfile} orders={orders} onClose={() => setHistoryProfile(null)} />
+      )}
     </div>
   );
 }

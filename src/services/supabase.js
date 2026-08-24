@@ -2488,6 +2488,8 @@ const _realDbService = {
         ['boxes_small', 'boxesSmall', 'boxes_small'],
         ['boxes_big', 'boxesBig', 'boxes_big'],
         ['label_printed_at', 'labelPrintedAt', 'label_printed_at'],
+        ['st_courier_status', 'stCourierStatus', 'st_courier_status'],
+        ['st_courier_last_checked_at', 'stCourierLastCheckedAt', 'st_courier_last_checked_at'],
       ];
 
       fields.forEach(([dbCol, camel, snake]) => {
@@ -2562,6 +2564,62 @@ const _realDbService = {
     } catch (error) {
       console.error('Error marking reorder nudge sent:', error);
       return { data: null, error };
+    }
+  },
+
+  // Background ST Courier status check — picks the oldest-checked 3-5 active
+  // shipments (tracking number set, not yet delivered/cancelled/returned),
+  // calls the isolated /api/st-courier-status endpoint, and writes results
+  // back. Auto-advances the order's own status to 'delivered' when ST
+  // Courier reports it delivered, so that's the one thing that syncs into
+  // the real pipeline automatically -- everything else just updates the
+  // st_courier_status display column. Called opportunistically (see
+  // SalesOrders.jsx), not a cron job -- runs whenever the app happens to load.
+  async checkStCourierBatch() {
+    if (!isSupabaseAvailable()) return { checked: 0 };
+    try {
+      const { data: candidates, error: fetchErr } = await supabase
+        .from('sales_orders')
+        .select('id, tracking_number, st_courier_last_checked_at')
+        .not('tracking_number', 'is', null)
+        .in('status', ['collected', 'dispatched', 'transit'])
+        .order('st_courier_last_checked_at', { ascending: true, nullsFirst: true })
+        .limit(5);
+      if (fetchErr) throw fetchErr;
+      if (!candidates || candidates.length === 0) return { checked: 0 };
+
+      const awbToOrder = new Map(candidates.map(o => [o.tracking_number.replace(/\D/g, ''), o]));
+      const awbNumbers = [...awbToOrder.keys()];
+
+      const res = await fetch('/api/st-courier-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ awbNumbers }),
+      });
+      if (!res.ok) return { checked: 0, error: `Status check failed (${res.status})` };
+      const { results } = await res.json();
+
+      let delivered = 0;
+      for (const r of results || []) {
+        const order = awbToOrder.get(r.awb);
+        if (!order) continue;
+        const update = { id: order.id, stCourierLastCheckedAt: new Date().toISOString() };
+        if (r.found && r.status) {
+          update.stCourierStatus = r.status;
+          if (/delivered/i.test(r.status)) {
+            update.status = 'delivered';
+            update.actualDeliveryDate = new Date().toISOString().split('T')[0];
+            delivered++;
+          }
+        } else {
+          update.stCourierStatus = r.error || 'Not found';
+        }
+        await this.updateSalesOrder(update);
+      }
+      return { checked: (results || []).length, delivered };
+    } catch (error) {
+      console.warn('ST Courier batch check failed:', error);
+      return { checked: 0, error };
     }
   },
 
