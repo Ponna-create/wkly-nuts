@@ -2593,21 +2593,23 @@ const _realDbService = {
     }
   },
 
-  // Checks ST Courier's status for ONE order via the isolated
-  // /api/st-courier-status endpoint and writes the result back. One order
-  // per call (not batched) so the caller (TrackingChecker.jsx) can show
-  // live "checking N of 5" progress and a result the instant each one
-  // finishes, instead of a silent all-or-nothing background call — that
-  // silent version gave no way to tell it was working, and was, in fact,
-  // silently failing (AWB length validation bug). Auto-advances the order's
-  // own status to 'delivered' when ST Courier reports it delivered; every
-  // other status just updates the st_courier_status display column.
+  // Checks ST Courier's status for ONE order and writes the result back.
+  // Calls the standalone tracker-service (Render, real headless Chrome —
+  // see tracker-service/README.md for why a plain fetch can't do this) via
+  // VITE_ST_COURIER_SERVICE_URL. One order per call (not batched) so the
+  // caller (TrackingChecker.jsx) can show live "checking N of 5" progress
+  // and a result the instant each one finishes, instead of a silent
+  // all-or-nothing background call. Auto-advances the order's own status
+  // to 'delivered' when ST Courier reports it delivered; every other status
+  // just updates the st_courier_status display column.
   async checkOneStCourierAwb(order) {
     if (!isSupabaseAvailable()) return { error: 'Supabase not configured' };
     const awb = (order.tracking_number || '').replace(/\D/g, '');
     if (!awb) return { error: 'No tracking number' };
+    const serviceUrl = import.meta.env.VITE_ST_COURIER_SERVICE_URL;
+    if (!serviceUrl) return { error: 'Tracker service not configured — set VITE_ST_COURIER_SERVICE_URL (see tracker-service/README.md)' };
     try {
-      const res = await fetch('/api/st-courier-status', {
+      const res = await fetch(serviceUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ awbNumbers: [awb] }),
