@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { X, Copy, Check, Printer, MessageCircle, Package, Truck, CheckCircle, FileText, Loader2, Save, Edit2 } from 'lucide-react';
+import { X, Copy, Check, Printer, MessageCircle, Package, Truck, CheckCircle, FileText, Loader2, Save, Edit2, Trash2 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { dbService } from '../../services/supabase';
 import LabelPrinter from './LabelPrinter';
@@ -234,6 +234,29 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
       showToast('Could not auto-generate invoice for this order', 'error');
       return null;
     }
+  };
+
+  // The exact original Amazon PDF (shipping label + invoice), stored
+  // unaltered on order creation — courier barcode scanners need the real
+  // AWB from Amazon's own label, not a regenerated one. Auto-purged after
+  // 25 days (see dbService.purgeExpiredAmazonDocuments), deletable any time.
+  const amazonOriginalDoc = (state.documents || []).find(
+    d => d.sales_order_id === currentOrder.id && d.document_type === 'amazon_original'
+  );
+  const handlePrintOriginalAmazon = () => {
+    if (!amazonOriginalDoc?.file_url) return;
+    window.open(amazonOriginalDoc.file_url, '_blank');
+  };
+  const handleDeleteAmazonPdf = async () => {
+    if (!amazonOriginalDoc) return;
+    if (!window.confirm('Delete the stored original Amazon PDF? This only removes the stored copy — the order itself is unaffected.')) return;
+    const { error } = await dbService.deleteDocument(amazonOriginalDoc.id);
+    if (error) {
+      showToast('Error deleting stored PDF', 'error');
+      return;
+    }
+    dispatch({ type: 'DELETE_DOCUMENT', payload: amazonOriginalDoc.id });
+    showToast('Stored Amazon PDF deleted', 'success');
   };
 
   // Label only — the invoice record is still created & linked in the
@@ -1020,22 +1043,44 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
               <MessageCircle className="w-4 h-4" />
               WhatsApp
             </button>
-            <button
-              onClick={handlePrintLabelOnly}
-              className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 font-medium text-sm"
-              title="Prints only the shipping label — no invoice"
-            >
-              <Printer className="w-4 h-4" />
-              Print Label
-            </button>
-            <button
-              onClick={handlePrintAndPack}
-              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium text-sm"
-              title="Prints the shipping label, then opens the invoice PDF"
-            >
-              <Printer className="w-4 h-4" />
-              Print Label + Invoice
-            </button>
+            {amazonOriginalDoc ? (
+              <>
+                <button
+                  onClick={handlePrintOriginalAmazon}
+                  className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 font-medium text-sm"
+                  title="Opens Amazon's original shipping label + invoice PDF, exactly as sent — unaltered, both pages"
+                >
+                  <Printer className="w-4 h-4" />
+                  Print Original Amazon Label
+                </button>
+                <button
+                  onClick={handleDeleteAmazonPdf}
+                  className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-500 rounded-lg hover:bg-gray-50 text-sm"
+                  title="Delete the stored PDF now, instead of waiting for the 25-day auto-purge"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={handlePrintLabelOnly}
+                  className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 font-medium text-sm"
+                  title="Prints only the shipping label — no invoice"
+                >
+                  <Printer className="w-4 h-4" />
+                  Print Label
+                </button>
+                <button
+                  onClick={handlePrintAndPack}
+                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium text-sm"
+                  title="Prints the shipping label, then opens the invoice PDF"
+                >
+                  <Printer className="w-4 h-4" />
+                  Print Label + Invoice
+                </button>
+              </>
+            )}
             {/* Invoice Button */}
             <button
               onClick={handleGenerateInvoice}

@@ -15,6 +15,11 @@ export default function NewOrderForm({ onClose }) {
   const [phoneMatch, setPhoneMatch] = useState(null);
   const [savingCustomer, setSavingCustomer] = useState(false);
   const [parsingInvoice, setParsingInvoice] = useState(false);
+  // Kept so the ORIGINAL Amazon PDF (shipping label + invoice, unaltered) can
+  // be stored and reprinted exactly as Amazon sent it — the parsed fields
+  // above are only for filling this form, not a replacement for the real
+  // document a courier's barcode scanner needs to see.
+  const [amazonPdfFile, setAmazonPdfFile] = useState(null);
 
   // SKUs from state — pricing comes from each SKU's own Selling Price, the
   // master price (see getPricingForSku below)
@@ -152,6 +157,7 @@ export default function NewOrderForm({ onClose }) {
   const handleAmazonPdfUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setAmazonPdfFile(file);
     setParsingInvoice(true);
     try {
       const text = await extractAmazonInvoiceText(file);
@@ -332,6 +338,18 @@ export default function NewOrderForm({ onClose }) {
         type: 'ADD_SALES_ORDER',
         payload: data
       });
+      // Keep the exact original Amazon PDF (shipping label + invoice) so it
+      // can be reprinted unaltered later — the courier's barcode scanner
+      // needs the real AWB, not our own regenerated label. Best-effort: if
+      // this fails, the order itself is already saved, so don't block on it.
+      if (amazonPdfFile) {
+        dbService.uploadDocument(amazonPdfFile, {
+          name: `Amazon original — ${data.order_number}`,
+          documentType: 'amazon_original',
+          salesOrderId: data.id,
+          tags: ['amazon-original'],
+        }).catch(err => console.warn('Could not store original Amazon PDF:', err));
+      }
       onClose();
     }
 
