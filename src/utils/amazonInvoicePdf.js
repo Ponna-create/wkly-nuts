@@ -91,7 +91,7 @@ export function parseAmazonInvoice(text) {
       // Drop the "Shipping Address :" header itself and seller boilerplate
       // that lands in this range purely from column interleaving.
       .filter(l => !/^Shipping Address/i.test(l))
-      .filter(l => !/PAN No|GST Registration|FSSAI License/i.test(l))
+      .filter(l => !/PAN No|GST Registration|FSSAI License|Dynamic QR Code/i.test(l))
       .filter(l => !/^\d{9,}$/.test(l)) // stray license/GSTIN numbers with no label
       .filter(l => !/^\d{2}[A-Z]{5}\d{4}[A-Z]\d[A-Z]\d$/.test(l)) // GSTIN pattern
       .filter(l => l.toUpperCase() !== 'IN');
@@ -103,7 +103,13 @@ export function parseAmazonInvoice(text) {
     // Amazon prints the name twice (short then full) — take the longest.
     const firstDigitIdx = block.findIndex(l => /\d/.test(l));
     const nameLines = block.slice(0, firstDigitIdx === -1 ? 0 : firstDigitIdx);
-    name = nameLines.length ? nameLines.reduce((a, b) => (b.length > a.length ? b : a)) : (block[0] || null);
+    // Amazon prints the name twice back to back (short then full) — prefer
+    // whichever line is an exact repeat of another, since that's the actual
+    // signal "this is the name" rather than "longest surviving line", which
+    // a stray unfiltered label (wrongly landing in this range from column
+    // interleaving) can win purely by being verbose.
+    const duplicate = nameLines.find((l, i) => nameLines.indexOf(l) !== i);
+    name = duplicate || (nameLines.length ? nameLines.reduce((a, b) => (b.length > a.length ? b : a)) : (block[0] || null));
     const addrStart = nameLines.length;
     address = block.slice(addrStart, cityIdx > 0 ? cityIdx : undefined).join(', ') || null;
 
