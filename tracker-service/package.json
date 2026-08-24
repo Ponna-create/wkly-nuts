@@ -1,0 +1,15 @@
+{
+  "name": "wkly-nuts-st-courier-tracker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "description": "Standalone ST Courier tracking checker — real headless Chrome via Playwright, since ST Courier's site renders results via client-side JS that a plain HTTP fetch can't replicate. Deployed separately from the main app (Render, not Vercel) so this can never affect the main app's build or runtime.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "playwright-core": "^1.48.0"
+  }
+}
