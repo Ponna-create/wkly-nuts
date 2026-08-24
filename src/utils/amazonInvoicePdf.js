@@ -74,7 +74,23 @@ export function parseAmazonInvoice(text) {
   const orderDate = orderDateMatch ? `${orderDateMatch[3]}-${orderDateMatch[2]}-${orderDateMatch[1]}` : null;
   const invoiceNumber = grab(/Invoice Number\s*:\s*(\S+)/i);
   const paymentMode = grab(/Mode of Payment\s*:?\s*([A-Za-z ]+?)(?:\n|$)/i);
-  const invoiceTotal = grab(/Invoice Value\s*:?\s*([\d,]+\.\d{2})/i);
+  // "Invoice Value :" is one real layout; another (seen on an actual invoice)
+  // has no such line at all and instead ends the item table with a bare
+  // "TOTAL:" row — tax-total then grand-total, e.g. "TOTAL: ₹26.42 ₹555.00".
+  // Grab the LAST ₹ amount on that line, since that's always the grand total.
+  const invoiceTotal = grab(/Invoice Value\s*:?\s*([\d,]+\.\d{2})/i)
+    || (() => {
+      // The ₹ amounts sometimes land on the line right AFTER "TOTAL:" rather
+      // than the same one — adjacent rows in the PDF can round to different
+      // Y-buckets during extraction even though they're visually one row.
+      // Check the "TOTAL:" line itself first, then the next line.
+      const textLines = text.split('\n').map(l => l.trim());
+      const totalIdx = textLines.findIndex(l => /^TOTAL\s*:/i.test(l));
+      if (totalIdx === -1) return null;
+      const searchIn = [textLines[totalIdx], textLines[totalIdx + 1] || ''].join(' ');
+      const amounts = [...searchIn.matchAll(/₹\s?([\d,]+\.\d{2})/g)];
+      return amounts.length ? amounts[amounts.length - 1][1] : null;
+    })();
   const placeOfDelivery = grab(/Place of delivery\s*:?\s*([A-Za-z ]+?)(?:\n|$)/i);
 
   // --- Customer name/address from the Shipping Address block ---
@@ -127,7 +143,12 @@ export function parseAmazonInvoice(text) {
   // up in the seller header ("Sold By : WKLY NUTS") and signature footer
   // ("For WKLY NUTS:"), which aren't items and were throwing the count off.
   // HSN only ever appears once per real product line.
-  const priceRowRe = /₹\s?([\d,]+\.\d{2})\s+(\d+)\s+₹\s?([\d,]+\.\d{2})\s+[\d.]+%\s+₹\s?([\d,]+\.\d{2})\s+₹\s?([\d,]+\.\d{2})/g;
+  // The tax-rate and its ₹ amount aren't always adjacent — real invoices
+  // print the tax type name (CGST/SGST/IGST/UTGST) in between, e.g.
+  // "₹475.24 1 ₹475.24 2.5% CGST ₹11.88 ₹499.00". Tolerate that word
+  // (optional, since some layouts may omit it) instead of requiring the %
+  // to be immediately followed by ₹.
+  const priceRowRe = /₹\s?([\d,]+\.\d{2})\s+(\d+)\s+₹\s?([\d,]+\.\d{2})\s+[\d.]+%\s+(?:[A-Z]+\s+)?₹\s?([\d,]+\.\d{2})\s+₹\s?([\d,]+\.\d{2})/g;
   const allPriceRows = [...text.matchAll(priceRowRe)];
   const productNameMatches = [...text.matchAll(/WKLY NUTS\s+([^|]+)/gi)]
     .filter(m => !/^For\b/i.test(text.slice(Math.max(0, m.index - 10), m.index))); // drop the "For WKLY NUTS:" signature
@@ -153,7 +174,7 @@ export function parseAmazonInvoice(text) {
 
   // --- Shipping (sum every "Shipping Charges" row — one per item on
   // multi-item invoices) ---
-  const shippingRe = /Shipping Charges[\s\S]{0,10}?₹\s?([\d,]+\.\d{2})\s+₹\s?([\d,]+\.\d{2})\s+[\d.]+%\s+₹\s?([\d,]+\.\d{2})\s+₹\s?([\d,]+\.\d{2})/g;
+  const shippingRe = /Shipping Charges[\s\S]{0,10}?₹\s?([\d,]+\.\d{2})\s+₹\s?([\d,]+\.\d{2})\s+[\d.]+%\s+(?:[A-Z]+\s+)?₹\s?([\d,]+\.\d{2})\s+₹\s?([\d,]+\.\d{2})/g;
   let shippingCharge = 0;
   let sm;
   while ((sm = shippingRe.exec(text)) !== null) shippingCharge += parseFloat(sm[4].replace(/,/g, ''));
