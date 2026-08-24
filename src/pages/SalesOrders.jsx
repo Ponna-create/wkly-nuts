@@ -57,6 +57,9 @@ export default function SalesOrders() {
 
   useEffect(() => {
     loadOrders();
+    // Safety-net cleanup for stored Amazon PDFs left past their 25-day window
+    // — not a cron job, just runs opportunistically whenever this page loads.
+    dbService.purgeExpiredAmazonDocuments().catch(() => {});
   }, []);
 
   const loadOrders = async () => {

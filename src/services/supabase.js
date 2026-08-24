@@ -2783,12 +2783,43 @@ const _realDbService = {
   async deleteDocument(id) {
     if (!isSupabaseAvailable()) return { error: new Error('Supabase not configured') };
     try {
+      // Also remove the actual file from Storage, not just the DB row —
+      // otherwise "delete" never actually frees the cloud space it claims to.
+      const { data: doc } = await supabase.from('documents').select('file_url').eq('id', id).maybeSingle();
+      if (doc?.file_url) {
+        const pathMatch = doc.file_url.match(/wkly-nuts-docs\/(.+)$/);
+        if (pathMatch) {
+          await supabase.storage.from('wkly-nuts-docs').remove([pathMatch[1]]);
+        }
+      }
       const { error } = await supabase.from('documents').delete().eq('id', id);
       if (error) throw error;
       return { error: null };
     } catch (error) {
       console.error('Error deleting document:', error);
       return { error };
+    }
+  },
+
+  // Amazon's original PDF (shipping label + invoice) is stored only long
+  // enough to be reprinted — she can delete it manually any time, and this
+  // is a safety-net auto-purge for anything left over 25 days, called
+  // opportunistically (not a cron job) whenever Sales Orders loads.
+  async purgeExpiredAmazonDocuments() {
+    if (!isSupabaseAvailable()) return { purged: 0 };
+    try {
+      const cutoff = new Date(Date.now() - 25 * 24 * 60 * 60 * 1000).toISOString();
+      const { data: expired } = await supabase
+        .from('documents')
+        .select('id')
+        .eq('document_type', 'amazon_original')
+        .lt('created_at', cutoff);
+      if (!expired || expired.length === 0) return { purged: 0 };
+      await Promise.all(expired.map(d => this.deleteDocument(d.id)));
+      return { purged: expired.length };
+    } catch (error) {
+      console.warn('Error purging expired Amazon documents:', error);
+      return { purged: 0, error };
     }
   },
 

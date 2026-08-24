@@ -15,6 +15,61 @@ const fmt = (n) => `₹${(n || 0).toLocaleString('en-IN', { maximumFractionDigit
 
 const emptyExpense = { channel: '', name: '', amount: '', frequency: 'monthly', notes: '' };
 
+// Per-SKU Amazon fee estimate — pulled from Amazon's own "Total fees" figure
+// shown per listing in Seller Central > Manage Products, entered once here
+// rather than parsed per order (see the platformFees calc above for why:
+// exact per-order fees aren't worth chasing when a fixed estimate is close
+// enough for margin visibility, and real reconciliation happens separately
+// against the monthly Amazon statement).
+function AmazonFeeEditor({ skus, showToast }) {
+  const { dispatch } = useApp();
+  const [editingId, setEditingId] = useState(null);
+  const [draftValue, setDraftValue] = useState('');
+
+  const startEdit = (sku) => {
+    setEditingId(sku.id);
+    setDraftValue(sku.weeklyPack?.amazonFee ?? '');
+  };
+
+  const save = (sku) => {
+    const fee = parseFloat(draftValue) || 0;
+    // Same pattern SKUManagement.jsx itself uses to save — the dispatch
+    // wrapper persists via the full updateSKU() call, which needs the
+    // complete SKU object (not a partial one) to avoid blanking other fields.
+    dispatch({ type: 'UPDATE_SKU', payload: { ...sku, weeklyPack: { ...(sku.weeklyPack || {}), amazonFee: fee } } });
+    showToast(`${sku.name} — Amazon fee set to ₹${fee}/unit`, 'success');
+    setEditingId(null);
+  };
+
+  return (
+    <div className="border-t pt-3">
+      <p className="text-sm font-semibold text-gray-700 mb-2">Amazon fee per unit, by SKU</p>
+      <p className="text-xs text-gray-400 mb-2">From Seller Central &gt; Manage Products &gt; "Total fees" per listing. Used to estimate margin — not the exact per-order fee.</p>
+      <div className="space-y-1.5">
+        {skus.map(sku => (
+          <div key={sku.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2 text-sm">
+            <span className="font-medium text-gray-800">{sku.name}</span>
+            {editingId === sku.id ? (
+              <div className="flex items-center gap-2">
+                <span className="text-gray-400">₹</span>
+                <input type="number" step="0.01" min="0" autoFocus value={draftValue}
+                  onChange={e => setDraftValue(e.target.value)}
+                  className="w-20 border rounded px-2 py-1 text-sm" />
+                <button onClick={() => save(sku)} className="text-teal-600 hover:text-teal-700 font-medium text-xs">Save</button>
+                <button onClick={() => setEditingId(null)} className="text-gray-400 hover:text-gray-600 text-xs">Cancel</button>
+              </div>
+            ) : (
+              <button onClick={() => startEdit(sku)} className="text-gray-600 hover:text-teal-600 font-semibold">
+                {sku.weeklyPack?.amazonFee ? `₹${sku.weeklyPack.amazonFee}/unit` : <span className="text-gray-400 font-normal italic">not set</span>}
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function OmniChannels() {
   const { state, showToast } = useApp();
   const [expenses, setExpenses] = useState([]);
@@ -75,11 +130,25 @@ export default function OmniChannels() {
         .filter(c => (key === 'amazon' && c.platform === 'amazon') || (['instagram', 'inst', 'meta_ad'].includes(key) && (c.platform === 'meta' || c.platform === 'instagram')))
         .reduce((s, c) => s + (parseFloat(c.spend) || 0), 0);
 
-      const net = revenue - cogs - recurringMonthly - adSpend;
+      // Amazon platform fees — a fixed per-unit estimate set per SKU (from
+      // Amazon's own "Total fees" shown in Manage Products), not parsed per
+      // order. Deliberately an estimate for margin visibility, not the exact
+      // per-order fee -- real fee/GST/TDS reconciliation happens separately
+      // against the monthly Amazon statement. See docs/CRM_FRAMEWORK.md-style
+      // reasoning: exact per-order fees aren't worth chasing here.
+      const platformFees = key === 'amazon'
+        ? channelOrders.reduce((s, o) => s + (o.items || []).reduce((is, item) => {
+            const sku = skus.find(sk => String(sk.id) === String(item.sku_id || item.skuId));
+            const feePerUnit = parseFloat(sku?.weeklyPack?.amazonFee) || 0;
+            return is + feePerUnit * (parseFloat(item.quantity || item.qty) || 0);
+          }, 0), 0)
+        : 0;
+
+      const net = revenue - cogs - recurringMonthly - adSpend - platformFees;
 
       return {
         key, label: SOURCE_LABELS[key] || key, orders: channelOrders.length, revenue, cogs,
-        expenses: channelExpenses, recurringMonthly, oneTimeTotal, adSpend, net,
+        expenses: channelExpenses, recurringMonthly, oneTimeTotal, adSpend, platformFees, net,
       };
     }).sort((a, b) => b.revenue - a.revenue);
   }, [channelKeys, state.salesOrders, state.skus, expenses, campaigns, monthKey]);
@@ -182,13 +251,18 @@ export default function OmniChannels() {
 
                 {isOpen && (
                   <div className="border-t p-4 space-y-4">
-                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-sm">
+                    <div className="grid grid-cols-2 sm:grid-cols-6 gap-3 text-sm">
                       <div><p className="text-gray-400 text-xs">Revenue</p><p className="font-semibold text-teal-700">{fmt(c.revenue)}</p></div>
                       <div><p className="text-gray-400 text-xs">COGS (est.)</p><p className="font-semibold text-gray-700">{fmt(c.cogs)}</p></div>
+                      {c.key === 'amazon' && (
+                        <div><p className="text-gray-400 text-xs">Platform fees (est.)</p><p className="font-semibold text-orange-700">{fmt(c.platformFees)}</p></div>
+                      )}
                       <div><p className="text-gray-400 text-xs">Fixed costs / mo</p><p className="font-semibold text-gray-700">{fmt(c.recurringMonthly)}</p></div>
                       <div><p className="text-gray-400 text-xs">Ad spend</p><p className="font-semibold text-gray-700">{fmt(c.adSpend)}</p></div>
                       <div><p className="text-gray-400 text-xs">Est. Net</p><p className={`font-bold ${c.net >= 0 ? 'text-green-600' : 'text-red-600'}`}>{fmt(c.net)}</p></div>
                     </div>
+
+                    {c.key === 'amazon' && <AmazonFeeEditor skus={state.skus || []} showToast={showToast} />}
 
                     <div>
                       <div className="flex items-center justify-between mb-2">
