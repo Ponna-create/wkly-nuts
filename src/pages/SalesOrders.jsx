@@ -18,6 +18,7 @@ import BulkLabelPrint from '../components/sales/BulkLabelPrint';
 import A4LabelSheet from '../components/sales/A4LabelSheet';
 import CourierDashboard from '../components/sales/CourierDashboard';
 import { fillTemplate, loadTemplates } from '../components/sales/WhatsAppSender';
+import { getStuckInfo } from '../utils/orderAging';
 
 export default function SalesOrders() {
   const { state, dispatch, showToast } = useApp();
@@ -348,8 +349,9 @@ export default function SalesOrders() {
               <tbody>
                 {filteredOrders.map((order) => {
                   const badge = getStatusBadge(order.status);
+                  const { stuck, days } = getStuckInfo(order);
                   return (
-                    <tr key={order.id} className="border-b border-gray-200 hover:bg-gray-50 transition">
+                    <tr key={order.id} className={`border-b transition ${stuck ? 'bg-red-50 border-red-200 hover:bg-red-100' : 'border-gray-200 hover:bg-gray-50'}`}>
                       <td className="px-4 py-3 text-sm text-gray-600">{formatDate(order.order_date)}</td>
                       <td className="px-4 py-3 text-sm">
                         <div className="font-medium text-gray-900">{order.customer_name || 'N/A'}</div>
@@ -360,9 +362,19 @@ export default function SalesOrders() {
                       </td>
                       <td className="px-4 py-3 text-sm font-medium text-gray-900">₹{order.total_amount?.toFixed(2) || '0.00'}</td>
                       <td className="px-4 py-3 text-sm">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${badge.bg} ${badge.text}`}>
-                          {badge.label}
-                        </span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${badge.bg} ${badge.text}`}>
+                            {badge.label}
+                          </span>
+                          {stuck && (
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold bg-red-600 text-white"
+                              title="Sitting in pre-courier status longer than expected (Sunday-no-pickup already accounted for) — may have been missed during printing"
+                            >
+                              ⚠ Stuck {days}d
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-sm">
                         {order.label_printed_at ? (
