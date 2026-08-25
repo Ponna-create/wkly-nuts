@@ -4,6 +4,7 @@ import { AlertCircle, Package, Truck, Users, ChevronRight, PieChart, TrendingUp,
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { useApp } from '../context/AppContext';
 import { formatDate } from '../utils/dateFormat';
+import { countStuckOrders } from '../utils/orderAging';
 
 const SOURCE_LABELS = {
   whatsapp: 'WhatsApp', website: 'Website', instagram: 'Instagram', inst: 'Instagram',
@@ -132,6 +133,10 @@ export default function Dashboard() {
   const toBeInvoiced = orders.filter(o => !o.invoice_id && o.status !== 'delivered').length;
   const poPending = purchaseOrders.filter(p => p.status !== 'received' && p.status !== 'completed').length;
   const belowReorder = outOfStock.length > 0 ? outOfStock.length : 0;
+  // Orders sitting in Confirmed/Packing/Fulfilled longer than the
+  // Sunday-no-pickup schedule accounts for — likely missed during a bulk
+  // A4 print run, not just "waiting its normal turn". See src/utils/orderAging.js.
+  const stuckCount = countStuckOrders(orders);
 
   const recentActivity = useMemo(() =>
     [...orders].sort((a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0)).slice(0, 6),
@@ -367,6 +372,11 @@ export default function Dashboard() {
               <div>
                 <p className="text-xs font-semibold text-gray-400 uppercase mb-1">Sales</p>
                 <div className="space-y-1">
+                  {stuckCount > 0 && (
+                    <Link to="/orders" className="flex justify-between items-center rounded-md px-2 py-1 -mx-2 bg-red-50 text-red-700 font-semibold hover:bg-red-100">
+                      <span className="flex items-center gap-1">⚠ Stuck orders (missed?)</span><span>{stuckCount}</span>
+                    </Link>
+                  )}
                   <Link to="/orders" className="flex justify-between text-gray-700 hover:text-teal-600"><span>Follow-up needed</span><span className="font-semibold">{followUpCount}</span></Link>
                   <Link to="/orders" className="flex justify-between text-gray-700 hover:text-teal-600"><span>To Be Packed (labels pending)</span><span className="font-semibold">{toBePacked}</span></Link>
                   <Link to="/orders" className="flex justify-between text-gray-700 hover:text-teal-600"><span>Packing (scan pending)</span><span className="font-semibold">{toBeShipped}</span></Link>
