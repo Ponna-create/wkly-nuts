@@ -335,13 +335,13 @@ export default function SalesOrders() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-200 bg-gray-50">
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Order ID</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Date</th>
                   <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Customer</th>
                   <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Source</th>
                   <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Amount</th>
                   <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Status</th>
                   <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Label</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Date</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Order ID</th>
                   <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Actions</th>
                 </tr>
               </thead>
@@ -350,9 +350,7 @@ export default function SalesOrders() {
                   const badge = getStatusBadge(order.status);
                   return (
                     <tr key={order.id} className="border-b border-gray-200 hover:bg-gray-50 transition">
-                      <td className="px-4 py-3 text-sm font-medium text-teal-600 cursor-pointer" onClick={() => handleViewOrder(order)}>
-                        {order.order_number}
-                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-600">{formatDate(order.order_date)}</td>
                       <td className="px-4 py-3 text-sm">
                         <div className="font-medium text-gray-900">{order.customer_name || 'N/A'}</div>
                         {order.phone && <div className="text-xs text-gray-500">{order.phone}</div>}
@@ -377,7 +375,9 @@ export default function SalesOrders() {
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-600">{formatDate(order.order_date)}</td>
+                      <td className="px-4 py-3 text-sm font-medium text-teal-600 cursor-pointer" onClick={() => handleViewOrder(order)}>
+                        {order.order_number}
+                      </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-1">
                           {order.tracking_number && order.phone && (
