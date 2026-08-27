@@ -2593,15 +2593,39 @@ const _realDbService = {
     }
   },
 
+  // Order of the pipeline stages ST Courier's status can actually speak to —
+  // used to make sure a check never moves an order BACKWARD (a stale or
+  // ambiguous read from the courier site shouldn't undo further-along
+  // progress recorded some other way, e.g. a manual update).
+  _stCourierStageOrder: ['confirmed', 'packing', 'fulfilled', 'collected', 'dispatched', 'transit', 'delivered'],
+
+  // Maps ST Courier's own free-text status onto our pipeline stage. Order
+  // matters — check "delivered" first since some strings could otherwise
+  // loosely match more than one pattern.
+  _mapStCourierStatusToStage(rawStatus) {
+    const s = (rawStatus || '').toLowerCase();
+    if (/delivered/.test(s)) return 'delivered';
+    if (/out for delivery|in transit|on the way|reached destination/.test(s)) return 'transit';
+    if (/dispatch|picked up|booked|in transit hub|departed/.test(s)) return 'dispatched';
+    return null;
+  },
+
   // Checks ST Courier's status for ONE order and writes the result back.
   // Calls the standalone tracker-service (Render, real headless Chrome —
   // see tracker-service/README.md for why a plain fetch can't do this) via
   // VITE_ST_COURIER_SERVICE_URL. One order per call (not batched) so the
   // caller (TrackingChecker.jsx) can show live "checking N of 5" progress
   // and a result the instant each one finishes, instead of a silent
-  // all-or-nothing background call. Auto-advances the order's own status
-  // to 'delivered' when ST Courier reports it delivered; every other status
-  // just updates the st_courier_status display column.
+  // all-or-nothing background call.
+  //
+  // Auto-advances the order's own status to match whatever stage ST
+  // Courier's text maps to (Dispatched / In Transit / Delivered) — not just
+  // Delivered. Previously "In Transit" only updated the hidden
+  // st_courier_status column and left the visible Status stuck wherever it
+  // was, which is exactly why a real order sat on "Dispatched" all day after
+  // the morning auto-check had already seen "In Transit". Never moves the
+  // status backward — a stale/ambiguous courier read can't undo further
+  // progress recorded some other way.
   async checkOneStCourierAwb(order) {
     if (!isSupabaseAvailable()) return { error: 'Supabase not configured' };
     const awb = (order.tracking_number || '').replace(/\D/g, '');
@@ -2620,18 +2644,26 @@ const _realDbService = {
       if (!r) return { error: 'No result returned' };
 
       const update = { id: order.id, stCourierLastCheckedAt: new Date().toISOString() };
-      const delivered = r.found && /delivered/i.test(r.status || '');
+      let advanced = null;
       if (r.found && r.status) {
         update.stCourierStatus = r.status;
-        if (delivered) {
-          update.status = 'delivered';
-          update.actualDeliveryDate = new Date().toISOString().split('T')[0];
+        const mappedStage = this._mapStCourierStatusToStage(r.status);
+        if (mappedStage) {
+          const currentIdx = this._stCourierStageOrder.indexOf(order.status);
+          const mappedIdx = this._stCourierStageOrder.indexOf(mappedStage);
+          if (mappedIdx > currentIdx) {
+            update.status = mappedStage;
+            advanced = mappedStage;
+            if (mappedStage === 'delivered') {
+              update.actualDeliveryDate = new Date().toISOString().split('T')[0];
+            }
+          }
         }
       } else {
         update.stCourierStatus = r.error || 'Not found';
       }
       await this.updateSalesOrder(update);
-      return { result: r, delivered };
+      return { result: r, delivered: advanced === 'delivered', advancedTo: advanced };
     } catch (error) {
       return { error: error.message || 'Request failed' };
     }
