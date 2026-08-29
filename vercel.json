@@ -13,10 +13,22 @@
       "destination": "/index.html"
     }
   ],
+  "functions": {
+    "api/cron/check-tracking.js": {
+      "maxDuration": 60
+    },
+    "api/cron/warm-tracker.js": {
+      "maxDuration": 60
+    }
+  },
   "crons": [
     {
+      "path": "/api/cron/warm-tracker",
+      "schedule": "20 1 * * *"
+    },
+    {
       "path": "/api/cron/check-tracking",
-      "schedule": "30 1 * * *"
+      "schedule": "35 1 * * *"
     }
   ]
 }

@@ -3,16 +3,25 @@
 // Transit -> Delivered) whether or not anyone opens the app that day.
 // Does exactly what the manual "Check Today's Batch" button in Delivery
 // Tracking & Feedback does (TrackingChecker.jsx / checkOneStCourierAwb in
-// src/services/supabase.js) — same candidate selection, same stage-mapping,
-// same app_settings lock — just fired by Vercel's scheduler instead of a
-// click. Kept as its own small Node function (not importing the Vite-side
-// dbService, which relies on import.meta.env) rather than sharing code,
-// since this runs in a different module system.
+// src/services/supabase.js) — same candidate selection, same stage-mapping
+// — just fired by Vercel's scheduler instead of a click. Kept as its own
+// small Node function (not importing the Vite-side dbService, which relies
+// on import.meta.env) rather than sharing code, since this runs in a
+// different module system.
+//
+// api/cron/warm-tracker.js runs a few minutes before this to wake up the
+// Render tracker-service (free tier spins down when idle — a cold boot
+// took 33s just for /health in testing, before any real check work even
+// starts). Batch size here is kept smaller than the manual button's (3 vs
+// 5) to comfortably fit inside Vercel's function time limit even if the
+// warm-up didn't land — each real check is a live browser navigation, not
+// a cheap API call.
 
 import { createClient } from '@supabase/supabase-js';
 
-const MAX_PER_RUN = 5;
-const DELAY_MS = 2500; // matches the manual button's pacing — a real gap between checks, not a burst
+const MAX_PER_RUN = 3;
+const DELAY_MS = 2500; // gap between orders, same spirit as the manual button's pacing
+const FETCH_TIMEOUT_MS = 45000; // fail one order cleanly rather than risk the whole function running out of time
 
 // Same pipeline-stage list and mapping as checkOneStCourierAwb() in
 // src/services/supabase.js — keep both in sync if ST Courier's wording changes.
@@ -62,6 +71,7 @@ export default async function handler(req, res) {
     }
 
     const results = [];
+    let successCount = 0;
     for (let i = 0; i < candidates.length; i++) {
       const order = candidates[i];
       const awb = (order.tracking_number || '').replace(/\D/g, '');
@@ -75,12 +85,15 @@ export default async function handler(req, res) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ awbNumbers: [awb] }),
+            signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
           });
-          const { results: trackerResults } = checkRes.ok ? await checkRes.json() : { results: [] };
+          if (!checkRes.ok) throw new Error(`Tracker service HTTP ${checkRes.status}`);
+          const { results: trackerResults } = await checkRes.json();
           const r = (trackerResults || [])[0];
+          if (!r) throw new Error('No result returned from tracker service');
 
           const update = { st_courier_last_checked_at: new Date().toISOString() };
-          if (r?.found && r.status) {
+          if (r.found && r.status) {
             update.st_courier_status = r.status;
             const mappedStage = mapStatusToStage(r.status);
             if (mappedStage) {
@@ -93,14 +106,15 @@ export default async function handler(req, res) {
               }
             }
           } else {
-            update.st_courier_status = r?.error || 'Not found';
+            update.st_courier_status = r.error || 'Not found';
           }
 
           const { error: updateError } = await supabase.from('sales_orders').update(update).eq('id', order.id);
           if (updateError) throw updateError;
           outcome.status = update.st_courier_status;
+          successCount++; // reached the tracker and wrote a result — counts as a real check, even if ST Courier itself said "Not found"
         } catch (err) {
-          outcome.error = err.message || 'Check failed';
+          outcome.error = err.name === 'TimeoutError' ? 'Tracker service timed out (likely still waking up)' : (err.message || 'Check failed');
         }
       }
 
@@ -108,16 +122,21 @@ export default async function handler(req, res) {
       if (i < candidates.length - 1) await sleep(DELAY_MS);
     }
 
-    // Same lock the manual button writes, so the UI shows "Already checked
-    // today" and the button stays disabled after this ran — one check per
-    // day total, whether it came from the schedule or a click.
-    await supabase.from('app_settings').upsert({
-      key: 'st_courier_auto_check',
-      value: { date: todayISO(), at: new Date().toISOString(), source: 'cron' },
-      updated_at: new Date().toISOString(),
-    });
+    // Only mark today as "checked" if at least one order actually got a
+    // real result. Previously this was written unconditionally, so a
+    // morning where the tracker service was still cold-booting and every
+    // check failed still locked the manual "Check Today's Batch" button
+    // for the rest of the day, with nothing to show for it and no way to
+    // retry until tomorrow.
+    if (successCount > 0) {
+      await supabase.from('app_settings').upsert({
+        key: 'st_courier_auto_check',
+        value: { date: todayISO(), at: new Date().toISOString(), source: 'cron', checkedCount: successCount },
+        updated_at: new Date().toISOString(),
+      });
+    }
 
-    return res.status(200).json({ checked: results.length, results });
+    return res.status(200).json({ checked: results.length, succeeded: successCount, results });
   } catch (error) {
     return res.status(500).json({ error: error.message || 'Cron run failed' });
   }
