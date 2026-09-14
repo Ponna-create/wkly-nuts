@@ -21,6 +21,10 @@ const openTrackingPage = (awb) => {
 export default function CourierDashboard({ orders, onClose, onUpdate, showToast }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [historyProfile, setHistoryProfile] = useState(null);
+  // Which cell is being edited — { orderId, field } — plus its live draft
+  // value, so typing doesn't touch the real order until Enter/blur commits it.
+  const [editingCell, setEditingCell] = useState(null);
+  const [editValue, setEditValue] = useState('');
 
   // Same "trackedOrders" list, but customer service needs to find someone by
   // phone number too — e.g. a customer calls about a delivery issue and all
@@ -85,6 +89,40 @@ export default function CourierDashboard({ orders, onClose, onUpdate, showToast 
     showToast(`${order.tracking_number} copied — paste it into ST Courier's search box`, 'success');
   };
 
+  const startEdit = (order, field, currentValue) => {
+    setEditingCell({ orderId: order.id, field });
+    setEditValue(currentValue != null ? String(currentValue) : '');
+  };
+
+  const cancelEdit = () => {
+    setEditingCell(null);
+    setEditValue('');
+  };
+
+  const commitEdit = async (order) => {
+    if (!editingCell) return;
+    const { field } = editingCell;
+    const raw = editValue.trim();
+    const num = raw === '' ? null : parseFloat(raw);
+    if (raw !== '' && Number.isNaN(num)) {
+      showToast('Enter a valid number', 'error');
+      return;
+    }
+    const original = field === 'shippingWeight' ? order.shipping_weight : order.courier_amount;
+    if ((original ?? null) === num) {
+      cancelEdit();
+      return; // nothing actually changed — skip the write
+    }
+    const { error } = await dbService.updateSalesOrder({ id: order.id, [field]: num });
+    cancelEdit();
+    if (error) {
+      showToast('Error saving — try again', 'error');
+      return;
+    }
+    showToast(`${order.order_number} updated`, 'success');
+    onUpdate();
+  };
+
   const handleQuickStatus = async (order, status) => {
     const extra = status === 'delivered' ? { actualDeliveryDate: new Date().toISOString().split('T')[0] } : {};
     const { error } = await dbService.updateSalesOrder({ id: order.id, status, ...extra });
@@ -144,8 +182,58 @@ export default function CourierDashboard({ orders, onClose, onUpdate, showToast 
                       <td className="px-3 py-2 font-medium text-gray-900 whitespace-nowrap">{o.order_number}</td>
                       <td className="px-3 py-2 whitespace-nowrap">{o.customer_name}</td>
                       <td className="px-3 py-2 whitespace-nowrap">{o.courier_slip_date || '—'}</td>
-                      <td className="px-3 py-2 whitespace-nowrap">{o.shipping_weight != null ? `${o.shipping_weight} kg` : '—'}</td>
-                      <td className="px-3 py-2 whitespace-nowrap">{o.courier_amount != null ? `₹${o.courier_amount}` : '—'}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        {editingCell?.orderId === o.id && editingCell.field === 'shippingWeight' ? (
+                          <input
+                            autoFocus
+                            type="number"
+                            step="0.001"
+                            inputMode="decimal"
+                            value={editValue}
+                            onChange={(e) => setEditValue(e.target.value)}
+                            onBlur={() => commitEdit(o)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') commitEdit(o);
+                              if (e.key === 'Escape') cancelEdit();
+                            }}
+                            className="w-20 px-1.5 py-1 border border-teal-400 rounded text-sm"
+                          />
+                        ) : (
+                          <button
+                            onClick={() => startEdit(o, 'shippingWeight', o.shipping_weight)}
+                            className="text-left hover:bg-teal-50 hover:text-teal-700 px-1 py-0.5 -mx-1 rounded"
+                            title="Click to edit weight"
+                          >
+                            {o.shipping_weight != null ? `${o.shipping_weight} kg` : '—'}
+                          </button>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        {editingCell?.orderId === o.id && editingCell.field === 'courierAmount' ? (
+                          <input
+                            autoFocus
+                            type="number"
+                            step="0.01"
+                            inputMode="decimal"
+                            value={editValue}
+                            onChange={(e) => setEditValue(e.target.value)}
+                            onBlur={() => commitEdit(o)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') commitEdit(o);
+                              if (e.key === 'Escape') cancelEdit();
+                            }}
+                            className="w-20 px-1.5 py-1 border border-teal-400 rounded text-sm"
+                          />
+                        ) : (
+                          <button
+                            onClick={() => startEdit(o, 'courierAmount', o.courier_amount)}
+                            className="text-left hover:bg-teal-50 hover:text-teal-700 px-1 py-0.5 -mx-1 rounded"
+                            title="Click to edit shipping amount"
+                          >
+                            {o.courier_amount != null ? `₹${o.courier_amount}` : '—'}
+                          </button>
+                        )}
+                      </td>
                       <td className="px-3 py-2 whitespace-nowrap">{o.shipping_state || '—'}</td>
                       <td className="px-3 py-2 whitespace-nowrap">{o.shipping_pincode || '—'}</td>
                       <td className="px-3 py-2 font-mono text-xs whitespace-nowrap">{o.tracking_number}</td>
