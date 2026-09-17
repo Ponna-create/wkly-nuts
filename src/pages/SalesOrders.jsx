@@ -117,6 +117,8 @@ export default function SalesOrders() {
       meta_ad: '📢',
       walkin: '🚶',
       zoho: '📦',
+      amazon: '🛒',
+      hungerbox: '🍱',
     };
     return icons[source] || '📱';
   };
