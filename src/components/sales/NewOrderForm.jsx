@@ -398,7 +398,6 @@ export default function NewOrderForm({ onClose }) {
               <option value="walkin">Walk-in</option>
               <option value="zoho">Zoho Commerce</option>
               <option value="amazon">Amazon</option>
-              <option value="hungerbox">HungerBox</option>
             </select>
           </div>
 

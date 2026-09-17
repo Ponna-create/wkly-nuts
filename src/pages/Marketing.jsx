@@ -10,13 +10,10 @@ const SOURCE_LABELS = {
   whatsapp: 'WhatsApp', website: 'Website', instagram: 'Instagram', inst: 'Instagram',
   meta_ad: 'Meta Ads', amazon: 'Amazon', zoho: 'Zoho', referral: 'Referral',
   direct: 'Direct', collab: 'Collab', promotion: 'Promotion', other: 'Other',
-  hungerbox: 'HungerBox',
 };
 
-// Channels where a platform fee % applies (Amazon referral cut, Zoho gateway
-// cut, HungerBox commission — 15% per their settlement statements, plus GST
-// charged on top of that commission separately, not captured by this single %)
-const FEE_CHANNELS = ['amazon', 'zoho', 'hungerbox'];
+// Channels where a platform fee % applies (Amazon referral cut, Zoho gateway cut)
+const FEE_CHANNELS = ['amazon', 'zoho'];
 
 export default function Marketing() {
   const { state } = useApp();
@@ -281,7 +278,7 @@ export default function Marketing() {
                 <input type="number" min="0" max="100" step="0.1" value={channelFees[ch] || ''}
                   onChange={e => updateChannelFee(ch, e.target.value)}
                   className="w-20 border rounded-lg px-2 py-1 text-sm text-right" />
-                <span className="text-xs text-gray-400">{ch === 'amazon' ? 'referral fee' : ch === 'hungerbox' ? 'commission' : 'gateway cut'}</span>
+                <span className="text-xs text-gray-400">{ch === 'amazon' ? 'referral fee' : 'gateway cut'}</span>
               </label>
             ))}
           </div>

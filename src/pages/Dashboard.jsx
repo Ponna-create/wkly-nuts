@@ -10,18 +10,12 @@ const SOURCE_LABELS = {
   whatsapp: 'WhatsApp', website: 'Website', instagram: 'Instagram', inst: 'Instagram',
   meta_ad: 'Meta Ads', amazon: 'Amazon', zoho: 'Zoho', direct: 'Direct',
   collab: 'Collab', promotion: 'Promotion', referral: 'Referral', other: 'Other',
-  hungerbox: 'HungerBox',
 };
-// Channels that pay out later, net of their own commission — money sold
-// isn't money received yet, so these count toward Total Receivables until
-// payment_status flips to 'received' (matches how the HungerBox settlement
-// itself works: gross sale now, net payout ~2-4 days later after their cut).
-const DELAYED_PAYMENT_CHANNELS = ['amazon', 'zoho', 'hungerbox'];
+const DELAYED_PAYMENT_CHANNELS = ['amazon', 'zoho'];
 const CHANNEL_COLORS = {
   whatsapp: 'bg-green-500', direct: 'bg-teal-500', website: 'bg-blue-500', zoho: 'bg-indigo-500',
   amazon: 'bg-orange-500', instagram: 'bg-pink-500', inst: 'bg-pink-500', meta_ad: 'bg-purple-500',
   collab: 'bg-yellow-500', promotion: 'bg-cyan-500', referral: 'bg-lime-500', other: 'bg-gray-400',
-  hungerbox: 'bg-rose-500',
 };
 
 const todayStr = () => new Date().toISOString().split('T')[0];
