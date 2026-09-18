@@ -74,7 +74,18 @@ export default function BulkLabelPrint({ orders, onClose, onPrinted, showToast }
     // Auto-generate the invoice alongside the label for any order that
     // doesn't have one yet — created and stored for GST filing, but not
     // auto-downloaded/opened (see note after the print step below).
-    const needsInvoice = selectedOrders.filter(o => !o.invoice_id && !isPromotionalOrder(o));
+    //
+    // Re-checked against the database right here, not just the in-memory
+    // `orders` prop — that prop can be stale if this page hasn't reloaded
+    // since a previous print run, and trusting only the stale value was
+    // exactly how the same order ended up with 3-12 duplicate invoices
+    // (reprinting the same date's labels before the page had refreshed).
+    const candidateInvoice = selectedOrders.filter(o => !o.invoice_id && !isPromotionalOrder(o));
+    let needsInvoice = candidateInvoice;
+    if (candidateInvoice.length > 0) {
+      const { data: freshInvoiceIds } = await dbService.getInvoiceIdsForOrders(candidateInvoice.map(o => o.id));
+      needsInvoice = candidateInvoice.filter(o => !freshInvoiceIds[o.id]);
+    }
     if (needsInvoice.length > 0) {
       const results = await Promise.all(needsInvoice.map(async (o) => {
         try {

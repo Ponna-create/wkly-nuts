@@ -218,6 +218,10 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
   const ensureInvoiceForOrder = async (targetOrder) => {
     if (targetOrder.invoice_id) return targetOrder.invoice_id;
     if (isPromotionalOrder(targetOrder)) return null; // promo/collab sends aren't a real sale — no invoice
+    // Re-check the database, not just the local order object — the same
+    // duplicate-invoice bug found in BulkLabelPrint.jsx applies here too.
+    const { data: freshIds } = await dbService.getInvoiceIdsForOrders([targetOrder.id]);
+    if (freshIds[targetOrder.id]) return freshIds[targetOrder.id];
     try {
       const invoiceData = buildInvoiceDataFromOrder(targetOrder, 'Auto-generated on label print', state.skus);
       const { data: autoInvoice, error } = await dbService.createInvoice(invoiceData);
@@ -450,6 +454,20 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
     }
 
     setGeneratingInvoice(true);
+    // One more check straight against the database immediately before
+    // creating — currentOrder.invoice_id above can be stale (this view
+    // opened from a list that hasn't reloaded since another invoice was
+    // already generated for this order elsewhere).
+    const { data: freshIds } = await dbService.getInvoiceIdsForOrders([currentOrder.id]);
+    if (freshIds[currentOrder.id]) {
+      const updatedOrder = { ...currentOrder, invoice_id: freshIds[currentOrder.id] };
+      setCurrentOrder(updatedOrder);
+      dispatch({ type: 'UPDATE_SALES_ORDER', payload: updatedOrder });
+      showToast('An invoice already exists for this order — opening it', 'info');
+      setShowInvoiceView(true);
+      setGeneratingInvoice(false);
+      return;
+    }
     try {
       const invoiceData = {
         id: `inv-${Date.now()}`,
