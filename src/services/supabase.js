@@ -2318,6 +2318,28 @@ const _realDbService = {
   },
 
   // Sales Orders (Phase 1)
+  // Lightweight, targeted check for a batch invoice-generation step to
+  // re-verify against the database right before creating — the caller's
+  // in-memory order list can be stale (page not reloaded since a previous
+  // print run), and trusting only that stale invoice_id was the actual
+  // cause of a real duplicate-invoice bug (same order invoiced 3-12x when
+  // "Labels"/"A4 Sheet" was run again before the page had refreshed).
+  async getInvoiceIdsForOrders(orderIds) {
+    if (!isSupabaseAvailable() || !orderIds || orderIds.length === 0) return { data: {}, error: null };
+    try {
+      const { data, error } = await supabase
+        .from('sales_orders')
+        .select('id, invoice_id')
+        .in('id', orderIds);
+      if (error) throw error;
+      const map = {};
+      (data || []).forEach(row => { map[row.id] = row.invoice_id; });
+      return { data: map, error: null };
+    } catch (error) {
+      return { data: {}, error };
+    }
+  },
+
   async getSalesOrders() {
     if (!isSupabaseAvailable()) return { data: [], error: null };
 
