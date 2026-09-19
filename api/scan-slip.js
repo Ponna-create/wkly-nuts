@@ -137,38 +137,56 @@ async function tryGemini(apiKey, base64, mimeType) {
   return { ok: true, text, finishReason, model: usedModel };
 }
 
-const GROQ_MODEL = 'qwen/qwen3.6-27b';
+// Groq retires/renames models often ("model not found" is what broke slip
+// scanning), so try several vision-capable models in order instead of
+// depending on one name. Only "model missing/decommissioned" style errors
+// move on to the next model — a rate limit or bad request would fail the
+// same way on every model.
+const GROQ_MODELS = [
+  'qwen/qwen3.8-27b',
+  'qwen/qwen3.6-27b',
+  'meta-llama/llama-4-scout-17b-16e-instruct',
+];
 
-async function tryGroq(apiKey, base64, mimeType) {
+async function tryGroqModel(apiKey, base64, mimeType, model) {
+  const body = {
+    model,
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'text', text: PROMPT },
+        { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64}` } },
+      ],
+    }],
+  };
+  // The qwen models default to "thinking mode", which mixes internal
+  // reasoning into the answer (produced garbled output like "Tracking: **").
+  // Turning it off gets the clean 7-line answer. Llama doesn't take this option.
+  if (model.startsWith('qwen/')) body.reasoning_effort = 'none';
   const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model: GROQ_MODEL,
-      // qwen3.6-27b defaults to "thinking mode" (reasoning_effort: "default"),
-      // which mixes its internal reasoning into the response instead of just
-      // the clean 7-line answer we asked for — that's what produced garbled
-      // output like "Tracking: **" (fragments of its own reasoning/the
-      // prompt's instructions, not an actual read of the image). Turning
-      // thinking off gets a direct answer in the exact format we need.
-      reasoning_effort: 'none',
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'text', text: PROMPT },
-          { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64}` } },
-        ],
-      }],
-    }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const errText = await res.text();
-    console.error('Groq API error:', GROQ_MODEL, res.status, errText);
-    return { ok: false, status: res.status, detail: errText.slice(0, 300), model: GROQ_MODEL };
+    console.error('Groq API error:', model, res.status, errText);
+    return { ok: false, status: res.status, detail: errText.slice(0, 300), model };
   }
   const data = await res.json();
   const text = data?.choices?.[0]?.message?.content || '';
-  return { ok: true, text, finishReason: data?.choices?.[0]?.finish_reason, model: GROQ_MODEL };
+  return { ok: true, text, finishReason: data?.choices?.[0]?.finish_reason, model };
+}
+
+async function tryGroq(apiKey, base64, mimeType) {
+  let last;
+  for (const model of GROQ_MODELS) {
+    last = await tryGroqModel(apiKey, base64, mimeType, model);
+    if (last.ok) return last;
+    const missing = last.status === 404 || /model_not_found|not found|decommission|does not exist/i.test(last.detail || '');
+    if (!missing) break; // rate limit / bad request — another model won't help
+  }
+  return last;
 }
 
 export default async function handler(req, res) {
