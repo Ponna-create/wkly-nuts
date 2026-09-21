@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
 import { TimeInput12 } from './ProductionRuns';
-import { Clock, X, Trash2, ClipboardList, Users, Edit2, Check } from 'lucide-react';
+import { Clock, X, Trash2, ClipboardList, Users, Edit2, Check, TrendingUp } from 'lucide-react';
 import { formatDateShort } from '../utils/dateFormat';
 
 const ACTIVITIES = [
@@ -307,31 +307,169 @@ export default function WorkLog() {
 // STAFF DIRECTORY (full employee details)
 // ============================================
 const BLANK_STAFF = { name: '', employeeId: '', mobile: '', address: '', ratePerHour: '', role: 'production' };
+const todayISO = () => new Date().toISOString().split('T')[0];
+
+// "3 increments · last +₹10 on 01-08-2026 · about every 4 months"
+function incrementSummary(history) {
+  const rows = (history || []).filter(h => h.effective_date <= todayISO());
+  if (rows.length === 0) return null;
+  const last = rows[0];
+  let every = '';
+  if (rows.length >= 2) {
+    const first = new Date(rows[rows.length - 1].effective_date);
+    const latest = new Date(last.effective_date);
+    const months = (latest - first) / (1000 * 60 * 60 * 24 * 30.4) / (rows.length - 1);
+    if (months > 0) every = ` · about every ${months < 1 ? '<1' : Math.round(months)} month${Math.round(months) === 1 ? '' : 's'}`;
+  }
+  return `${rows.length} increment${rows.length === 1 ? '' : 's'} · last ${last.increment >= 0 ? '+' : '−'}₹${Math.abs(last.increment)} on ${formatDateShort(last.effective_date)}${every}`;
+}
+
+// Edit popup: details + a proper Increment section (amount + effective date),
+// so a raise is recorded with its date instead of silently overwriting the rate.
+function EditStaffModal({ member, onClose, onSaved, showToast }) {
+  const [form, setForm] = useState({
+    name: member.name || '', employeeId: member.employee_id || '', mobile: member.mobile || '',
+    address: member.address || '', role: member.role || 'production',
+  });
+  const [increment, setIncrement] = useState('');
+  const [effectiveDate, setEffectiveDate] = useState(todayISO());
+  const [saving, setSaving] = useState(false);
+  const current = parseFloat(member.rate_per_hour) || 0;
+  const inc = parseFloat(increment);
+  const hasIncrement = increment !== '' && !Number.isNaN(inc) && inc !== 0;
+  const newRate = current + (hasIncrement ? inc : 0);
+  const history = member.rate_history || [];
+  const summary = incrementSummary(history);
+
+  const save = async () => {
+    if (!form.name.trim()) { showToast('Name is required', 'error'); return; }
+    if (hasIncrement && !effectiveDate) { showToast('Pick the date the increment starts', 'error'); return; }
+    if (hasIncrement && newRate < 0) { showToast('Rate cannot go below ₹0', 'error'); return; }
+    setSaving(true);
+    const { error } = await dbService.updateStaff({ id: member.id, ...form });
+    if (error) { setSaving(false); showToast('Failed to save staff', 'error'); return; }
+    if (hasIncrement) {
+      const { error: incErr } = await dbService.addStaffIncrement({ staffId: member.id, effectiveDate, oldRate: current, increment: inc });
+      if (incErr) { setSaving(false); showToast('Details saved, but the increment failed — try again', 'error'); onSaved(true); return; }
+    }
+    setSaving(false);
+    showToast(hasIncrement ? `Saved. ₹${current} → ₹${newRate}/hr from ${formatDateShort(effectiveDate)}` : 'Staff updated', 'success');
+    onSaved();
+  };
+
+  const removeIncrement = async (id) => {
+    if (!confirm('Delete this increment record? The rate goes back to what it was before it.')) return;
+    const { error } = await dbService.deleteStaffIncrement(id);
+    if (error) { showToast('Failed to delete', 'error'); return; }
+    showToast('Increment removed');
+    onSaved(true);
+  };
+
+  const field = 'w-full border rounded-lg px-3 py-2 text-sm';
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between rounded-t-xl">
+          <h2 className="text-lg font-bold text-gray-900">Edit staff — {member.name}</h2>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-700"><X className="w-5 h-5" /></button>
+        </div>
+        <div className="p-4 space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Name *</label>
+              <input type="text" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} className={field} />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Employee ID</label>
+              <input type="text" value={form.employeeId} onChange={e => setForm(f => ({ ...f, employeeId: e.target.value }))} className={field} />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Mobile</label>
+              <input type="tel" value={form.mobile} onChange={e => setForm(f => ({ ...f, mobile: e.target.value }))} className={field} />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Role</label>
+              <select value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))} className={field}>
+                <option value="production">Production</option>
+                <option value="sales">Sales / Fulfilment</option>
+              </select>
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-xs text-gray-500 mb-1">Address</label>
+              <input type="text" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} className={field} placeholder="Optional" />
+            </div>
+          </div>
+
+          {/* Pay + increment */}
+          <div className="border border-teal-200 bg-teal-50 rounded-lg p-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold text-teal-800 flex items-center gap-1.5"><TrendingUp className="w-4 h-4" /> Pay &amp; increment</p>
+              <p className="text-sm text-gray-700">Current rate: <strong>₹{current}/hr</strong></p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">Increment (₹/hour)</label>
+                <input type="number" value={increment} onChange={e => setIncrement(e.target.value)} className={field} placeholder="e.g. 10" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">Effective from</label>
+                <input type="date" value={effectiveDate} onChange={e => setEffectiveDate(e.target.value)} className={field} />
+              </div>
+            </div>
+            {hasIncrement && (
+              <p className="text-sm text-teal-800 font-medium">₹{current} {inc >= 0 ? '+' : '−'} ₹{Math.abs(inc)} = <strong>₹{newRate}/hr</strong> from {formatDateShort(effectiveDate)}
+                {effectiveDate > todayISO() && <span className="text-xs text-gray-500 font-normal"> (starts on that date)</span>}
+              </p>
+            )}
+            <p className="text-xs text-gray-500">Past work-log entries keep the rate they were logged with. Use a negative number for a reduction.</p>
+          </div>
+
+          {/* History */}
+          <div>
+            <p className="text-sm font-semibold text-gray-700 mb-1">Increment history</p>
+            {summary && <p className="text-xs text-teal-700 mb-2">{summary}</p>}
+            {history.length === 0 ? (
+              <p className="text-xs text-gray-400">No increments recorded yet.</p>
+            ) : (
+              <div className="border rounded-lg divide-y">
+                {history.map(h => (
+                  <div key={h.id} className="flex items-center justify-between px-3 py-2 text-sm">
+                    <span className="text-gray-600">{formatDateShort(h.effective_date)}{h.effective_date > todayISO() && <span className="ml-1 text-xs text-amber-600">(upcoming)</span>}</span>
+                    <span className="text-gray-800">₹{parseFloat(h.old_rate)} → <strong>₹{parseFloat(h.new_rate)}</strong> <span className={h.increment >= 0 ? 'text-green-600' : 'text-red-600'}>({h.increment >= 0 ? '+' : '−'}₹{Math.abs(h.increment)})</span></span>
+                    <button onClick={() => removeIncrement(h.id)} className="text-red-400 hover:text-red-600 ml-2"><Trash2 className="w-3.5 h-3.5" /></button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="sticky bottom-0 bg-white border-t border-gray-200 p-4 flex justify-end gap-2 rounded-b-xl">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
+          <button onClick={save} disabled={saving} className="px-4 py-2 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 font-medium">
+            {saving ? 'Saving...' : hasIncrement ? 'Save & apply increment' : 'Save changes'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function StaffDirectory({ staff, onChanged, showToast }) {
   const [form, setForm] = useState(BLANK_STAFF);
-  const [editingId, setEditingId] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [editingId, setEditingId] = useState(null);
 
-  const startEdit = (s) => {
-    setEditingId(s.id);
-    setForm({
-      name: s.name || '', employeeId: s.employee_id || '', mobile: s.mobile || '',
-      address: s.address || '', ratePerHour: s.rate_per_hour ?? '', role: s.role || 'production',
-    });
-  };
-  const cancel = () => { setEditingId(null); setForm(BLANK_STAFF); };
+  // Keep the open popup in sync after a save/delete reloads the list
+  const liveMember = editingId ? staff.find(s => s.id === editingId) : null;
 
   const save = async () => {
     if (!form.name.trim() || form.ratePerHour === '') { showToast('Name and ₹/hour are required', 'error'); return; }
     setSaving(true);
-    const { error } = editingId
-      ? await dbService.updateStaff({ id: editingId, ...form })
-      : await dbService.createStaff(form);
+    const { error } = await dbService.createStaff(form);
     setSaving(false);
     if (error) { showToast('Failed to save staff', 'error'); return; }
-    showToast(editingId ? 'Staff updated' : 'Staff added', 'success');
-    cancel();
+    showToast('Staff added', 'success');
+    setForm(BLANK_STAFF);
     onChanged();
   };
 
@@ -340,15 +478,14 @@ function StaffDirectory({ staff, onChanged, showToast }) {
     const { error } = await dbService.deleteStaff(id);
     if (error) { showToast('Failed to remove', 'error'); return; }
     showToast('Staff removed');
-    if (editingId === id) cancel();
     onChanged();
   };
 
   return (
     <div className="space-y-4">
-      {/* Add / edit form */}
+      {/* Add form (editing happens in the popup) */}
       <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 space-y-3">
-        <p className="text-sm font-semibold text-gray-700">{editingId ? 'Edit staff' : 'Add staff'}</p>
+        <p className="text-sm font-semibold text-gray-700">Add staff</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="block text-xs text-gray-500 mb-1">Name *</label>
@@ -366,7 +503,7 @@ function StaffDirectory({ staff, onChanged, showToast }) {
               className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="10-digit number" />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">₹/hour *</label>
+            <label className="block text-xs text-gray-500 mb-1">Starting ₹/hour *</label>
             <input type="number" min="0" value={form.ratePerHour || ''} onChange={e => setForm(f => ({ ...f, ratePerHour: e.target.value }))}
               className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="40" />
           </div>
@@ -384,11 +521,10 @@ function StaffDirectory({ staff, onChanged, showToast }) {
               className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Optional" />
           </div>
         </div>
-        <div className="flex justify-end gap-2">
-          {editingId && <button onClick={cancel} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>}
+        <div className="flex justify-end">
           <button onClick={save} disabled={saving}
             className="px-4 py-2 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 font-medium">
-            {saving ? 'Saving...' : editingId ? 'Update staff' : '+ Add staff'}
+            {saving ? 'Saving...' : '+ Add staff'}
           </button>
         </div>
       </div>
@@ -413,24 +549,39 @@ function StaffDirectory({ staff, onChanged, showToast }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {staff.map(s => (
-                <tr key={s.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium text-gray-900">{s.name}
-                    {s.address && <span className="block text-xs text-gray-400 font-normal">{s.address}</span>}
-                  </td>
-                  <td className="px-4 py-3 text-gray-600">{s.employee_id || '—'}</td>
-                  <td className="px-4 py-3 text-gray-600">{s.mobile || '—'}</td>
-                  <td className="px-4 py-3 text-gray-600 capitalize">{s.role}</td>
-                  <td className="px-4 py-3 text-right font-semibold text-gray-800">₹{s.rate_per_hour}</td>
-                  <td className="px-4 py-3 text-right whitespace-nowrap">
-                    <button onClick={() => startEdit(s)} className="text-blue-500 hover:text-blue-700 mr-3"><Edit2 className="w-4 h-4" /></button>
-                    <button onClick={() => remove(s.id)} className="text-red-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
-                  </td>
-                </tr>
-              ))}
+              {staff.map(s => {
+                const summary = incrementSummary(s.rate_history);
+                return (
+                  <tr key={s.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 font-medium text-gray-900">{s.name}
+                      {s.address && <span className="block text-xs text-gray-400 font-normal">{s.address}</span>}
+                    </td>
+                    <td className="px-4 py-3 text-gray-600">{s.employee_id || '—'}</td>
+                    <td className="px-4 py-3 text-gray-600">{s.mobile || '—'}</td>
+                    <td className="px-4 py-3 text-gray-600 capitalize">{s.role}</td>
+                    <td className="px-4 py-3 text-right font-semibold text-gray-800">₹{s.rate_per_hour}
+                      {summary && <span className="block text-[11px] text-teal-700 font-normal">{summary}</span>}
+                    </td>
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                      <button onClick={() => setEditingId(s.id)} title="Edit / add increment" className="text-blue-500 hover:text-blue-700 mr-3"><Edit2 className="w-4 h-4" /></button>
+                      <button onClick={() => remove(s.id)} className="text-red-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
+      )}
+
+      {liveMember && (
+        <EditStaffModal
+          key={liveMember.id + ':' + (liveMember.rate_history || []).length}
+          member={liveMember}
+          onClose={() => setEditingId(null)}
+          onSaved={(keepOpen) => { onChanged(); if (keepOpen !== true) setEditingId(null); }}
+          showToast={showToast}
+        />
       )}
     </div>
   );
