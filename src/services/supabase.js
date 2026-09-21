@@ -572,6 +572,13 @@ const _realDbService = {
     }
   },
 
+  // Returns staff with their EFFECTIVE hourly rate as of today: the base
+  // rate_per_hour unless an increment (staff_rate_history) has taken effect
+  // (effective_date <= today), in which case that row's new_rate wins. Every
+  // consumer of staff.rate_per_hour (work log, production labour) therefore
+  // picks up raises automatically, including ones dated in the future once
+  // that date arrives. `rate_history` carries ALL rows (incl. future ones)
+  // newest first, for the edit popup.
   async getStaff() {
     if (!isSupabaseAvailable()) return { data: [], error: null };
     try {
@@ -581,10 +588,59 @@ const _realDbService = {
         .eq('active', true)
         .order('name');
       if (error) throw error;
-      return { data: data || [], error: null };
+      let history = [];
+      try {
+        const { data: h } = await supabase
+          .from('staff_rate_history')
+          .select('*')
+          .order('effective_date', { ascending: false })
+          .order('created_at', { ascending: false });
+        history = h || [];
+      } catch (e) { /* history is optional — never block the staff list */ }
+      const today = new Date().toISOString().split('T')[0];
+      const merged = (data || []).map(st => {
+        const rows = history.filter(h => h.staff_id === st.id);
+        const current = rows.find(h => h.effective_date <= today);
+        return {
+          ...st,
+          base_rate_per_hour: st.rate_per_hour,
+          rate_per_hour: current ? parseFloat(current.new_rate) : st.rate_per_hour,
+          rate_history: rows,
+        };
+      });
+      return { data: merged, error: null };
     } catch (error) {
       console.error('Error fetching staff:', error);
       return { data: [], error };
+    }
+  },
+
+  async addStaffIncrement({ staffId, effectiveDate, oldRate, increment, note }) {
+    if (!isSupabaseAvailable()) return { error: new Error('Supabase not configured') };
+    try {
+      const inc = parseFloat(increment);
+      const from = parseFloat(oldRate) || 0;
+      const { error } = await supabase.from('staff_rate_history').insert([{
+        staff_id: staffId, effective_date: effectiveDate, old_rate: from,
+        new_rate: from + inc, increment: inc, note: note || null,
+      }]);
+      if (error) throw error;
+      return { error: null };
+    } catch (error) {
+      console.error('Error adding increment:', error);
+      return { error };
+    }
+  },
+
+  async deleteStaffIncrement(id) {
+    if (!isSupabaseAvailable()) return { error: new Error('Supabase not configured') };
+    try {
+      const { error } = await supabase.from('staff_rate_history').delete().eq('id', id);
+      if (error) throw error;
+      return { error: null };
+    } catch (error) {
+      console.error('Error deleting increment:', error);
+      return { error };
     }
   },
 
@@ -613,8 +669,10 @@ const _realDbService = {
       const { data, error } = await supabase
         .from('staff')
         .update({
-          name: staff.name, rate_per_hour: parseFloat(staff.ratePerHour) || 0, role: staff.role || 'production',
+          name: staff.name, role: staff.role || 'production',
           mobile: staff.mobile || null, address: staff.address || null, employee_id: staff.employeeId || null,
+          // Base rate only changes when explicitly passed; raises go through increments
+          ...(staff.ratePerHour !== undefined && staff.ratePerHour !== '' ? { rate_per_hour: parseFloat(staff.ratePerHour) || 0 } : {}),
         })
         .eq('id', staff.id)
         .select()
