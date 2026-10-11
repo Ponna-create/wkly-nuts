@@ -2150,6 +2150,7 @@ const _realDbService = {
             price_per_unit,
             expiry_date,
             received_date,
+            bill_number,
             status
           )
         `)
@@ -2173,7 +2174,7 @@ const _realDbService = {
             vendors (name)
         `)
         .eq('ingredient_id', ingredientId)
-        .order('expiry_date', { ascending: true }); // FIFO: Expiring first
+        .order('received_date', { ascending: true }); // FIFO: oldest bill first
 
       if (error) throw error;
       return { data: data || [], error: null };
@@ -2421,7 +2422,7 @@ const _realDbService = {
         .eq('ingredient_id', ingredientId)
         .eq('status', 'active')
         .gt('quantity_remaining', 0)
-        .order('expiry_date', { ascending: true }); // Oldest first
+        .order('received_date', { ascending: true }); // Oldest bill first
 
       if (fetchError) throw fetchError;
 
@@ -4298,7 +4299,7 @@ const _realDbService = {
         ...ing,
         ingredient_batches: (ing.ingredient_batches || [])
           .filter(b => b.status === 'active' && b.quantity_remaining > 0)
-          .sort((a, b) => new Date(a.expiry_date) - new Date(b.expiry_date)), // FIFO
+          .sort((a, b) => new Date(a.received_date || 0) - new Date(b.received_date || 0)), // FIFO: oldest bill first
       }));
       return { data: enriched, error: null };
     } catch (error) {

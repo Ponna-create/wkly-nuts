@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { Plus, ChevronDown, ChevronRight, Package, AlertCircle, Search, X, Edit2, Check, RefreshCw, Warehouse, Boxes, Link2 } from 'lucide-react';
 import { dbService } from '../services/supabase';
 import { useApp } from '../context/AppContext';
@@ -25,18 +26,12 @@ export default function IngredientInventory() {
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [showAddBatchModal, setShowAddBatchModal] = useState(false);
   const [editingExpiry, setEditingExpiry] = useState(null); // { batchId, ingredientId, value }
   const [savingExpiry, setSavingExpiry] = useState(false);
   const [editingWaste, setEditingWaste] = useState(null); // { batchId, ingredientId, value }
   const [savingWaste, setSavingWaste] = useState(false);
 
-  const [batchForm, setBatchForm] = useState({
-    ingredientId: '', vendorName: '', batchNumber: '',
-    quantity: '', price: '', expiryDate: '',
-    receivedDate: new Date().toISOString().split('T')[0],
-  });
-  const [addingBatch, setAddingBatch] = useState(false);
+  const [billFilter, setBillFilter] = useState('');
   const [activeTab, setActiveTab] = useState('raw'); // 'raw' | 'finished'
   const [finishedGoods, setFinishedGoods] = useState([]);
   const [loadingFinished, setLoadingFinished] = useState(true);
@@ -104,7 +99,8 @@ export default function IngredientInventory() {
   };
 
   const filtered = ingredients.filter(ing =>
-    ing.name.toLowerCase().includes(searchTerm.toLowerCase())
+    ing.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
+    (!billFilter || lotsFor(ing).length > 0)
   );
 
   // ── Edit expiry date inline ──
@@ -144,14 +140,21 @@ export default function IngredientInventory() {
     setEditingWaste({
       batchId: batch.id,
       ingredientId,
-      value: parseFloat(batch.waste_quantity || 0) > 0 ? String(batch.waste_quantity) : '',
+      value: '',
+      previous: parseFloat(batch.waste_quantity || 0),
     });
   };
 
   const saveWaste = async () => {
     if (!editingWaste) return;
     setSavingWaste(true);
-    const { data, error } = await dbService.recordBatchWaste(editingWaste.batchId, editingWaste.value || 0);
+    const added = parseFloat(editingWaste.value) || 0;
+    if (added <= 0) {
+      showToast('Enter how much was wasted', 'error');
+      setSavingWaste(false);
+      return;
+    }
+    const { data, error } = await dbService.recordBatchWaste(editingWaste.batchId, (editingWaste.previous || 0) + added);
     if (error) {
       showToast('Failed to save waste', 'error');
     } else {
@@ -173,32 +176,32 @@ export default function IngredientInventory() {
     setSavingWaste(false);
   };
 
-  // ── Add new batch ──
-  const handleAddBatch = async () => {
-    if (!batchForm.ingredientId || !batchForm.quantity) {
-      showToast('Please select ingredient and enter quantity', 'error');
-      return;
-    }
-    setAddingBatch(true);
-    const { error } = await dbService.addIngredientBatch({
-      ingredientId: batchForm.ingredientId,
-      vendorId: null,
-      batchNumber: batchForm.batchNumber || undefined,
-      quantity: parseFloat(batchForm.quantity),
-      price: parseFloat(batchForm.price) || 0,
-      expiryDate: batchForm.expiryDate || null,
-      receivedDate: batchForm.receivedDate,
-    });
-    if (error) {
-      showToast('Failed to add batch: ' + error.message, 'error');
-    } else {
-      showToast('Batch added to inventory', 'success');
-      setShowAddBatchModal(false);
-      setBatchForm({ ingredientId: '', vendorName: '', batchNumber: '', quantity: '', price: '', expiryDate: '', receivedDate: new Date().toISOString().split('T')[0] });
-      loadIngredients();
-    }
-    setAddingBatch(false);
+  // Lots of one ingredient, oldest bill first (that is the order stock is used in).
+  // Expiry is informational only — the bill date decides which lot goes first.
+  const lotsFor = (ing) => (ing.ingredient_batches || [])
+    .filter(b => b.status === 'active' && parseFloat(b.quantity_remaining || 0) > 0)
+    .filter(b => !billFilter || String(b.bill_number || '') === billFilter)
+    .sort((a, b) => new Date(a.received_date || 0) - new Date(b.received_date || 0));
+
+  // How old a lot is, with the 6-month product promise in mind
+  const lotAge = (batch) => {
+    if (!batch.received_date) return { label: 'Age unknown', cls: 'bg-gray-100 text-gray-500' };
+    const days = Math.max(0, Math.floor((Date.now() - new Date(batch.received_date).getTime()) / 86400000));
+    const label = days < 45 ? `${days} days old` : `${Math.round(days / 30)} months old`;
+    if (days >= 150) return { label, cls: 'bg-red-100 text-red-700' };
+    if (days >= 90) return { label, cls: 'bg-amber-100 text-amber-700' };
+    return { label, cls: 'bg-gray-100 text-gray-600' };
   };
+
+  const billOptions = (() => {
+    const seen = new Map();
+    ingredients.forEach(ing => (ing.ingredient_batches || []).forEach(b => {
+      if (b.bill_number && b.status === 'active' && !seen.has(b.bill_number)) {
+        seen.set(b.bill_number, { bill: b.bill_number, date: b.received_date });
+      }
+    }));
+    return [...seen.values()].sort((x, y) => new Date(y.date || 0) - new Date(x.date || 0));
+  })();
 
   return (
     <div className="space-y-6">
@@ -211,12 +214,6 @@ export default function IngredientInventory() {
           <button onClick={() => { loadIngredients(); loadFinished(); }} className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 text-sm">
             <RefreshCw className="w-4 h-4" /> Refresh
           </button>
-          {activeTab === 'raw' && (
-            <button onClick={() => setShowAddBatchModal(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 text-sm font-medium">
-              <Plus className="w-4 h-4" /> Receive Stock (New Batch)
-            </button>
-          )}
         </div>
       </div>
 
@@ -367,220 +364,135 @@ export default function IngredientInventory() {
       {/* Raw Materials tab */}
       {activeTab === 'raw' && (loading ? (
         <div className="text-center py-16 text-gray-400">Loading ingredients...</div>
-      ) : filtered.length === 0 ? (
-        <div className="text-center py-16 bg-white rounded-xl border">
-          <Package className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-          <p className="text-gray-500 font-medium">No ingredients found</p>
-          <p className="text-gray-400 text-sm mt-1">Ingredients appear automatically when a Purchase Order is synced to inventory</p>
-        </div>
       ) : (
         <div className="space-y-3">
+          <div className="flex flex-wrap gap-2 items-center">
+            <select value={billFilter} onChange={e => setBillFilter(e.target.value)}
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white max-w-full">
+              <option value="">All bills</option>
+              {billOptions.map(b => (
+                <option key={b.bill} value={b.bill}>Bill {b.bill} · {formatDate(b.date)}</option>
+              ))}
+            </select>
+            <Link to="/quick-bill" className="inline-flex items-center gap-1.5 px-3 py-2 bg-teal-600 text-white rounded-lg text-sm font-medium hover:bg-teal-700">
+              <Plus className="w-4 h-4" /> Add bill
+            </Link>
+          </div>
+
+          {filtered.length === 0 && (
+            <div className="text-center py-12 bg-white rounded-xl border">
+              <Package className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+              <p className="text-gray-500 font-medium">Nothing matches</p>
+              <p className="text-gray-400 text-sm mt-1">Clear the search or choose All bills. New stock comes in through Add bill.</p>
+            </div>
+          )}
+
           {filtered.map(ing => {
-            const activeBatches = (ing.ingredient_batches || []).filter(b => b.status === 'active');
+            const lots = lotsFor(ing);
             const isLow = parseFloat(ing.current_stock_total || 0) <= parseFloat(ing.safety_stock_level || 0);
-            const isExpanded = expandedId === ing.id;
+            const isExpanded = billFilter ? true : expandedId === ing.id;
 
             return (
               <div key={ing.id} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-                {/* Header row */}
-                <div className="flex items-center gap-3 p-4 cursor-pointer hover:bg-gray-50"
+                <div className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50"
                   onClick={() => setExpandedId(isExpanded ? null : ing.id)}>
-                  <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center flex-shrink-0">
-                    <Package className="w-4 h-4 text-amber-600" />
-                  </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-gray-900">{ing.name}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      {activeBatches.length} active batch{activeBatches.length !== 1 ? 'es' : ''}
-                    </p>
-                  </div>
-                  <div className="text-right mr-3">
-                    <p className="text-lg font-bold text-gray-900">{parseFloat(ing.current_stock_total || 0).toFixed(2)}</p>
-                    <p className="text-xs text-gray-400">{ing.unit || 'kg'}</p>
+                    <p className="font-semibold text-gray-900 truncate">{ing.name}</p>
+                    <p className="text-xs text-gray-400">{lots.length} lot{lots.length !== 1 ? 's' : ''}</p>
                   </div>
                   {isLow && (
                     <span className="flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-medium">
                       <AlertCircle className="w-3 h-3" /> Low
                     </span>
                   )}
+                  <div className="text-right">
+                    <p className="text-lg font-bold text-gray-900 leading-tight">{parseFloat(ing.current_stock_total || 0).toFixed(2)}</p>
+                    <p className="text-[11px] text-gray-400">{ing.unit || 'kg'}</p>
+                  </div>
                   {isExpanded ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
                 </div>
 
-                {/* Expanded batch table */}
                 {isExpanded && (
-                  <div className="border-t bg-gray-50 px-4 py-4">
-                    <p className="text-xs font-semibold text-gray-500 mb-3 uppercase tracking-wide">Batches (FIFO — oldest expiry used first)</p>
+                  <div className="border-t bg-gray-50 px-4 py-1">
+                    {lots.length === 0 ? (
+                      <p className="text-sm text-gray-400 italic py-3">No stock in this ingredient.</p>
+                    ) : lots.map((batch, idx) => {
+                      const age = lotAge(batch);
+                      const rate = parseFloat(batch.price_per_unit || 0);
+                      const wasteQty = parseFloat(batch.waste_quantity || 0);
+                      const initialQty = parseFloat(batch.quantity_initial || 0);
+                      const usableQty = Math.max(0, initialQty - wasteQty);
+                      const effectiveRate = (wasteQty > 0 && usableQty > 0 && rate > 0) ? (initialQty * rate) / usableQty : rate;
+                      const isEditingWasteThis = editingWaste?.batchId === batch.id;
+                      const isEditingExpiryThis = editingExpiry?.batchId === batch.id;
+                      return (
+                        <div key={batch.id} className="py-3 border-t border-gray-200 first:border-t-0">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-gray-900">
+                                {batch.bill_number ? `Bill ${batch.bill_number}` : (batch.batch_number || 'Opening stock')}
+                                <span className="text-xs font-normal text-gray-400"> · {formatDate(batch.received_date)}</span>
+                              </p>
+                              <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                                {idx === 0 && lots.length > 1 && (
+                                  <span className="text-[11px] px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 font-medium">Use first</span>
+                                )}
+                                <span className={`text-[11px] px-1.5 py-0.5 rounded font-medium ${age.cls}`}>{age.label}</span>
+                                {batch.expiry_date && (
+                                  <span className="text-[11px] text-gray-500">Expiry {formatDate(batch.expiry_date)}</span>
+                                )}
+                                {wasteQty > 0 && (
+                                  <span className="text-[11px] text-amber-700">{wasteQty.toFixed(2)} {ing.unit} waste</span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="text-right flex-shrink-0">
+                              <p className="text-sm font-semibold text-gray-900">
+                                {parseFloat(batch.quantity_remaining || 0).toFixed(2)}
+                                <span className="text-xs font-normal text-gray-400"> {ing.unit}</span>
+                              </p>
+                              {rate > 0 && (
+                                <p className="text-[11px] text-gray-400">
+                                  ₹{Math.round(effectiveRate).toLocaleString('en-IN')}/{(ing.unit || 'kg').toLowerCase()}
+                                </p>
+                              )}
+                            </div>
+                          </div>
 
-                    {(ing.ingredient_batches || []).length === 0 ? (
-                      <p className="text-sm text-gray-400 italic">No batch records found.</p>
-                    ) : (
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm min-w-[820px]">
-                          <thead>
-                            <tr className="text-xs text-gray-500 border-b border-gray-200">
-                              <th className="text-left pb-3 font-medium w-44">Batch #</th>
-                              <th className="text-right pb-3 font-medium w-28">Qty Remaining</th>
-                              <th className="text-right pb-3 font-medium w-24 pl-4">Rate/kg</th>
-                              <th className="text-left pb-3 font-medium w-52 pl-4">Waste (sort)</th>
-                              <th className="text-left pb-3 font-medium w-24 pl-4">Received</th>
-                              <th className="text-left pb-3 font-medium w-36 pl-4">Expiry Date</th>
-                              <th className="text-left pb-3 font-medium w-24">Status</th>
-                              <th className="text-left pb-3 font-medium">Priority</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-100">
-                            {(ing.ingredient_batches || [])
-                              .sort((a, b) => {
-                                const aDate = a.expiry_date || a.received_date;
-                                const bDate = b.expiry_date || b.received_date;
-                                if (!aDate && !bDate) return 0;
-                                if (!aDate) return 1;
-                                if (!bDate) return -1;
-                                return new Date(aDate) - new Date(bDate);
-                              })
-                              .map((batch, idx) => {
-                                const batchStatus = getBatchStatus(batch);
-                                const isEditingThis = editingExpiry?.batchId === batch.id;
-                                const isEditingWasteThis = editingWaste?.batchId === batch.id;
-                                const hasExpiry = !!batch.expiry_date;
-                                const rate = parseFloat(batch.price_per_unit || 0);
-                                const initialQty = parseFloat(batch.quantity_initial || 0);
-                                const wasteQty = parseFloat(batch.waste_quantity || 0);
-                                const usableQty = Math.max(0, initialQty - wasteQty);
-                                const effectiveRate = (wasteQty > 0 && usableQty > 0 && rate > 0)
-                                  ? (initialQty * rate) / usableQty
-                                  : rate;
-
-                                return (
-                                  <tr key={batch.id} className={batch.status !== 'active' ? 'opacity-50' : ''}>
-                                    {/* Batch # */}
-                                    <td className="py-3 font-mono text-xs text-gray-600 pr-4">{batch.batch_number || '—'}</td>
-
-                                    {/* Qty Remaining */}
-                                    <td className="py-3 text-right font-semibold text-gray-900 pr-4">
-                                      {parseFloat(batch.quantity_remaining || 0).toFixed(2)}
-                                      <span className="text-xs font-normal text-gray-400 ml-1">{ing.unit}</span>
-                                    </td>
-
-                                    {/* Rate / kg */}
-                                    <td className="py-3 text-right pl-4 pr-4">
-                                      {rate > 0 ? (
-                                        <>
-                                          <span className="text-gray-700">₹{rate.toLocaleString('en-IN')}</span>
-                                          {wasteQty > 0 && (
-                                            <span className="block text-[11px] text-amber-600 font-medium">
-                                              ₹{Math.round(effectiveRate).toLocaleString('en-IN')} usable
-                                            </span>
-                                          )}
-                                        </>
-                                      ) : <span className="text-gray-300">—</span>}
-                                    </td>
-
-                                    {/* Waste (sort) */}
-                                    <td className="py-3 pl-4">
-                                      {isEditingWasteThis ? (
-                                        <div className="flex items-center gap-1.5">
-                                          <input type="number" min="0" step="0.01" value={editingWaste.value || ''}
-                                            onChange={e => setEditingWaste(prev => ({ ...prev, value: e.target.value }))}
-                                            placeholder="kg" autoFocus
-                                            className="border rounded px-2 py-1 text-xs focus:ring-2 focus:ring-amber-500 w-20" />
-                                          <button onClick={saveWaste} disabled={savingWaste}
-                                            className="p-1 text-green-600 hover:bg-green-50 rounded-lg" title="Save">
-                                            <Check className="w-3.5 h-3.5" />
-                                          </button>
-                                          <button onClick={() => setEditingWaste(null)}
-                                            className="p-1 text-gray-400 hover:bg-gray-100 rounded-lg" title="Cancel">
-                                            <X className="w-3.5 h-3.5" />
-                                          </button>
-                                        </div>
-                                      ) : (
-                                        <div className="flex items-center gap-2">
-                                          {wasteQty > 0 ? (
-                                            <span className="text-xs text-gray-700">
-                                              {wasteQty.toFixed(2)} {ing.unit}
-                                              <span className="text-gray-400"> → {usableQty.toFixed(2)} usable</span>
-                                            </span>
-                                          ) : (
-                                            <span className="text-gray-300 text-xs">No waste</span>
-                                          )}
-                                          {batch.status === 'active' && (
-                                            <button onClick={() => startEditWaste(batch, ing.id)}
-                                              className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-xs transition ${
-                                                wasteQty > 0
-                                                  ? 'text-gray-400 hover:text-amber-600 hover:bg-amber-50'
-                                                  : 'text-amber-600 bg-amber-50 hover:bg-amber-100'
-                                              }`}
-                                              title="Enter sorting waste">
-                                              <Edit2 className="w-3 h-3" />
-                                              {wasteQty === 0 && <span>Sort</span>}
-                                            </button>
-                                          )}
-                                        </div>
-                                      )}
-                                    </td>
-
-                                    {/* Received Date */}
-                                    <td className="py-3 text-gray-600 text-xs pl-4 pr-4">
-                                      {formatDate(batch.received_date)}
-                                    </td>
-
-                                    {/* Expiry Date — always shows edit button when no date set */}
-                                    <td className="py-3 pl-4">
-                                      {isEditingThis ? (
-                                        <div className="flex items-center gap-1.5">
-                                          <input type="date" value={editingExpiry.value}
-                                            onChange={e => setEditingExpiry(prev => ({ ...prev, value: e.target.value }))}
-                                            className="border rounded px-2 py-1 text-xs focus:ring-2 focus:ring-teal-500 w-32" />
-                                          <button onClick={saveExpiry} disabled={savingExpiry}
-                                            className="p-1 text-green-600 hover:bg-green-50 rounded-lg" title="Save">
-                                            <Check className="w-3.5 h-3.5" />
-                                          </button>
-                                          <button onClick={() => setEditingExpiry(null)}
-                                            className="p-1 text-gray-400 hover:bg-gray-100 rounded-lg" title="Cancel">
-                                            <X className="w-3.5 h-3.5" />
-                                          </button>
-                                        </div>
-                                      ) : (
-                                        <div className="flex items-center gap-2">
-                                          {hasExpiry ? (
-                                            <span className="text-gray-700 text-xs">{formatDate(batch.expiry_date)}</span>
-                                          ) : (
-                                            <span className="text-orange-400 text-xs font-medium">Not set</span>
-                                          )}
-                                          {batch.status === 'active' && (
-                                            <button onClick={() => startEditExpiry(batch, ing.id)}
-                                              className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-xs transition ${
-                                                hasExpiry
-                                                  ? 'text-gray-400 hover:text-blue-500 hover:bg-blue-50'
-                                                  : 'text-orange-500 bg-orange-50 hover:bg-orange-100'
-                                              }`}
-                                              title="Set expiry date">
-                                              <Edit2 className="w-3 h-3" />
-                                              {!hasExpiry && <span>Add date</span>}
-                                            </button>
-                                          )}
-                                        </div>
-                                      )}
-                                    </td>
-
-                                    {/* Status */}
-                                    <td className="py-3">
-                                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${batchStatus.color}`}>
-                                        {batchStatus.label}
-                                      </span>
-                                    </td>
-
-                                    {/* Priority */}
-                                    <td className="py-3 text-xs text-gray-400">
-                                      {batch.status === 'active' ? (idx === 0 ? '🔴 Next to use' : `#${idx + 1} Queued`) : '—'}
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
+                          {isEditingWasteThis ? (
+                            <div className="mt-2 flex items-center gap-2">
+                              <input type="number" min="0" step="0.01" autoFocus value={editingWaste.value || ''}
+                                onChange={e => setEditingWaste(prev => ({ ...prev, value: e.target.value }))}
+                                placeholder={`${ing.unit || 'kg'} wasted`}
+                                className="border rounded-lg px-2 py-1.5 text-sm w-32" />
+                              <button onClick={saveWaste} disabled={savingWaste}
+                                className="px-3 py-1.5 bg-amber-600 text-white rounded-lg text-sm font-medium disabled:opacity-50">Save waste</button>
+                              <button onClick={() => setEditingWaste(null)} className="text-sm text-gray-500">Cancel</button>
+                            </div>
+                          ) : isEditingExpiryThis ? (
+                            <div className="mt-2 flex items-center gap-2">
+                              <input type="date" value={editingExpiry.value}
+                                onChange={e => setEditingExpiry(prev => ({ ...prev, value: e.target.value }))}
+                                className="border rounded-lg px-2 py-1.5 text-sm" />
+                              <button onClick={saveExpiry} disabled={savingExpiry}
+                                className="px-3 py-1.5 bg-teal-600 text-white rounded-lg text-sm font-medium disabled:opacity-50">Save</button>
+                              <button onClick={() => setEditingExpiry(null)} className="text-sm text-gray-500">Cancel</button>
+                            </div>
+                          ) : (
+                            <div className="mt-2 flex gap-2">
+                              <button onClick={() => startEditWaste(batch, ing.id)}
+                                className="px-3 py-1.5 border border-amber-300 text-amber-700 bg-amber-50 rounded-lg text-xs font-medium">
+                                Record waste
+                              </button>
+                              <button onClick={() => startEditExpiry(batch, ing.id)}
+                                className="px-3 py-1.5 border border-gray-300 text-gray-600 bg-white rounded-lg text-xs font-medium">
+                                {batch.expiry_date ? 'Change expiry' : 'Add expiry'}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -588,68 +500,6 @@ export default function IngredientInventory() {
           })}
         </div>
       ))}
-
-      {/* Add Batch Modal */}
-      {showAddBatchModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-xl">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-bold">Receive New Stock</h3>
-              <button onClick={() => setShowAddBatchModal(false)}><X className="w-5 h-5 text-gray-400" /></button>
-            </div>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Ingredient *</label>
-                <select value={batchForm.ingredientId} onChange={e => setBatchForm({ ...batchForm, ingredientId: e.target.value })}
-                  className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500">
-                  <option value="">Select Ingredient</option>
-                  {ingredients.map(ing => <option key={ing.id} value={ing.id}>{ing.name}</option>)}
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Quantity (kg) *</label>
-                  <input type="number" min="0" step="0.01" placeholder="0.00"
-                    value={batchForm.quantity || ''} onChange={e => setBatchForm({ ...batchForm, quantity: e.target.value })}
-                    className="w-full border rounded-lg px-3 py-2 text-sm" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Rate / kg (₹)</label>
-                  <input type="number" min="0" step="0.01" placeholder="0"
-                    value={batchForm.price || ''} onChange={e => setBatchForm({ ...batchForm, price: e.target.value })}
-                    className="w-full border rounded-lg px-3 py-2 text-sm" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Received Date</label>
-                  <input type="date" value={batchForm.receivedDate} onChange={e => setBatchForm({ ...batchForm, receivedDate: e.target.value })}
-                    className="w-full border rounded-lg px-3 py-2 text-sm" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Expiry Date</label>
-                  <input type="date" value={batchForm.expiryDate} onChange={e => setBatchForm({ ...batchForm, expiryDate: e.target.value })}
-                    className="w-full border rounded-lg px-3 py-2 text-sm" />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Batch # (Optional)</label>
-                <input type="text" placeholder="e.g. B-001"
-                  value={batchForm.batchNumber} onChange={e => setBatchForm({ ...batchForm, batchNumber: e.target.value })}
-                  className="w-full border rounded-lg px-3 py-2 text-sm" />
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <button onClick={() => setShowAddBatchModal(false)}
-                  className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg">Cancel</button>
-                <button onClick={handleAddBatch} disabled={addingBatch}
-                  className="px-4 py-2 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50">
-                  {addingBatch ? 'Saving...' : 'Save Batch'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
