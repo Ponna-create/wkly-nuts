@@ -27,7 +27,7 @@ class ErrorBoundary extends React.Component {
             <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-4" />
             <h2 className="text-2xl font-bold text-gray-900 mb-2">Something went wrong</h2>
             <p className="text-gray-600 mb-4">
-              The SKU Management page encountered an error. Please try refreshing the page.
+              This page ran into a problem. Please refresh. If it keeps happening, open Error Details and send it to support.
             </p>
             {this.state.error && (
               <details className="mt-4 text-left bg-gray-100 p-4 rounded-lg">

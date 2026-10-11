@@ -98,11 +98,6 @@ export default function IngredientInventory() {
     loadFinished();
   };
 
-  const filtered = ingredients.filter(ing =>
-    ing.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
-    (!billFilter || lotsFor(ing).length > 0)
-  );
-
   // ── Edit expiry date inline ──
   const startEditExpiry = (batch, ingredientId) => {
     setEditingExpiry({
@@ -192,6 +187,11 @@ export default function IngredientInventory() {
     if (days >= 90) return { label, cls: 'bg-amber-100 text-amber-700' };
     return { label, cls: 'bg-gray-100 text-gray-600' };
   };
+
+  const filtered = ingredients.filter(ing =>
+    ing.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
+    (!billFilter || lotsFor(ing).length > 0)
+  );
 
   const billOptions = (() => {
     const seen = new Map();
