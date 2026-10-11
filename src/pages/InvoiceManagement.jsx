@@ -237,27 +237,30 @@ export default function InvoiceManagement() {
       discount = parseFloat(formData.discountAmount || 0);
     }
     
+    // Prices (and shipping) already INCLUDE GST — never add GST on top.
+    // subtotal/discount/afterDiscount/shipping/total are what the customer pays;
+    // gstAmount is the GST contained in the items (shipping's GST is split
+    // out by the PDF/GST export, same as order invoices).
     const afterDiscount = subtotal - discount;
-    
-    // Calculate GST
-    const gstAmount = (afterDiscount * parseFloat(formData.gstRate || 0)) / 100;
-    
-    // Shipping charge
+    const divisor = 1 + parseFloat(formData.gstRate || 0) / 100;
+    const gstAmount = afterDiscount - afterDiscount / divisor;
+
+    // Shipping charge (GST-inclusive)
     const shipping = parseFloat(formData.shippingCharge || 0);
-    
+
     // Total amount
-    const total = afterDiscount + gstAmount + shipping;
-    
+    const total = afterDiscount + shipping;
+
     // Advance paid
     const advance = parseFloat(formData.advancePaid || 0);
-    
+
     // Balance due
     const balanceDue = total - advance;
 
-    return { subtotal, discount, afterDiscount, gstAmount, shipping, total, advance, balanceDue };
+    return { subtotal, discount, afterDiscount, gstAmount, shipping, total, advance, balanceDue, divisor };
   };
 
-  const { subtotal, discount, afterDiscount, gstAmount, shipping, total, advance, balanceDue } = calculateTotals();
+  const { subtotal, discount, afterDiscount, gstAmount, shipping, total, advance, balanceDue, divisor } = calculateTotals();
 
   const resetForm = () => {
     setFormData({
@@ -419,10 +422,12 @@ export default function InvoiceManagement() {
         unitPrice: item.unitPrice,
         total: item.total,
       })),
-      subtotal,
+      // Stored the same way order invoices are: taxable (ex-GST) subtotal and
+      // discount + the GST inside them, so Sub Total − Discount + GST + Shipping = Total.
+      subtotal: subtotal / divisor,
       gstRate: parseFloat(formData.gstRate || 0),
       gstAmount,
-      discountAmount: discount,
+      discountAmount: discount / divisor,
       discountPercent: parseFloat(formData.discountPercent || 0),
       shippingCharge: shipping,
       advancePaid: advance,
@@ -594,7 +599,10 @@ export default function InvoiceManagement() {
       dueDate: invoice.dueDate || invoice.due_date || '',
       items: invoice.items || [],
       gstRate: invoice.gstRate || invoice.gst_rate || 5,
-      discountAmount: invoice.discountAmount || invoice.discount_amount || 0,
+      // stored discount is ex-GST; the form works in GST-inclusive amounts
+      discountAmount: Math.round(
+        (invoice.discountAmount || invoice.discount_amount || 0) *
+        (1 + (parseFloat(invoice.gstRate || invoice.gst_rate || 0) / 100)) * 100) / 100,
       discountPercent: invoice.discountPercent || invoice.discount_percent || 0,
       shippingCharge: invoice.shippingCharge || invoice.shipping_charge || 0,
       advancePaid: invoice.advancePaid || invoice.advance_paid || 0,
@@ -1284,15 +1292,21 @@ export default function InvoiceManagement() {
       }
       yPos += 6;
       
+      // The shipping charged is GST-inclusive (Rs. 60 stays Rs. 60 in the total).
+      // Show it net of its GST and add that GST to the GST line, so
+      // Sub Total - Discount + Shipping + GST = Total.
+      const shippingNet = gstRate > 0 ? shippingCharge / (1 + gstRate / 100) : shippingCharge;
+      const shippingGst = shippingCharge - shippingNet;
+
       // Shipping charge (always show, even if 0)
       doc.text('Shipping charge:', summaryX, yPos);
-      doc.text(`Rs. ${shippingCharge.toFixed(2)}`, summaryRightX, yPos, { align: 'right' });
+      doc.text(`Rs. ${shippingNet.toFixed(2)}`, summaryRightX, yPos, { align: 'right' });
       yPos += 6;
-      
-      // GST (always show if rate is set, even if 0)
+
+      // GST (always show if rate is set, even if 0) — items + shipping
       if (gstRate > 0) {
         doc.text(`GST(${gstRate}%):`, summaryX, yPos);
-        doc.text(`Rs. ${gstAmount.toFixed(2)}`, summaryRightX, yPos, { align: 'right' });
+        doc.text(`Rs. ${(gstAmount + shippingGst).toFixed(2)}`, summaryRightX, yPos, { align: 'right' });
         yPos += 6;
       }
       
@@ -2418,15 +2432,9 @@ export default function InvoiceManagement() {
                     <span className="text-gray-600">After Discount:</span>
                     <span className="font-medium">₹{afterDiscount.toFixed(2)}</span>
                   </div>
-                  {gstAmount > 0 && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">GST ({formData.gstRate}%):</span>
-                      <span className="font-medium">₹{gstAmount.toFixed(2)}</span>
-                    </div>
-                  )}
                   {shipping > 0 && (
                     <div className="flex justify-between">
-                      <span className="text-gray-600">Shipping:</span>
+                      <span className="text-gray-600">Shipping (incl. GST):</span>
                       <span className="font-medium">₹{shipping.toFixed(2)}</span>
                     </div>
                   )}
@@ -2434,6 +2442,14 @@ export default function InvoiceManagement() {
                     <span className="text-lg font-bold text-gray-900">Total:</span>
                     <span className="text-lg font-bold text-primary-600">₹{total.toFixed(2)}</span>
                   </div>
+                  {formData.gstRate > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">Includes GST ({formData.gstRate}%):</span>
+                      <span className="text-gray-500">
+                        ₹{(total - total / divisor).toFixed(2)}
+                      </span>
+                    </div>
+                  )}
                   {advance > 0 && (
                     <div className="flex justify-between pt-2">
                       <span className="text-gray-600">Advance Paid:</span>
