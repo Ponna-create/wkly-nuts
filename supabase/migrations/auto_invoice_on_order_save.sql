@@ -1,0 +1,14 @@
+-- Applied 2026-10-11 (already live in Supabase). Kept here for the record.
+-- One invoice per order, created by the DATABASE when the order is saved.
+--   * sales_orders_auto_invoice  (AFTER INSERT/UPDATE): creates the invoice via
+--     ensure_invoice_for_order when the order has none (skips promo/collab,
+--     total <= 0, cancelled); re-syncs the invoice if the order is edited and the
+--     invoice is in the current month (earlier months may already be filed).
+--   * sales_orders_keep_invoice  (BEFORE UPDATE): an order that has its invoice
+--     can't be re-pointed at another (stale browser tabs); the stray is voided.
+-- Depends on: invoices.sales_order_id + unique index invoices_one_per_order,
+--             public.ensure_invoice_for_order(uuid, jsonb), invoice_number_seq.
+-- Functions: order_is_promotional, build_invoice_json_for_order,
+--            trg_sales_order_invoice, trg_sales_order_keep_invoice.
+-- Full definitions: see the migration `auto_invoice_on_order_save` in Supabase
+-- (list_migrations), or pg_get_functiondef on the functions above.
