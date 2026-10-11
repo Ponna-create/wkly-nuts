@@ -53,6 +53,8 @@ export default function QuickHours() {
   const [newWork, setNewWork] = useState('');
   const [sameIn, setSameIn] = useState('');
   const [sameOut, setSameOut] = useState('');
+  const [sameInSet, setSameInSet] = useState(false);
+  const [sameOutSet, setSameOutSet] = useState(false);
   const [rows, setRows] = useState({}); // staffId -> { on, work, inT, outT, inSet, outSet }
   const [saving, setSaving] = useState(false);
 
@@ -106,6 +108,23 @@ export default function QuickHours() {
       selected.forEach(m => { next[m.id] = { ...rowOf(m.id), ...(p[m.id] || {}), inT: sameIn, outT: sameOut }; });
       return next;
     });
+  };
+
+  // One tap for the whole group: stamps the time on every ticked person who has no
+  // in (or out) time yet. Anyone who already has a time is left alone.
+  const stampGroup = (which) => {
+    const t = nowHM();
+    if (selected.length === 0) { showToast('Tick the people first', 'error'); return; }
+    setRows(p => {
+      const next = { ...p };
+      selected.forEach(m => {
+        const cur = { ...rowOf(m.id), ...(p[m.id] || {}) };
+        if (which === 'in' && !cur.inT) next[m.id] = { ...cur, inT: t, inSet: true };
+        if (which === 'out' && !cur.outT) next[m.id] = { ...cur, outT: t, outSet: true };
+      });
+      return next;
+    });
+    if (which === 'in') { setSameIn(t); setSameInSet(true); } else { setSameOut(t); setSameOutSet(true); }
   };
 
   const addWorkType = async () => {
@@ -162,6 +181,8 @@ export default function QuickHours() {
     setRows({});
     setSameIn('');
     setSameOut('');
+    setSameInSet(false);
+    setSameOutSet(false);
     await load();
   };
 
@@ -244,20 +265,33 @@ export default function QuickHours() {
       </div>
 
       <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
-        <div className="flex items-end gap-2">
-          <div className="flex-1">
-            <label className="block text-[11px] text-gray-500 mb-0.5">Same in</label>
-            <input type="time" value={sameIn} onChange={e => setSameIn(e.target.value)} className={field} />
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-[11px] text-gray-500 mb-0.5">Everyone in</label>
+            <div className="flex gap-1.5">
+              <input type="time" value={sameIn} onChange={e => setSameIn(e.target.value)} className={field} />
+              <button type="button" disabled={sameInSet} onClick={() => stampGroup('in')}
+                className="px-2.5 text-xs font-medium border border-gray-300 rounded-lg bg-white text-gray-700 disabled:bg-gray-100 disabled:text-gray-400">
+                Now
+              </button>
+            </div>
           </div>
-          <div className="flex-1">
-            <label className="block text-[11px] text-gray-500 mb-0.5">Same out</label>
-            <input type="time" value={sameOut} onChange={e => setSameOut(e.target.value)} className={field} />
+          <div>
+            <label className="block text-[11px] text-gray-500 mb-0.5">Everyone out</label>
+            <div className="flex gap-1.5">
+              <input type="time" value={sameOut} onChange={e => setSameOut(e.target.value)} className={field} />
+              <button type="button" disabled={sameOutSet} onClick={() => stampGroup('out')}
+                className="px-2.5 text-xs font-medium border border-gray-300 rounded-lg bg-white text-gray-700 disabled:bg-gray-100 disabled:text-gray-400">
+                Now
+              </button>
+            </div>
           </div>
-          <button type="button" onClick={applySame} className="px-3 min-h-[42px] border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white">
-            Apply to ticked
-          </button>
         </div>
-        <p className="text-[11px] text-gray-400">Use this when people worked the same hours. Each person can still be changed below.</p>
+        <button type="button" onClick={applySame}
+          className="w-full min-h-[40px] border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white">
+          Apply typed times to ticked people
+        </button>
+        <p className="text-[11px] text-gray-400">Tick the people, then tap Now to start or stop all of them at once. Anyone can still be changed below.</p>
 
         {staff.length === 0 && <p className="text-sm text-gray-400">No staff yet. Add them in Work Log → Staff.</p>}
         {staff.map(m => {
