@@ -3,6 +3,7 @@ import { Check, Loader2, Trash2, Play, Square } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
 import { formatDate } from '../utils/dateFormat';
+import { TimeInput12 } from './ProductionRuns';
 
 // Hours without losing anything if the page is closed:
 //   Start  -> saved right away as "working now" (person, work, in-time)
@@ -24,6 +25,13 @@ const toMin = (t) => {
 const hoursBetween = (a, b) => {
   const s = toMin(a), e = toMin(b);
   return s != null && e != null && e > s ? (e - s) / 60 : 0;
+};
+// "13:05" -> "1:05 PM" (times are stored as 24-hour HH:MM, shown in 12-hour)
+const fmt12 = (t) => {
+  const m = String(t || '').match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return t || '';
+  const H = parseInt(m[1], 10);
+  return `${H % 12 === 0 ? 12 : H % 12}:${m[2]} ${H >= 12 ? 'PM' : 'AM'}`;
 };
 const hm = (mins) => `${Math.floor(mins / 60)}h ${String(Math.round(mins % 60)).padStart(2, '0')}m`;
 
@@ -152,7 +160,7 @@ export default function QuickHours() {
     setSaving(false);
     setRows({});
     if (failed > 0) showToast(`${selected.length - failed} started, ${failed} failed. Check "Working now".`, 'error');
-    else showToast(`Started for ${selected.length} ${selected.length === 1 ? 'person' : 'people'} at ${firstTime}. Stop them from "Working now" later.`, 'success');
+    else showToast(`Started for ${selected.length} ${selected.length === 1 ? 'person' : 'people'} at ${fmt12(firstTime)}. Stop them from "Working now" later.`, 'success');
     await load();
   };
 
@@ -282,7 +290,7 @@ export default function QuickHours() {
                     <p className="text-xs text-gray-500 truncate">{e.activity}</p>
                   </div>
                   <p className="text-xs text-green-800 text-right flex-shrink-0">
-                    since {e.start_time}{sameDay ? '' : ` on ${formatDate(e.work_date)}`}
+                    since {fmt12(e.start_time)}{sameDay ? '' : ` on ${formatDate(e.work_date)}`}
                     {elapsed && <span className="block text-[11px]">{elapsed} so far</span>}
                   </p>
                 </div>
@@ -290,13 +298,12 @@ export default function QuickHours() {
                   <p className="text-[11px] text-red-600">Started on an earlier day. Enter the time they finished and set it.</p>
                 )}
                 <div className="flex gap-2 items-center">
-                  <input type="time" value={typed} onChange={ev => setStopTimes(p => ({ ...p, [e.id]: ev.target.value }))}
-                    className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm w-32" aria-label="Out time" />
+                  <TimeInput12 value={typed} onChange={v => setStopTimes(p => ({ ...p, [e.id]: v }))} />
                   {typed ? (
                     <button type="button" disabled={busyId === e.id}
                       onClick={async () => { if (await stopOne(e, typed)) await load(); }}
                       className="flex-1 min-h-[40px] bg-teal-600 text-white rounded-lg text-sm font-semibold disabled:opacity-50">
-                      Stop at {typed}
+                      Stop at {fmt12(typed)}
                     </button>
                   ) : (
                     <button type="button" disabled={busyId === e.id || !sameDay}
@@ -382,19 +389,19 @@ export default function QuickHours() {
       <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
         {mode === 'finished' && (
           <>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
               <div>
                 <label className="block text-[11px] text-gray-500 mb-0.5">Everyone in</label>
-                <div className="flex gap-1.5">
-                  <input type="time" value={sameIn} onChange={e => setSameIn(e.target.value)} className={field} />
-                  <button type="button" disabled={sameInSet} onClick={() => stampGroup('in')} className={nowBtn}>Now</button>
+                <div className="flex items-center gap-2">
+                  <TimeInput12 value={sameIn} onChange={setSameIn} />
+                  <button type="button" disabled={sameInSet} onClick={() => stampGroup('in')} className={`${nowBtn} py-2`}>Now</button>
                 </div>
               </div>
               <div>
                 <label className="block text-[11px] text-gray-500 mb-0.5">Everyone out</label>
-                <div className="flex gap-1.5">
-                  <input type="time" value={sameOut} onChange={e => setSameOut(e.target.value)} className={field} />
-                  <button type="button" disabled={sameOutSet} onClick={() => stampGroup('out')} className={nowBtn}>Now</button>
+                <div className="flex items-center gap-2">
+                  <TimeInput12 value={sameOut} onChange={setSameOut} />
+                  <button type="button" disabled={sameOutSet} onClick={() => stampGroup('out')} className={`${nowBtn} py-2`}>Now</button>
                 </div>
               </div>
             </div>
@@ -435,23 +442,23 @@ export default function QuickHours() {
                   {mode === 'start' ? (
                     <div>
                       <label className="block text-[11px] text-gray-500 mb-0.5">Started at (blank = now)</label>
-                      <input type="time" value={r.inT} onChange={e => patchRow(m.id, { inT: e.target.value })} className={field} />
+                      <TimeInput12 value={r.inT} onChange={v => patchRow(m.id, { inT: v })} />
                     </div>
                   ) : (
                     <>
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-2">
                         <div>
                           <label className="block text-[11px] text-gray-500 mb-0.5">In</label>
-                          <div className="flex gap-1.5">
-                            <input type="time" value={r.inT} onChange={e => patchRow(m.id, { inT: e.target.value })} className={field} />
-                            <button type="button" disabled={r.inSet} onClick={() => patchRow(m.id, { inT: nowHM(), inSet: true })} className={nowBtn}>Now</button>
+                          <div className="flex items-center gap-2">
+                            <TimeInput12 value={r.inT} onChange={v => patchRow(m.id, { inT: v })} />
+                            <button type="button" disabled={r.inSet} onClick={() => patchRow(m.id, { inT: nowHM(), inSet: true })} className={`${nowBtn} py-2`}>Now</button>
                           </div>
                         </div>
                         <div>
                           <label className="block text-[11px] text-gray-500 mb-0.5">Out</label>
-                          <div className="flex gap-1.5">
-                            <input type="time" value={r.outT} onChange={e => patchRow(m.id, { outT: e.target.value })} className={field} />
-                            <button type="button" disabled={r.outSet} onClick={() => patchRow(m.id, { outT: nowHM(), outSet: true })} className={nowBtn}>Now</button>
+                          <div className="flex items-center gap-2">
+                            <TimeInput12 value={r.outT} onChange={v => patchRow(m.id, { outT: v })} />
+                            <button type="button" disabled={r.outSet} onClick={() => patchRow(m.id, { outT: nowHM(), outSet: true })} className={`${nowBtn} py-2`}>Now</button>
                           </div>
                         </div>
                       </div>
@@ -492,7 +499,7 @@ export default function QuickHours() {
               <div key={e.id} className="flex items-center justify-between gap-2 px-4 py-2.5 text-sm">
                 <div className="min-w-0">
                   <p className="font-medium text-gray-900 truncate">{(e.staff || []).map(s => s.name?.trim()).join(', ') || '—'}</p>
-                  <p className="text-xs text-gray-500 truncate">{e.activity} · {e.start_time}–{e.end_time}</p>
+                  <p className="text-xs text-gray-500 truncate">{e.activity} · {fmt12(e.start_time)} – {fmt12(e.end_time)}</p>
                 </div>
                 <div className="flex items-center gap-3 flex-shrink-0">
                   <span className="text-gray-700">₹{Math.round(num(e.cost))}</span>
