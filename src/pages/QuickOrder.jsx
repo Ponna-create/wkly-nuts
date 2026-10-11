@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Check, Minus, Plus, Trash2, Loader2, AlertTriangle, Printer, ScanLine } from 'lucide-react';
 import { useApp } from '../context/AppContext';
@@ -22,6 +22,11 @@ export default function QuickOrder() {
   const [orderSource, setOrderSource] = useState('');
   const [influencerId, setInfluencerId] = useState(null); // null = not asked yet, '' = none
   const [showSourcePopup, setShowSourcePopup] = useState(false);
+  // fetched fresh — an influencer added in Marketing a minute ago must show here
+  const [contactList, setContactList] = useState(state.marketingContacts || []);
+  useEffect(() => {
+    dbService.getMarketingContacts().then(r => setContactList(r.data || []));
+  }, [showSourcePopup]);
   const [popupPromo, setPopupPromo] = useState(false);
   const [customSourceMode, setCustomSourceMode] = useState(false);
   const [customSourceInput, setCustomSourceInput] = useState('');
@@ -225,7 +230,7 @@ export default function QuickOrder() {
     const ov = opts && typeof opts === 'object' && Object.prototype.hasOwnProperty.call(opts, 'source') ? opts : null;
     const src = ((ov ? ov.source : orderSource) || '').trim();
     const infl = ov ? ov.influencerId : influencerId;
-    const contacts = state.marketingContacts || [];
+    const contacts = contactList;
     if (!canSave) {
       if (!fields.name.trim()) showToast('Enter a name', 'error');
       else if (fields.phone.replace(/\D/g, '').length < 10) showToast('Enter a valid 10-digit phone number', 'error');
@@ -455,7 +460,7 @@ export default function QuickOrder() {
                       type="button"
                       onClick={() => {
                         setOrderSource(opt.value);
-                        if (opt.value === 'promotion' && (state.marketingContacts || []).length > 0) {
+                        if (opt.value === 'promotion' && contactList.length > 0) {
                           setPopupPromo(true);
                         } else {
                           handleSave({ source: opt.value, influencerId: '' });
@@ -473,7 +478,7 @@ export default function QuickOrder() {
                 <h3 className="text-base font-semibold text-gray-900">Which influencer is this for?</h3>
                 <p className="text-xs text-gray-500 mt-0.5 mb-3">The product cost is added to their marketing cost</p>
                 <div className="grid grid-cols-1 gap-2 max-h-64 overflow-y-auto">
-                  {(state.marketingContacts || []).map(c => (
+                  {contactList.map(c => (
                     <button
                       key={c.id}
                       type="button"
