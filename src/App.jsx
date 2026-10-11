@@ -32,6 +32,7 @@ import GSTFiling from './pages/GSTFiling';
 import QuickOrder from './pages/QuickOrder';
 import QuickBill from './pages/QuickBill';
 import QuickBatch from './pages/QuickBatch';
+import QuickHours from './pages/QuickHours';
 import AiUsage from './pages/AiUsage';
 
 function App() {
@@ -69,6 +70,7 @@ function App() {
               <Route path="/quick-order" element={<ErrorBoundary><QuickOrder /></ErrorBoundary>} />
               <Route path="/quick-bill" element={<ErrorBoundary><QuickBill /></ErrorBoundary>} />
               <Route path="/quick-batch" element={<ErrorBoundary><QuickBatch /></ErrorBoundary>} />
+              <Route path="/quick-hours" element={<ErrorBoundary><QuickHours /></ErrorBoundary>} />
             </Routes>
           </Layout>
           <Toast />
