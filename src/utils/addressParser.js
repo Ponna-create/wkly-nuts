@@ -83,6 +83,21 @@ const CITY_STATE = {
 
 const lettersOnly = (s) => s.toLowerCase().replace(/[^a-z]/g, '');
 
+// Makes sure the state NAME is written in the saved address text (labels and
+// courier slips are printed from it). If it's already there in any spelling
+// ("Tamilnadu", "TAMIL NADU") it's left alone; otherwise it's put just before a
+// trailing pincode, or at the end: "...Lalgudi, Trichy 621601"
+// → "...Lalgudi, Trichy, Tamil Nadu 621601".
+export function addressWithState(address, state) {
+  const a = String(address || '').trim();
+  const st = String(state || '').trim();
+  if (!a || !st) return a;
+  if (lettersOnly(a).includes(lettersOnly(st))) return a;
+  const m = a.match(/^([\s\S]*?)[,\s-]*(\d{3}\s?\d{3})\s*$/);
+  if (m && m[1].trim()) return `${m[1].trim().replace(/[,\s]+$/, '')}, ${st} ${m[2].replace(/\s/g, '')}`;
+  return `${a.replace(/[,\s]+$/, '')}, ${st}`;
+}
+
 // Best-effort state for a customer/order address: explicit state text wins,
 // then the 6-digit pincode, then a well-known city. Returns '' if unknown —
 // callers should then ASK rather than guess.
