@@ -218,7 +218,9 @@ export default function QuickBatch() {
       <div className="bg-white border border-gray-200 rounded-xl p-4">
         <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Taken from stock (oldest bill first)</p>
         {stockCheck.length === 0 ? (
-          <p className="text-sm text-gray-400">This product has no recipe saved yet, so nothing will be used from stock.</p>
+          <p className="text-sm text-gray-400">
+            No ingredient recipe on this product{recipe.packaging.length > 0 ? ', so only the packaging below will be used' : ', so nothing will be used from stock'}.
+          </p>
         ) : stockCheck.map(r => (
           <div key={r.name} className="flex items-center justify-between gap-2 py-1.5 border-t first:border-t-0 border-gray-100 text-sm">
             <span className="truncate">{r.name}</span>
