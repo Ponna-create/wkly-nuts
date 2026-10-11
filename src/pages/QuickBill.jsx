@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Check, Loader2, Plus, Trash2 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
+import { parseBillPdf } from '../utils/billPdfParser';
 
 // One screen for every rupee going out. A bill/expense is saved once and fans
 // out to the place that needs it: raw material -> Inventory lot (with bill
@@ -58,9 +59,14 @@ export default function QuickBill() {
   const [ingredients, setIngredients] = useState([]);
   const [materials, setMaterials] = useState([]);
 
-  const contacts = state.marketingContacts || [];
+  // fetched fresh: an influencer added in Marketing a minute ago must show up here
+  const [contacts, setContacts] = useState(state.marketingContacts || []);
+  const [reading, setReading] = useState(false);
+  const [readNote, setReadNote] = useState('');
+  const [printedTotal, setPrintedTotal] = useState(0);
 
   useEffect(() => {
+    dbService.getMarketingContacts().then(r => setContacts(r.data || []));
     dbService.getIngredients().then(r => setIngredients(r.data || []));
     dbService.getPackagingMaterials().then(r => setMaterials(r.data || []));
   }, []);
@@ -74,14 +80,62 @@ export default function QuickBill() {
   const isStockCategory = category === 'raw_materials' || category === 'packaging';
   const isBarter = category === 'advertising' && marketingType.startsWith('Collab');
   const lineTotal = lines.reduce((s, l) => s + num(l.amount), 0);
-  const billTotal = isStockCategory ? lineTotal : num(amount);
+  // a printed total that differs from the lines only by round-off (<₹5) is what was actually paid
+  const billTotal = isStockCategory
+    ? (printedTotal > 0 && Math.abs(printedTotal - lineTotal) < 5 ? printedTotal : lineTotal)
+    : num(amount);
   const pickList = category === 'raw_materials' ? ingredients : materials;
   const unitOf = (item) => item?.unit || (category === 'raw_materials' ? 'Kg' : 'pcs');
 
   const setLine = (key, patch) => setLines(prev => prev.map(l => l.key === key ? { ...l, ...patch } : l));
   const resetForm = () => {
     setBillNo(''); setVendor(''); setLines([emptyLine()]); setAmount(''); setGst('');
-    setDesc(''); setInfluencerId(''); setMachineOther('');
+    setDesc(''); setInfluencerId(''); setMachineOther(''); setPrintedTotal(0); setReadNote('');
+  };
+
+  const norm = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  const handleFile = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    if (file.type !== 'application/pdf') {
+      setReadNote('Photo reading is coming next. For now upload the PDF, or type the bill in.');
+      return;
+    }
+    setReading(true);
+    setReadNote('');
+    try {
+      const bill = await parseBillPdf(file);
+      if (!bill.items.length) {
+        setReadNote('Could not find item lines in this PDF. Please type the bill in.');
+        setReading(false);
+        return;
+      }
+      setCategory('raw_materials');
+      if (bill.vendor) setVendor(bill.vendor);
+      if (bill.billNo) setBillNo(bill.billNo);
+      if (bill.date) setBillDate(bill.date);
+      setPrintedTotal(bill.total || 0);
+      setLines(bill.items.map(it => {
+        const hit = ingredients.find(i => norm(i.name) === norm(it.name))
+          || ingredients.find(i => norm(i.name).includes(norm(it.name)) || norm(it.name).includes(norm(i.name)));
+        return {
+          key: Math.random().toString(36).slice(2),
+          itemId: hit ? hit.id : '__new',
+          newName: hit ? '' : it.name,
+          qty: String(it.qty),
+          amount: String(it.amount),
+          expiry: '',
+        };
+      }));
+      const newOnes = bill.items.filter(it => !ingredients.some(i => norm(i.name) === norm(it.name))).length;
+      setReadNote(`Read ${bill.items.length} items from the bill${newOnes ? `, ${newOnes} matched loosely or are new — check the item names` : ''}. Please check everything before saving.`);
+    } catch (err) {
+      console.error('Bill PDF read failed:', err);
+      setReadNote('Could not read this PDF. Please type the bill in.');
+    }
+    setReading(false);
   };
 
   const validate = () => {
@@ -260,6 +314,15 @@ export default function QuickBill() {
           <Check className="w-4 h-4 mt-0.5 flex-shrink-0" /> {lastSaved}
         </div>
       )}
+
+      <div className="bg-white border border-dashed border-teal-300 rounded-xl p-4 text-center">
+        <label className="cursor-pointer block">
+          <span className="block text-sm font-semibold text-teal-700">{reading ? 'Reading bill…' : 'Upload supplier bill (PDF)'}</span>
+          <span className="block text-xs text-gray-500 mt-0.5">Fills the vendor, bill number, date and items. You check it before saving.</span>
+          <input type="file" accept="application/pdf,image/*" onChange={handleFile} className="hidden" />
+        </label>
+        {readNote && <p className="text-xs text-teal-800 mt-2">{readNote}</p>}
+      </div>
 
       <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
         <div className="grid grid-cols-2 gap-3">
