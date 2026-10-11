@@ -17,7 +17,12 @@ export default function QuickOrder() {
   const skus = state.skus || [];
 
   const [orderDate, setOrderDate] = useState(new Date().toISOString().split('T')[0]);
-  const [orderSource, setOrderSource] = useState('whatsapp');
+  // No default source: she has to choose where the customer came from, otherwise
+  // everything gets recorded as WhatsApp and ad/influencer ROI is meaningless.
+  const [orderSource, setOrderSource] = useState('');
+  const [influencerId, setInfluencerId] = useState(null); // null = not asked yet, '' = none
+  const [showSourcePopup, setShowSourcePopup] = useState(false);
+  const [popupPromo, setPopupPromo] = useState(false);
   const [customSourceMode, setCustomSourceMode] = useState(false);
   const [customSourceInput, setCustomSourceInput] = useState('');
   const [pasteText, setPasteText] = useState('');
@@ -214,7 +219,13 @@ export default function QuickOrder() {
 
   const canSave = fields.name.trim() && !phoneInvalid && items.length > 0 && !saving;
 
-  const handleSave = async () => {
+  const handleSave = async (opts) => {
+    // opts is only an object when called from the source popup; a click event
+    // (from the Save button) is ignored.
+    const ov = opts && typeof opts === 'object' && Object.prototype.hasOwnProperty.call(opts, 'source') ? opts : null;
+    const src = ((ov ? ov.source : orderSource) || '').trim();
+    const infl = ov ? ov.influencerId : influencerId;
+    const contacts = state.marketingContacts || [];
     if (!canSave) {
       if (!fields.name.trim()) showToast('Enter a name', 'error');
       else if (fields.phone.replace(/\D/g, '').length < 10) showToast('Enter a valid 10-digit phone number', 'error');
@@ -225,9 +236,17 @@ export default function QuickOrder() {
       showToast('State is missing — enter it (or a valid pincode). It decides the GST on the invoice.', 'error');
       return;
     }
+    // Source must be confirmed on every order (popup when it hasn't been chosen).
+    const isPromo = isPromotionalOrder({ order_source: src });
+    if (!src || (isPromo && infl === null && contacts.length > 0)) {
+      setPopupPromo(isPromo);
+      setShowSourcePopup(true);
+      return;
+    }
+    setShowSourcePopup(false);
     // An order with no value can't be invoiced or tracked — set the price first.
     // (Free sends go through the Promotion / Collab source, which is exempt.)
-    if (totalAmount <= 0 && !isPromotionalOrder({ order_source: orderSource })) {
+    if (totalAmount <= 0 && !isPromo) {
       showToast('Order total is ₹0 — set the price before saving. For free sends choose source "Promotion".', 'error');
       return;
     }
@@ -276,7 +295,8 @@ export default function QuickOrder() {
       customerId: customer.id,
       customerName: fields.name,
       orderDate,
-      orderSource,
+      orderSource: src,
+      influencerId: isPromo && infl ? infl : null,
       items,
       subtotal,
       gstRate,
@@ -300,6 +320,10 @@ export default function QuickOrder() {
     }
 
     dispatch({ type: 'ADD_SALES_ORDER', payload: order });
+    setOrderSource('');
+    setInfluencerId(null);
+    setCustomSourceMode(false);
+    setCustomSourceInput('');
     // createSalesOrder's return doesn't carry phone (that's only joined in
     // getSalesOrders) — attach it here so the label preview has it.
     setJustSaved({ ...order, phone: fields.phone });
@@ -408,6 +432,78 @@ export default function QuickOrder() {
         </div>
       </div>
 
+      {showSourcePopup && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md p-4 shadow-xl">
+            {!popupPromo ? (
+              <>
+                <h3 className="text-base font-semibold text-gray-900">Where did this customer come from?</h3>
+                <p className="text-xs text-gray-500 mt-0.5 mb-3">Tap one to save the order</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { value: 'whatsapp', label: '💬 WhatsApp' },
+                    { value: 'instagram', label: '📷 Instagram' },
+                    { value: 'meta_ad', label: '📢 Meta Ad' },
+                    { value: 'website', label: '🌐 Website' },
+                    { value: 'walkin', label: '🚶 Walk-in' },
+                    { value: 'zoho', label: '📦 Zoho' },
+                    { value: 'promotion', label: '🎁 Promotion / Collab' },
+                    { value: 'other', label: '+ Other' },
+                  ].map(opt => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => {
+                        setOrderSource(opt.value);
+                        if (opt.value === 'promotion' && (state.marketingContacts || []).length > 0) {
+                          setPopupPromo(true);
+                        } else {
+                          handleSave({ source: opt.value, influencerId: '' });
+                        }
+                      }}
+                      className="px-3 py-3 rounded-xl border border-gray-300 text-sm font-medium text-gray-700 hover:border-teal-500 hover:bg-teal-50"
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <>
+                <h3 className="text-base font-semibold text-gray-900">Which influencer is this for?</h3>
+                <p className="text-xs text-gray-500 mt-0.5 mb-3">The product cost is added to their marketing cost</p>
+                <div className="grid grid-cols-1 gap-2 max-h-64 overflow-y-auto">
+                  {(state.marketingContacts || []).map(c => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => { setInfluencerId(c.id); handleSave({ source: 'promotion', influencerId: c.id }); }}
+                      className="px-3 py-3 rounded-xl border border-gray-300 text-sm font-medium text-gray-700 text-left hover:border-teal-500 hover:bg-teal-50"
+                    >
+                      {c.name} <span className="text-xs text-gray-400">{c.platform}{c.handle ? ` · ${c.handle}` : ''}</span>
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => { setInfluencerId(''); handleSave({ source: 'promotion', influencerId: '' }); }}
+                    className="px-3 py-3 rounded-xl border border-dashed border-gray-300 text-sm text-gray-600"
+                  >
+                    Not for an influencer
+                  </button>
+                </div>
+              </>
+            )}
+            <button
+              type="button"
+              onClick={() => { setShowSourcePopup(false); setPopupPromo(false); }}
+              className="w-full mt-3 text-sm text-gray-500 py-2"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       {showTrackingScanner && (
         <TrackingScanner
           orders={(state.salesOrders || []).filter(o => !o.tracking_number && !['dispatched', 'transit', 'delivered', 'cancelled', 'returned'].includes(o.status))}
@@ -486,6 +582,7 @@ export default function QuickOrder() {
                     { value: 'walkin', label: '🚶 Walk-in' },
                     { value: 'meta_ad', label: '📢 Meta Ad' },
                     { value: 'zoho', label: '📦 Zoho' },
+                    { value: 'promotion', label: '🎁 Promotion / Collab' },
                   ].map(opt => (
                     <button
                       key={opt.value}
@@ -828,7 +925,7 @@ export default function QuickOrder() {
           Clear
         </button>
         <button
-          onClick={handleSave}
+          onClick={() => handleSave()}
           disabled={!canSave}
           className="flex-1 flex items-center justify-center gap-2 py-3 bg-teal-600 text-white rounded-lg font-semibold text-sm disabled:opacity-40"
         >
