@@ -732,6 +732,10 @@ const _realDbService = {
           hours: entry.hours || 0,
           cost: entry.cost || 0,
           notes: entry.notes || null,
+          production_run_id: entry.productionRunId || null,
+          sku_id: entry.skuId || null,
+          work_scope: entry.workScope || null,
+          work_type: entry.workType || null,
         }])
         .select()
         .single();
@@ -766,6 +770,64 @@ const _realDbService = {
     } catch (error) {
       console.error('Error updating work log entry:', error);
       return { data: null, error };
+    }
+  },
+
+  async getWorkTypes() {
+    if (!isSupabaseAvailable()) return { data: [], error: null };
+    try {
+      const { data, error } = await supabase.from('work_types').select('*').order('sort_order').order('name');
+      if (error) throw error;
+      return { data: data || [], error: null };
+    } catch (error) {
+      console.error('Error fetching work types:', error);
+      return { data: [], error };
+    }
+  },
+
+  async createWorkType(name) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    try {
+      const clean = String(name || '').trim();
+      if (!clean) throw new Error('Name is empty');
+      const { data, error } = await supabase
+        .from('work_types')
+        .upsert([{ name: clean }], { onConflict: 'name' })
+        .select()
+        .single();
+      if (error) throw error;
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error creating work type:', error);
+      return { data: null, error };
+    }
+  },
+
+  // Labour hours logged against a batch roll up into that batch's cost, so cost per
+  // box = ingredients + packaging + labour (+ process). Safe to call any time.
+  async recalcRunLabour(runId) {
+    if (!isSupabaseAvailable() || !runId) return { error: null };
+    try {
+      const { data: rows, error } = await supabase.from('work_log').select('cost').eq('production_run_id', runId);
+      if (error) throw error;
+      const labour = Math.round((rows || []).reduce((t, r) => t + (parseFloat(r.cost) || 0), 0) * 100) / 100;
+      const { data: run, error: runErr } = await supabase
+        .from('production_runs')
+        .select('ingredient_cost, packaging_cost, process_cost, actual_quantity, status')
+        .eq('id', runId)
+        .single();
+      if (runErr) throw runErr;
+      const total = Math.round(((parseFloat(run.ingredient_cost) || 0) + (parseFloat(run.packaging_cost) || 0)
+        + (parseFloat(run.process_cost) || 0) + labour) * 100) / 100;
+      const made = parseInt(run.actual_quantity, 10) || 0;
+      const patch = { labor_cost: labour, total_cost: total };
+      if (run.status === 'completed' && made > 0) patch.cost_per_unit = Math.round((total / made) * 100) / 100;
+      const { error: upErr } = await supabase.from('production_runs').update(patch).eq('id', runId);
+      if (upErr) throw upErr;
+      return { error: null, labour, total };
+    } catch (error) {
+      console.error('Error recalculating batch labour:', error);
+      return { error };
     }
   },
 
@@ -4033,6 +4095,18 @@ const _realDbService = {
         .eq('id', run.id)
         .select()
         .single();
+      // prep work logged for this product before the batch existed (e.g. removing shells) joins this batch
+      try {
+        if (run.sku_id) {
+          await supabase
+            .from('work_log')
+            .update({ production_run_id: run.id })
+            .eq('sku_id', run.sku_id)
+            .eq('work_scope', 'product')
+            .is('production_run_id', null);
+        }
+        await this.recalcRunLabour(run.id);
+      } catch (e) { console.warn('Could not attach prep labour:', e); }
       return { ok: true, consumed, unmatched, packagingErrors, run: updated };
     } catch (err) {
       await supabase.from('production_runs').update({ stock_deducted: false }).eq('id', run.id);

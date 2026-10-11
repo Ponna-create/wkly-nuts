@@ -24,6 +24,7 @@ const navGroups = [
       { name: 'Order', href: '/quick-order', icon: Zap },
       { name: 'Bill', href: '/quick-bill', icon: FileText },
       { name: 'Batch', href: '/quick-batch', icon: Factory },
+      { name: 'Hours', href: '/quick-hours', icon: ClipboardList },
     ],
   },
   {
