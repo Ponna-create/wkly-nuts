@@ -217,29 +217,27 @@ export default function QuickBill() {
       const notes = [];
 
       if (category === 'raw_materials') {
-        for (const l of lines) {
-          let ingredientId = l.itemId;
-          let name = ingredients.find(i => String(i.id) === String(l.itemId))?.name;
-          if (!ingredientId || ingredientId === '__new') {
-            name = l.newName.trim();
-            const { data: created, error: ingErr } = await dbService.createIngredient({ name, unit: 'Kg' });
-            if (ingErr || !created) throw ingErr || new Error(`Could not create ${name}`);
-            ingredientId = created.id;
+        // create any new ingredients in parallel, then insert every lot in ONE request
+        const resolved = await Promise.all(lines.map(async (l) => {
+          if (l.itemId && l.itemId !== '__new') {
+            return { l, id: l.itemId, name: ingredients.find(i => String(i.id) === String(l.itemId))?.name };
           }
-          const qty = num(l.qty);
-          const { error: batchErr } = await dbService.addIngredientBatch({
-            ingredientId,
-            vendorId: null,
-            batchNumber: `${billNo.trim() || 'BILL'}-${(name || 'item').replace(/\s+/g, '').slice(0, 14)}-${billDate}`,
-            quantity: qty,
-            price: round2(num(l.amount) / qty),
-            expiryDate: l.expiry || null,
-            receivedDate: billDate,
-            expenseId: expense.id,
-            billNumber: billNo.trim() || null,
-          });
-          if (batchErr) throw batchErr;
-        }
+          const name = l.newName.trim();
+          const { data: created, error: ingErr } = await dbService.createIngredient({ name, unit: 'Kg' });
+          if (ingErr || !created) throw ingErr || new Error(`Could not create ${name}`);
+          return { l, id: created.id, name };
+        }));
+        const { error: batchErr } = await dbService.addIngredientBatches(resolved.map(({ l, id, name }) => ({
+          ingredientId: id,
+          batchNumber: `${billNo.trim() || 'BILL'}-${(name || 'item').replace(/\s+/g, '').slice(0, 14)}-${billDate}`,
+          quantity: num(l.qty),
+          price: round2(num(l.amount) / num(l.qty)),
+          expiryDate: l.expiry || null,
+          receivedDate: billDate,
+          expenseId: expense.id,
+          billNumber: billNo.trim() || null,
+        })));
+        if (batchErr) throw batchErr;
         notes.push(`${lines.length} item(s) added to Inventory`);
       }
 
