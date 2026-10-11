@@ -2565,6 +2565,7 @@ const _realDbService = {
           customer_name: order.customerName,
           order_date: order.orderDate || new Date().toISOString().split('T')[0],
           order_source: order.orderSource,
+          influencer_id: order.influencerId || null,
           items: order.items || [],
           subtotal: order.subtotal || 0,
           gst_rate: order.gstRate || 5,
