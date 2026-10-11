@@ -16,6 +16,7 @@ const CATEGORIES = [
   { value: 'rent', label: 'Rent' },
   { value: 'utilities', label: 'Utilities' },
   { value: 'equipment', label: 'Equipment' },
+  { value: 'repairs', label: 'Machine service / Repairs' },
   { value: 'salary', label: 'Salary / Wages' },
   { value: 'courier', label: 'Courier Charges' },
   { value: 'misc', label: 'Miscellaneous' },

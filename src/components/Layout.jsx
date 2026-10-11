@@ -19,9 +19,15 @@ const navGroups = [
     ],
   },
   {
+    label: 'Quick',
+    items: [
+      { name: 'Order', href: '/quick-order', icon: Zap },
+      { name: 'Bill', href: '/quick-bill', icon: FileText },
+    ],
+  },
+  {
     label: 'Sales',
     items: [
-      { name: 'Quick Order', href: '/quick-order', icon: Zap },
       { name: 'Orders', href: '/orders', icon: Truck },
       { name: 'Customers', href: '/customers', icon: Users },
       { name: 'CRM', href: '/crm', icon: Heart },

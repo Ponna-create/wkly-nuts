@@ -30,6 +30,7 @@ import Marketing from './pages/Marketing';
 import OmniChannels from './pages/OmniChannels';
 import GSTFiling from './pages/GSTFiling';
 import QuickOrder from './pages/QuickOrder';
+import QuickBill from './pages/QuickBill';
 import AiUsage from './pages/AiUsage';
 
 function App() {
@@ -65,6 +66,7 @@ function App() {
               <Route path="/ai-usage" element={<ErrorBoundary><AiUsage /></ErrorBoundary>} />
               <Route path="/settings" element={<ErrorBoundary><BackupSettings /></ErrorBoundary>} />
               <Route path="/quick-order" element={<ErrorBoundary><QuickOrder /></ErrorBoundary>} />
+              <Route path="/quick-bill" element={<ErrorBoundary><QuickBill /></ErrorBoundary>} />
             </Routes>
           </Layout>
           <Toast />

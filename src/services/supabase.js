@@ -2224,6 +2224,22 @@ const _realDbService = {
     }
   },
 
+  async createIngredient({ name, unit }) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    try {
+      const { data, error } = await supabase
+        .from('ingredients')
+        .insert([{ name: String(name).trim(), unit: unit || 'Kg', current_stock_total: 0 }])
+        .select()
+        .single();
+      if (error) throw error;
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error creating ingredient:', error);
+      return { data: null, error };
+    }
+  },
+
   async addIngredientBatch(batch) {
     if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
     try {
@@ -2239,6 +2255,8 @@ const _realDbService = {
           price_per_unit: batch.price,
           expiry_date: batch.expiryDate,
           received_date: batch.receivedDate || new Date().toISOString(),
+          expense_id: batch.expenseId || null,
+          bill_number: batch.billNumber || null,
           status: 'active'
         }])
         .select()
@@ -2904,6 +2922,9 @@ const _realDbService = {
           notes: expense.notes,
           is_recurring: expense.isRecurring || false,
           recurring_frequency: expense.recurringFrequency,
+          sku_id: expense.skuId || null,
+          expense_scope: expense.expenseScope || null,
+          marketing_contact_id: expense.marketingContactId || null,
         }])
         .select()
         .single();
@@ -3517,6 +3538,7 @@ const _realDbService = {
           total_cost: txn.total_cost || 0,
           production_run_id: txn.production_run_id || null,
           reference_note: txn.reference_note,
+          expense_id: txn.expense_id || null,
           transaction_date: txn.transaction_date || new Date().toISOString().split('T')[0],
         }])
         .select()
