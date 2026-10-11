@@ -297,7 +297,7 @@ export default function IngredientInventory() {
         ) : (
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
             <div className="px-4 py-2.5 bg-amber-50 border-b border-amber-100 text-xs text-amber-700">
-              Click <Edit2 className="w-3 h-3 inline" /> to set or correct how many you currently have — useful for entering what's on the rack today.
+              Finished batches add to this count and fulfilled orders take from it automatically. Use <Edit2 className="w-3 h-3 inline" /> only to correct a counting mistake or enter opening stock.
             </div>
             <table className="w-full text-sm">
               <thead>
