@@ -1433,6 +1433,64 @@ const _realDbService = {
     return `${nextNum}/${mm}${yyyy}`;
   },
 
+  // The ONLY way an order should get its invoice. Calls the database function
+  // ensure_invoice_for_order, which locks the order row and returns the
+  // existing invoice if there already is one — so a double click, a second
+  // tab, or a batch print run twice can never create a second invoice for
+  // the same order (that was the cause of orders with 3-12 duplicate
+  // invoices: every caller did "check invoice_id, then create" in two
+  // separate steps with nothing stopping two of them overlapping).
+  // Returns { data: <invoice in the app's camelCase shape>, error }.
+  async ensureInvoiceForOrder(orderId, invoiceData) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    try {
+      const { data: invoiceId, error } = await supabase.rpc('ensure_invoice_for_order', {
+        p_order_id: orderId,
+        p_invoice: invoiceData,
+      });
+      if (error) throw error;
+      const { data, error: fetchError } = await supabase
+        .from('invoices')
+        .select('*, customers (id, name, email, phone, address, gstin)')
+        .eq('id', invoiceId)
+        .single();
+      if (fetchError) throw fetchError;
+      return {
+        data: {
+          id: data.id,
+          invoiceNumber: data.invoice_number,
+          invoice_number: data.invoice_number,
+          customerId: data.customer_id,
+          customer: data.customers ? { ...data.customers } : null,
+          invoiceDate: data.invoice_date,
+          dueDate: data.due_date,
+          items: data.items || [],
+          subtotal: parseFloat(data.subtotal || 0),
+          gstRate: parseFloat(data.gst_rate || 0),
+          gstAmount: parseFloat(data.gst_amount || 0),
+          discountPercent: parseFloat(data.discount_percent || 0),
+          discountAmount: parseFloat(data.discount_amount || 0),
+          shippingCharge: parseFloat(data.shipping_charge || 0),
+          advancePaid: parseFloat(data.advance_paid || 0),
+          totalAmount: parseFloat(data.total_amount || 0),
+          balanceDue: parseFloat(data.balance_due || 0),
+          status: data.status,
+          paymentMethod: data.payment_method,
+          paymentDate: data.payment_date,
+          notes: data.notes,
+          terms: data.terms,
+          orderSource: data.order_source,
+          salesOrderId: data.sales_order_id,
+          createdAt: data.created_at,
+        },
+        error: null,
+      };
+    } catch (error) {
+      console.error('Error ensuring invoice for order:', error);
+      return { data: null, error };
+    }
+  },
+
   async createInvoice(invoice) {
     if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
 

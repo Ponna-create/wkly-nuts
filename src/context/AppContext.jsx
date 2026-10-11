@@ -326,6 +326,11 @@ export function AppProvider({ children }) {
   const dispatch = useCallback((action) => {
     dispatchReducer(action);
 
+    // localOnly: the record is already saved in the database (e.g. an invoice
+    // from ensureInvoiceForOrder) — only update the screen, don't write it
+    // to the database a second time.
+    if (action.localOnly) return;
+
     if (useDatabase && isSupabaseAvailable() && !isLoading) {
       if (action.type.startsWith('LOAD_') || action.type.startsWith('SHOW_') || action.type.startsWith('HIDE_')) {
         return;

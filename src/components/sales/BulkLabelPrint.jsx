@@ -71,30 +71,21 @@ export default function BulkLabelPrint({ orders, onClose, onPrinted, showToast }
     // ones already had a label printed vs which are still pending.
     await Promise.all(selectedOrders.map(o => dbService.updateSalesOrder({ id: o.id, label_printed_at: new Date().toISOString() })));
 
-    // Auto-generate the invoice alongside the label for any order that
-    // doesn't have one yet — created and stored for GST filing, but not
-    // auto-downloaded/opened (see note after the print step below).
-    //
-    // Re-checked against the database right here, not just the in-memory
-    // `orders` prop — that prop can be stale if this page hasn't reloaded
-    // since a previous print run, and trusting only the stale value was
-    // exactly how the same order ended up with 3-12 duplicate invoices
-    // (reprinting the same date's labels before the page had refreshed).
-    const candidateInvoice = selectedOrders.filter(o => !o.invoice_id && !isPromotionalOrder(o));
-    let needsInvoice = candidateInvoice;
-    if (candidateInvoice.length > 0) {
-      const { data: freshInvoiceIds } = await dbService.getInvoiceIdsForOrders(candidateInvoice.map(o => o.id));
-      needsInvoice = candidateInvoice.filter(o => !freshInvoiceIds[o.id]);
-    }
+    // Make sure every printed order has its invoice (created once, stored for
+    // GST filing, not auto-opened). ensureInvoiceForOrder is atomic in the
+    // database — it returns the existing invoice if there already is one —
+    // so printing the same date's labels again, a double click, or two tabs
+    // can never create a second invoice for an order.
+    const needsInvoice = selectedOrders.filter(o => !o.invoice_id && !isPromotionalOrder(o));
     if (needsInvoice.length > 0) {
       const results = await Promise.all(needsInvoice.map(async (o) => {
         try {
-          const { data: invoice, error } = await dbService.createInvoice(
+          const { data: invoice, error } = await dbService.ensureInvoiceForOrder(
+            o.id,
             buildInvoiceDataFromOrder(o, 'Auto-generated on label print', state.skus)
           );
           if (error || !invoice) return null;
-          await dbService.updateSalesOrder({ id: o.id, invoice_id: invoice.id });
-          dispatch({ type: 'ADD_INVOICE', payload: invoice });
+          dispatch({ type: 'ADD_INVOICE', payload: invoice, localOnly: true });
           return invoice.id;
         } catch (e) {
           console.warn('Auto-invoice failed for', o.order_number, e);
@@ -103,7 +94,7 @@ export default function BulkLabelPrint({ orders, onClose, onPrinted, showToast }
       }));
       const created = results.filter(Boolean);
       if (created.length > 0) {
-        showToast(`${created.length} invoice(s) generated`, 'success');
+        showToast(`${created.length} invoice(s) ready`, 'success');
       }
       if (onPrinted) onPrinted();
     }

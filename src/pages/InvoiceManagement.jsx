@@ -1850,6 +1850,9 @@ export default function InvoiceManagement() {
       const name = (skuName || '').toLowerCase();
       if (name.includes('seed cycle') || name.includes('seedcycle')) return '1204';
       if (name.includes('mexican bites') || name.includes('party mix')) return '2106';
+      if (name.includes('date bit')) return '2106'; // processed date bites — same head as Mexican Bites
+      if (name.includes('fig')) return '08042090';   // dried figs
+      if (name.includes('dates')) return '08041020'; // plain dried dates
       return '2008 19 20';
     };
 
@@ -1877,7 +1880,7 @@ export default function InvoiceManagement() {
     // it still reads as one group per invoice rather than repeating the
     // same customer name 2-3 times — that repetition was the original
     // complaint this format is designed to avoid.
-    const headers = ['SI No', 'Date', 'Invoice #', 'Customer', 'GSTIN', 'Place of Supply', 'Product', 'Qty', 'Unit Price', 'Taxable Value', 'HSN Code', 'CGST @2.5%', 'SGST @2.5%', 'IGST @5%', 'Total Tax', 'Line Total', 'Channel'];
+    const headers = ['SI No', 'Date', 'Invoice #', 'Customer', 'GSTIN', 'Place of Supply', 'Product', 'Qty', 'Unit Price (incl. GST)', 'Taxable Value', 'HSN Code', 'CGST @2.5%', 'SGST @2.5%', 'IGST @5%', 'Total Tax', 'Line Total', 'Channel'];
     csvRows.push(headers.join(','));
 
     let totalTaxable = 0, totalCGST = 0, totalSGST = 0, totalIGST = 0, totalTax = 0, grandTotal = 0;
@@ -1910,13 +1913,17 @@ export default function InvoiceManagement() {
 
       lineItems.forEach((item, itemIdx) => {
         const qty = item.quantity || 1;
-        const taxable = item.total || (qty * (item.unitPrice || 0));
+        // The price is what the customer paid and ALREADY includes GST — GST
+        // is backed out of it, never added on top (the old export added 5%
+        // on top, so ₹499 showed as ₹523.95 and totals ran ~5% high).
+        const gross = item.total || (qty * (item.unitPrice || 0));
+        const taxable = gross / (1 + gstRate / 100);
         const hsn = item.hsnCode || getHSN(item.skuName);
-        const tax = taxable * (gstRate / 100);
+        const tax = gross - taxable;
         const cgst = isTN ? tax / 2 : 0;
         const sgst = isTN ? tax / 2 : 0;
         const igst = isTN ? 0 : tax;
-        totalTaxable += taxable; totalCGST += cgst; totalSGST += sgst; totalIGST += igst; totalTax += tax; grandTotal += taxable + tax;
+        totalTaxable += taxable; totalCGST += cgst; totalSGST += sgst; totalIGST += igst; totalTax += tax; grandTotal += gross;
         addToHsnSummary(hsn, taxable, cgst, sgst, igst, tax);
 
         const isFirstLine = itemIdx === 0;
@@ -1927,12 +1934,28 @@ export default function InvoiceManagement() {
           isFirstLine ? (customer?.name || '') : '',
           isFirstLine ? (customer?.gstin || '') : '',
           isFirstLine ? placeOfSupply : '',
-          `${itemDisplayName(item)} x${qty}`, qty, (taxable / qty).toFixed(2), taxable.toFixed(2), hsn,
-          cgst.toFixed(2), sgst.toFixed(2), igst.toFixed(2), tax.toFixed(2), (taxable + tax).toFixed(2),
+          `${itemDisplayName(item)} x${qty}`, qty, (gross / qty).toFixed(2), taxable.toFixed(2), hsn,
+          cgst.toFixed(2), sgst.toFixed(2), igst.toFixed(2), tax.toFixed(2), gross.toFixed(2),
           isFirstLine ? channel : '',
         ].map(c => { const s = String(c || ''); return s.includes(',') ? `"${s}"` : s; });
         csvRows.push(row.join(','));
       });
+
+      // Shipping charged to the customer is part of the sale and taxed at the
+      // same rate (price-inclusive), shown as its own line — it was left out
+      // of the export entirely before, understating the register.
+      const shipping = parseFloat(inv.shippingCharge) || 0;
+      if (shipping > 0 && lineItems.length > 0) {
+        const sTaxable = shipping / (1 + gstRate / 100);
+        const sTax = shipping - sTaxable;
+        const sCgst = isTN ? sTax / 2 : 0;
+        const sSgst = isTN ? sTax / 2 : 0;
+        const sIgst = isTN ? 0 : sTax;
+        totalTaxable += sTaxable; totalCGST += sCgst; totalSGST += sSgst; totalIGST += sIgst; totalTax += sTax; grandTotal += shipping;
+        addToHsnSummary('Shipping', sTaxable, sCgst, sSgst, sIgst, sTax);
+        csvRows.push(['', '', '', '', '', '', 'Shipping Charges', '', '', sTaxable.toFixed(2), '',
+          sCgst.toFixed(2), sSgst.toFixed(2), sIgst.toFixed(2), sTax.toFixed(2), shipping.toFixed(2), ''].join(','));
+      }
     });
 
     csvRows.push('');

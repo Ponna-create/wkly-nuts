@@ -211,6 +211,10 @@ export default function QuickOrder() {
       else if (items.length === 0) showToast('Add at least one item', 'error');
       return;
     }
+    if (zeroPriceItems.length > 0) {
+      const ok = window.confirm(`${zeroPriceItems.length} item(s) have no price (₹0). The order will be saved as UNPAID so the amount isn't recorded wrongly — set the price and mark it paid afterwards. Save anyway?`);
+      if (!ok) return;
+    }
     setSaving(true);
 
     let customer = selectedCustomer;
@@ -234,7 +238,8 @@ export default function QuickOrder() {
 
     // COD: the cash isn't collected until delivery, so it starts unpaid —
     // unlike UPI/prepaid, which is treated as paid in full at order time.
-    const isCod = paymentMethod === 'cod';
+    const hasUnpricedItem = zeroPriceItems.length > 0;
+    const isCod = paymentMethod === 'cod' || hasUnpricedItem;
     const { data: order, error } = await dbService.createSalesOrder({
       customerId: customer.id,
       customerName: fields.name,
@@ -278,10 +283,11 @@ export default function QuickOrder() {
     if (isPromotionalOrder(justSaved)) return; // promo/collab sends aren't a real sale — no invoice
     try {
       const invoiceData = buildInvoiceDataFromOrder(justSaved, 'Auto-generated on label print', skus);
-      const { data: autoInvoice, error } = await dbService.createInvoice(invoiceData);
+      // Atomic in the database: returns the existing invoice if the order
+      // already has one, so clicking Print twice can't create a second.
+      const { data: autoInvoice, error } = await dbService.ensureInvoiceForOrder(justSaved.id, invoiceData);
       if (error || !autoInvoice) return;
-      await dbService.updateSalesOrder({ id: justSaved.id, invoice_id: autoInvoice.id });
-      dispatch({ type: 'ADD_INVOICE', payload: autoInvoice });
+      dispatch({ type: 'ADD_INVOICE', payload: autoInvoice, localOnly: true });
       setJustSaved(prev => prev && prev.id === justSaved.id ? { ...prev, invoice_id: autoInvoice.id } : prev);
     } catch (invErr) {
       console.warn('Auto-invoice failed:', invErr);
@@ -321,14 +327,17 @@ export default function QuickOrder() {
     await Promise.all(todaysOrders.map(o => dbService.updateSalesOrder({ id: o.id, label_printed_at: new Date().toISOString() })));
     // Same as single-order printing — make sure every one of these has an
     // invoice record for GST filing, not just the ones already printed individually.
+    // One at a time + atomic in the database. The old version re-checked the
+    // page's stale copy of each order (its invoice_id never refreshed), so
+    // every click on "print today's labels" created ANOTHER invoice for each
+    // order — the source of orders with 3, 6 or 12 duplicate invoices.
     for (const o of todaysOrders) {
-      if (o.invoice_id || isPromotionalOrder(o)) continue; // promo/collab sends aren't a real sale — no invoice
+      if (isPromotionalOrder(o)) continue; // promo/collab sends aren't a real sale — no invoice
       try {
         const invoiceData = buildInvoiceDataFromOrder(o, 'Auto-generated on label print', skus);
-        const { data: autoInvoice, error } = await dbService.createInvoice(invoiceData);
+        const { data: autoInvoice, error } = await dbService.ensureInvoiceForOrder(o.id, invoiceData);
         if (error || !autoInvoice) continue;
-        await dbService.updateSalesOrder({ id: o.id, invoice_id: autoInvoice.id });
-        dispatch({ type: 'ADD_INVOICE', payload: autoInvoice });
+        dispatch({ type: 'ADD_INVOICE', payload: autoInvoice, localOnly: true });
       } catch (invErr) {
         console.warn('Auto-invoice failed for', o.order_number, invErr);
       }
