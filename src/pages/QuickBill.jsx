@@ -64,12 +64,19 @@ export default function QuickBill() {
   const [reading, setReading] = useState(false);
   const [readNote, setReadNote] = useState('');
   const [printedTotal, setPrintedTotal] = useState(0);
+  const [confidence, setConfidence] = useState(null);
+  const [addToFee, setAddToFee] = useState(true);
 
   useEffect(() => {
     dbService.getMarketingContacts().then(r => setContacts(r.data || []));
     dbService.getIngredients().then(r => setIngredients(r.data || []));
     dbService.getPackagingMaterials().then(r => setMaterials(r.data || []));
   }, []);
+
+  const selectedContact = contacts.find(c => String(c.id) === String(influencerId));
+  useEffect(() => {
+    setAddToFee(!(selectedContact && num(selectedContact.fee) > 0));
+  }, [influencerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const vendorNames = useMemo(() => {
     const set = new Set();
@@ -90,7 +97,7 @@ export default function QuickBill() {
   const setLine = (key, patch) => setLines(prev => prev.map(l => l.key === key ? { ...l, ...patch } : l));
   const resetForm = () => {
     setBillNo(''); setVendor(''); setLines([emptyLine()]); setAmount(''); setGst('');
-    setDesc(''); setInfluencerId(''); setMachineOther(''); setPrintedTotal(0); setReadNote('');
+    setDesc(''); setInfluencerId(''); setMachineOther(''); setPrintedTotal(0); setReadNote(''); setConfidence(null);
   };
 
   const norm = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -117,20 +124,37 @@ export default function QuickBill() {
       if (bill.billNo) setBillNo(bill.billNo);
       if (bill.date) setBillDate(bill.date);
       setPrintedTotal(bill.total || 0);
-      setLines(bill.items.map(it => {
-        const hit = ingredients.find(i => norm(i.name) === norm(it.name))
-          || ingredients.find(i => norm(i.name).includes(norm(it.name)) || norm(it.name).includes(norm(i.name)));
+      let exact = 0;
+      const mapped = bill.items.map(it => {
+        const ex = ingredients.find(i => norm(i.name) === norm(it.name));
+        const loose = ex || ingredients.find(i => norm(i.name).includes(norm(it.name)) || norm(it.name).includes(norm(i.name)));
+        if (ex) exact += 1;
         return {
           key: Math.random().toString(36).slice(2),
-          itemId: hit ? hit.id : '__new',
-          newName: hit ? '' : it.name,
+          itemId: loose ? loose.id : '__new',
+          newName: loose ? '' : it.name,
           qty: String(it.qty),
           amount: String(it.amount),
           expiry: '',
+          match: ex ? 'exact' : loose ? 'loose' : 'new',
         };
-      }));
-      const newOnes = bill.items.filter(it => !ingredients.some(i => norm(i.name) === norm(it.name))).length;
-      setReadNote(`Read ${bill.items.length} items from the bill${newOnes ? `, ${newOnes} matched loosely or are new — check the item names` : ''}. Please check everything before saving.`);
+      });
+      setLines(mapped);
+      // confidence: lines add up to the printed total, header fields found,
+      // and how many items matched an existing ingredient exactly
+      const sum = bill.items.reduce((t, it) => t + it.amount, 0);
+      let score = 0;
+      if (bill.total > 0) score += Math.abs(sum - bill.total) < 5 ? 40 : 10; else score += 15;
+      if (bill.billNo) score += 10;
+      if (bill.date) score += 10;
+      if (bill.vendor) score += 10;
+      score += Math.round(30 * (exact / bill.items.length));
+      setConfidence(Math.min(100, score));
+      const checks = bill.items.length - exact;
+      const addsUp = bill.total > 0
+        ? (Math.abs(sum - bill.total) < 5 ? ' Item amounts add up to the bill total.' : ' Item amounts do NOT add up to the bill total, please check them.')
+        : '';
+      setReadNote(`Read ${bill.items.length} items.${checks ? ` ${checks} item name(s) need a look (marked below).` : ' All item names matched.'}${addsUp}`);
     } catch (err) {
       console.error('Bill PDF read failed:', err);
       setReadNote('Could not read this PDF. Please type the bill in.');
@@ -275,11 +299,11 @@ export default function QuickBill() {
           if (c) {
             const cash = marketingType.startsWith('Influencer');
             const patch = cash
-              ? { ...c, fee: round2(num(c.fee) + billTotal), compensationType: c.compensationType === 'barter' ? 'mixed' : (c.compensationType || 'cash') }
+              ? { ...c, fee: addToFee ? round2(num(c.fee) + billTotal) : num(c.fee), compensationType: c.compensationType === 'barter' ? 'mixed' : (c.compensationType || 'cash') }
               : { ...c, compensationType: c.compensationType === 'cash' ? 'mixed' : 'barter',
                   barterDetails: [c.barterDetails, `${billDate}: ₹${round2(billTotal)} ${desc.trim()}`].filter(Boolean).join(' | ') };
             await dbService.updateMarketingContact(patch);
-            notes.push(`Linked to ${c.name} in Marketing`);
+            notes.push(cash && !addToFee ? `Expense recorded; ${c.name}'s fee left unchanged` : `Linked to ${c.name} in Marketing`);
           }
         }
       }
@@ -366,6 +390,16 @@ export default function QuickBill() {
                   <option value="">{contacts.length ? 'Choose…' : 'No influencers yet — add one in Marketing'}</option>
                   {contacts.map(c => <option key={c.id} value={c.id}>{c.name}{c.handle ? ` (${c.handle})` : ''}</option>)}
                 </select>
+                {marketingType.startsWith('Influencer') && selectedContact && num(selectedContact.fee) > 0 && (
+                  <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-800">
+                    <b>{selectedContact.name}</b> already has <b>₹{num(selectedContact.fee).toLocaleString('en-IN')}</b> recorded as fee in Marketing.
+                    <label className="flex items-start gap-2 mt-1.5 cursor-pointer">
+                      <input type="checkbox" checked={addToFee} onChange={e => setAddToFee(e.target.checked)} className="mt-0.5" />
+                      <span>This is a <b>new</b> payment: add ₹{round2(billTotal).toLocaleString('en-IN')} to her fee total.
+                        Leave unticked if this is the payment already counted (only the expense is recorded).</span>
+                    </label>
+                  </div>
+                )}
                 {isBarter && (
                   <p className="text-xs text-amber-700 mt-1">
                     Barter is a non-cash cost. If you sent products, do that in Quick Order (source Promotion / Collab) instead — don't enter them here too.
@@ -406,52 +440,60 @@ export default function QuickBill() {
       </div>
 
       {isStockCategory ? (
-        <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
-          <label className="block text-xs font-semibold text-gray-500 uppercase">
-            Items on the bill {category === 'raw_materials' ? '(goes into Inventory)' : '(goes into Packaging stock)'}
-          </label>
-          {lines.map((l, idx) => {
+        <div className="bg-white border border-gray-200 rounded-xl p-3 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <label className="text-xs font-semibold text-gray-500 uppercase">
+              Items {category === 'raw_materials' ? '→ Inventory' : '→ Packaging stock'}
+            </label>
+            {confidence !== null && (
+              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${confidence >= 85 ? 'bg-green-100 text-green-700' : confidence >= 60 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                Reading confidence {confidence}%
+              </span>
+            )}
+          </div>
+          <div className="grid grid-cols-[minmax(0,1fr)_56px_82px_24px] gap-1.5 text-[10px] uppercase tracking-wide text-gray-400 px-0.5">
+            <span>Item</span><span>Qty</span><span>Amount ₹</span><span />
+          </div>
+          {lines.map((l) => {
             const item = pickList.find(i => String(i.id) === String(l.itemId));
+            const flag = l.match === 'new' || l.itemId === '__new' ? 'New item: will be created' : l.match === 'loose' ? 'Matched loosely, check the name' : '';
             return (
-              <div key={l.key} className="border border-gray-200 rounded-lg p-3 space-y-2">
-                <select value={l.itemId} onChange={e => setLine(l.key, { itemId: e.target.value })} className={field}>
-                  <option value="">Choose item…</option>
-                  {pickList.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
-                  <option value="__new">+ New item (type below)</option>
-                </select>
-                {l.itemId === '__new' && (
-                  <input value={l.newName} onChange={e => setLine(l.key, { newName: e.target.value })} className={field} placeholder="New item name" />
-                )}
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-[11px] text-gray-500 mb-0.5">Quantity ({unitOf(item)})</label>
-                    <input type="number" inputMode="decimal" min="0" step="any" value={l.qty} onChange={e => setLine(l.key, { qty: e.target.value })} className={field} />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] text-gray-500 mb-0.5">Amount (₹)</label>
-                    <input type="number" inputMode="decimal" min="0" step="any" value={l.amount} onChange={e => setLine(l.key, { amount: e.target.value })} className={field} />
-                  </div>
-                </div>
-                {category === 'raw_materials' && (
-                  <div>
-                    <label className="block text-[11px] text-gray-500 mb-0.5">Expiry date (optional)</label>
-                    <input type="date" value={l.expiry} onChange={e => setLine(l.key, { expiry: e.target.value })} className={field} />
-                  </div>
-                )}
-                {lines.length > 1 && (
-                  <button type="button" onClick={() => setLines(prev => prev.filter(x => x.key !== l.key))} className="text-xs text-red-600 flex items-center gap-1">
-                    <Trash2 className="w-3.5 h-3.5" /> Remove line {idx + 1}
+              <div key={l.key} className="space-y-1">
+                <div className="grid grid-cols-[minmax(0,1fr)_56px_82px_24px] gap-1.5 items-center">
+                  <select value={l.itemId} onChange={e => setLine(l.key, { itemId: e.target.value, match: undefined })}
+                    className="min-w-0 w-full px-1.5 py-2 border border-gray-300 rounded-lg text-[13px] bg-white">
+                    <option value="">Choose…</option>
+                    {pickList.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+                    <option value="__new">+ New item</option>
+                  </select>
+                  <input type="number" inputMode="decimal" min="0" step="any" value={l.qty} placeholder={unitOf(item)}
+                    onChange={e => setLine(l.key, { qty: e.target.value })}
+                    className="min-w-0 w-full px-1.5 py-2 border border-gray-300 rounded-lg text-[13px]" />
+                  <input type="number" inputMode="decimal" min="0" step="any" value={l.amount}
+                    onChange={e => setLine(l.key, { amount: e.target.value })}
+                    className="min-w-0 w-full px-1.5 py-2 border border-gray-300 rounded-lg text-[13px]" />
+                  <button type="button" aria-label="Remove line"
+                    onClick={() => setLines(prev => prev.length > 1 ? prev.filter(x => x.key !== l.key) : prev)}
+                    className="text-gray-400 hover:text-red-600 flex justify-center">
+                    <Trash2 className="w-4 h-4" />
                   </button>
+                </div>
+                {l.itemId === '__new' && (
+                  <input value={l.newName} onChange={e => setLine(l.key, { newName: e.target.value })}
+                    className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-[13px]" placeholder="New item name" />
                 )}
+                {flag && <p className="text-[11px] text-amber-700 pl-0.5">{flag}</p>}
               </div>
             );
           })}
           <button type="button" onClick={() => setLines(prev => [...prev, emptyLine()])} className="text-sm text-teal-700 font-medium flex items-center gap-1">
-            <Plus className="w-4 h-4" /> Add another item
+            <Plus className="w-4 h-4" /> Add item
           </button>
           <div className="flex justify-between text-sm pt-1 border-t border-gray-100">
-            <span className="text-gray-500">Bill total</span>
-            <b>₹{round2(lineTotal).toLocaleString('en-IN')}</b>
+            <span className="text-gray-500">
+              Bill total{printedTotal > 0 && Math.abs(printedTotal - lineTotal) < 5 && Math.abs(printedTotal - lineTotal) > 0.001 ? ' (after round-off)' : ''}
+            </span>
+            <b>₹{round2(billTotal).toLocaleString('en-IN')}</b>
           </div>
         </div>
       ) : (

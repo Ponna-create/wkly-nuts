@@ -47,21 +47,45 @@ export function parseBillLines(lines) {
   const text = lines.join(' ').replace(/\s+/g, ' ');
   const out = { vendor: '', billNo: '', date: '', items: [], total: 0, roundOff: 0 };
 
-  const titleIdx = lines.findIndex(l => TITLES.test(l.trim()));
-  if (titleIdx >= 0) {
-    const cand = lines.slice(titleIdx + 1).find(l => l && !TITLES.test(l) && !/^phone|^ph\b|^gst|^address/i.test(l));
-    if (cand) out.vendor = cand.trim();
+  // Header block = everything above "Bill To" / the item table. Billing apps put
+  // labels ("Invoice No.", "Date") in one row and the values ("423", "05-10-2026")
+  // in the row below, so the values are found by shape, not by label.
+  const head = text.split(/Bill\s*To|#\s*Item\s*Name/i)[0];
+  const DATE = /\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}/g;
+  const LABEL_WORDS = /^(date|no|no\.|invoice|due|bill|estimate|number|phone|tax|of|supply)$/i;
+
+  // invoice date: first date in the header that is not the due date
+  let dateHit = null;
+  for (const dm of head.matchAll(DATE)) {
+    const before = head.slice(Math.max(0, dm.index - 12), dm.index);
+    if (/due\s*date\s*:?\s*$/i.test(before)) continue;
+    dateHit = dm; break;
   }
+  if (dateHit) {
+    out.date = toIsoDate(dateHit[0]);
+    const pre = head.slice(0, dateHit.index).trim().split(/\s+/);
+    const last = pre[pre.length - 1];
+    if (last && !LABEL_WORDS.test(last) && /[0-9]/.test(last)) out.billNo = last;
+  }
+  if (!out.billNo) {
+    const no = text.match(/(?:Invoice|Bill|Estimate|Receipt)\s*(?:No|Number|#)\.?\s*:?\s*([A-Za-z0-9/-]*\d[A-Za-z0-9/-]*)/i);
+    if (no) out.billNo = no[1];
+  }
+
+  // vendor: what's left of the header once titles, labels, numbers and dates are removed
+  let v = head
+    .replace(/Phone\s*no\.?\s*:?\s*\d*/gi, ' ')
+    .replace(/Due\s*Date/gi, ' ')
+    .replace(/Invoice\s*No\.?/gi, ' ')
+    .replace(/\b(?:Date|Estimate|Tax Invoice|Invoice|Bill of Supply|Proforma Invoice|Cash Memo|Quotation)\b/gi, ' ')
+    .replace(DATE, ' ');
+  if (out.billNo) v = v.replace(out.billNo, ' ');
+  v = v.replace(/\s+/g, ' ').trim();
+  if (v.length >= 2 && v.length <= 60) out.vendor = v;
   if (!out.vendor) {
     const m = text.match(/For:\s*([A-Za-z0-9 &.'-]{2,40}?)(?:\s+Authori[sz]ed|$)/);
     if (m) out.vendor = m[1].trim();
   }
-
-  const no = text.match(/(?:Invoice|Bill|Estimate|Receipt)\s*(?:No|Number|#)\.?\s*:?\s*([A-Za-z0-9/-]+)/i);
-  if (no) out.billNo = no[1];
-
-  const dt = text.match(/(?<!Due\s)(?<!Due\s\s)Date\s*:?\s*(\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4})/i);
-  if (dt) out.date = toIsoDate(dt[1]);
 
   const rowRe = /(\d+)\s+([A-Za-z][^₹]*?)\s+(\d+(?:[.,]\d+)?)\s*(Kg|Kgs|Gm|Gms|g|Ltr|Litre|Pcs|Pc|Nos|Packs?|Box(?:es)?)\s+₹\s*([\d,]+(?:\.\d+)?)\s+₹\s*([\d,]+(?:\.\d+)?)/gi;
   // only look below the table header, so invoice no. / date digits can't be mistaken for a row
