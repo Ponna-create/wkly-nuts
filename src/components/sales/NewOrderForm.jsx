@@ -3,6 +3,7 @@ import { X, Plus, Trash2, AlertTriangle, Phone, CheckCircle, Upload } from 'luci
 import { useApp } from '../../context/AppContext';
 import { dbService } from '../../services/supabase';
 import { parseAddress } from '../../utils/addressParser';
+import { isPromotionalOrder } from '../../utils/invoiceFromOrder';
 import { extractAmazonInvoiceText, parseAmazonInvoice } from '../../utils/amazonInvoicePdf';
 
 export default function NewOrderForm({ onClose }) {
@@ -318,6 +319,13 @@ export default function NewOrderForm({ onClose }) {
 
     if (formData.items.length === 0) {
       showToast('Please add at least one item', 'error');
+      return;
+    }
+
+    // An order with no value can't be invoiced — price it first. Free sends use
+    // the Promotion / Collab source, which is exempt.
+    if (!(parseFloat(formData.totalAmount) > 0) && !isPromotionalOrder({ order_source: formData.orderSource })) {
+      showToast('Order total is ₹0 — set the price before saving. For free sends choose source "Promotion".', 'error');
       return;
     }
 

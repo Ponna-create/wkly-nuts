@@ -4,6 +4,7 @@ import { ArrowLeft, Check, Minus, Plus, Trash2, Loader2, AlertTriangle, Printer,
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
 import { parseOrderPaste } from '../utils/orderPasteParser';
+import { inferState } from '../utils/addressParser';
 import { generateA4LabelSheet } from '../utils/a4LabelSheet';
 import LabelPrinter from '../components/sales/LabelPrinter';
 import { buildInvoiceDataFromOrder, isPromotionalOrder } from '../utils/invoiceFromOrder';
@@ -59,6 +60,10 @@ export default function QuickOrder() {
     return n + (s[(v - 20) % 10] || s[v] || s[0]);
   };
 
+  // State is needed for GST (CGST+SGST vs IGST), so fill it from the address /
+  // pincode / city whenever it's blank (Trichy 621601 → Tamil Nadu).
+  const withState = (f) => (f.state && f.state.trim()) ? f : { ...f, state: inferState(f) || '' };
+
   const runPhoneLookup = async (phone) => {
     const digits = (phone || '').replace(/\D/g, '');
     if (digits.length < 10) {
@@ -74,7 +79,7 @@ export default function QuickOrder() {
       // Prefer whatever was just pasted/typed over the customer's stored
       // record — she may be pasting a fresh/updated address this time, and
       // the stored one could also just be stale from an earlier order.
-      setFields(prev => ({
+      setFields(prev => withState({
         ...prev,
         name: prev.name || found.name || '',
         address: prev.address || found.address || '',
@@ -94,7 +99,7 @@ export default function QuickOrder() {
     const existingPhone = fields.phone?.trim();
     const phoneDiffers = existingPhone && parsed.phone && parsed.phone !== existingPhone;
 
-    setFields(prev => ({
+    setFields(prev => withState({
       ...prev,
       ...parsed,
       // The Number box is the WhatsApp/identity number — if she's already
@@ -111,7 +116,12 @@ export default function QuickOrder() {
 
   const phoneLookupTimer = useRef(null);
   const handleFieldChange = (key, val) => {
-    setFields(prev => ({ ...prev, [key]: val }));
+    setFields(prev => {
+      const next = { ...prev, [key]: val };
+      // typing the state herself is never overridden; address/pincode/city edits
+      // re-derive it only while it is still blank
+      return key === 'state' ? next : withState(next);
+    });
     if (key === 'phone') {
       // Wait for her to stop typing before hitting the DB — otherwise every
       // digit of a 10-digit number fires its own lookup call.
@@ -211,6 +221,16 @@ export default function QuickOrder() {
       else if (items.length === 0) showToast('Add at least one item', 'error');
       return;
     }
+    if (!fields.state.trim()) {
+      showToast('State is missing — enter it (or a valid pincode). It decides the GST on the invoice.', 'error');
+      return;
+    }
+    // An order with no value can't be invoiced or tracked — set the price first.
+    // (Free sends go through the Promotion / Collab source, which is exempt.)
+    if (totalAmount <= 0 && !isPromotionalOrder({ order_source: orderSource })) {
+      showToast('Order total is ₹0 — set the price before saving. For free sends choose source "Promotion".', 'error');
+      return;
+    }
     if (zeroPriceItems.length > 0) {
       const ok = window.confirm(`${zeroPriceItems.length} item(s) have no price (₹0). The order will be saved as UNPAID so the amount isn't recorded wrongly — set the price and mark it paid afterwards. Save anyway?`);
       if (!ok) return;
@@ -234,6 +254,18 @@ export default function QuickOrder() {
       }
       customer = data;
       dispatch({ type: 'REPLACE_CUSTOMER', payload: { tempId: data.id, customer: data } });
+    } else if (!(customer.state || '').trim()) {
+      // existing customer saved earlier without a state — complete it now
+      const { data: updated } = await dbService.updateCustomer({
+        ...customer,
+        state: fields.state,
+        city: customer.city || fields.city,
+        pincode: customer.pincode || fields.pincode,
+      });
+      if (updated) {
+        customer = updated;
+        dispatch({ type: 'REPLACE_CUSTOMER', payload: { tempId: updated.id, customer: updated } });
+      }
     }
 
     // COD: the cash isn't collected until delivery, so it starts unpaid —

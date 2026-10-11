@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { inferState, parseAddress } from '../utils/addressParser';
 
 // Supabase configuration - these will be set as environment variables
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
@@ -1185,8 +1186,10 @@ const _realDbService = {
           phone: normalizePhone(customer.phone),
           address: customer.address,
           city: normalizeCity(customer.city),
-          state: customer.state,
-          pincode: customer.pincode,
+          // State decides CGST+SGST vs IGST on the invoice, so never save it
+          // blank when the address/pincode/city can tell us (Trichy → Tamil Nadu).
+          state: inferState(customer),
+          pincode: customer.pincode || parseAddress(customer.address).pincode || customer.pincode,
           gstin: customer.gstin,
           customer_type: customer.customerType || 'individual',
           notes: customer.notes,
@@ -1244,7 +1247,11 @@ const _realDbService = {
           if (customer.address && (!existing.address || existing.address.length < customer.address.length)) updates.address = customer.address;
           if (customer.email && !existing.email) updates.email = customer.email;
           if (customer.city && !existing.city) updates.city = normalizeCity(customer.city);
-          if (customer.state && !existing.state) updates.state = customer.state;
+          if (!existing.state) {
+            const st = inferState({ ...customer, address: customer.address || existing.address,
+                                    city: customer.city || existing.city, pincode: customer.pincode || existing.pincode });
+            if (st) updates.state = st;
+          }
           if (customer.pincode && !existing.pincode) updates.pincode = String(customer.pincode);
 
           if (Object.keys(updates).length > 0) {

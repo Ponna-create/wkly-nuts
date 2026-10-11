@@ -395,6 +395,12 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
     const shippingCharge = parseFloat(editForm.shipping_charge) || 0;
     const totalAmount = itemsTotal - discount + shippingCharge;
 
+    // No-value orders can't be invoiced — price it first (Promotion/Collab exempt)
+    if (totalAmount <= 0 && !isPromotionalOrder({ order_source: editForm.order_source })) {
+      showToast('Order total is ₹0 — set the price before saving.', 'error');
+      return;
+    }
+
     // Keep payment in step with the new total. Previously editing items
     // recalculated the total but left amount_paid and balance_due alone, so
     // an order saved with a missing price (total ₹0, "paid ₹0") stayed
