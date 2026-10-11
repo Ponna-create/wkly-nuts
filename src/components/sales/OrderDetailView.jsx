@@ -218,19 +218,15 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
   const ensureInvoiceForOrder = async (targetOrder) => {
     if (targetOrder.invoice_id) return targetOrder.invoice_id;
     if (isPromotionalOrder(targetOrder)) return null; // promo/collab sends aren't a real sale — no invoice
-    // Re-check the database, not just the local order object — the same
-    // duplicate-invoice bug found in BulkLabelPrint.jsx applies here too.
-    const { data: freshIds } = await dbService.getInvoiceIdsForOrders([targetOrder.id]);
-    if (freshIds[targetOrder.id]) return freshIds[targetOrder.id];
     try {
       const invoiceData = buildInvoiceDataFromOrder(targetOrder, 'Auto-generated on label print', state.skus);
-      const { data: autoInvoice, error } = await dbService.createInvoice(invoiceData);
+      // Atomic in the database: returns the existing invoice if there is one.
+      const { data: autoInvoice, error } = await dbService.ensureInvoiceForOrder(targetOrder.id, invoiceData);
       if (error || !autoInvoice) {
         showToast('Could not auto-generate invoice for this order', 'error');
         return null;
       }
-      await dbService.updateSalesOrder({ id: targetOrder.id, invoice_id: autoInvoice.id });
-      dispatch({ type: 'ADD_INVOICE', payload: autoInvoice });
+      dispatch({ type: 'ADD_INVOICE', payload: autoInvoice, localOnly: true });
       setCurrentOrder(prev => ({ ...prev, invoice_id: autoInvoice.id }));
       return autoInvoice.id;
     } catch (invErr) {
@@ -344,6 +340,7 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
       shipping_address: currentOrder.shipping_address || '',
       courier_number: currentOrder.courier_number || '',
       shipping_charge: currentOrder.shipping_charge || 0,
+      amount_paid: currentOrder.amount_paid || 0,
       items: (currentOrder.items || []).map(i => ({ ...i })),
     });
     setAddItemMode(false);
@@ -398,6 +395,22 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
     const shippingCharge = parseFloat(editForm.shipping_charge) || 0;
     const totalAmount = itemsTotal - discount + shippingCharge;
 
+    // Keep payment in step with the new total. Previously editing items
+    // recalculated the total but left amount_paid and balance_due alone, so
+    // an order saved with a missing price (total ₹0, "paid ₹0") stayed
+    // "received, ₹0 paid" after the price was fixed — and there was no field
+    // to correct it. She can now also type the amount paid directly.
+    const prevTotal = parseFloat(currentOrder.total_amount) || 0;
+    const prevPaid = parseFloat(currentOrder.amount_paid) || 0;
+    const typedPaid = parseFloat(editForm.amount_paid) || 0;
+    let amountPaid = typedPaid;
+    const paidFieldUntouched = Math.abs(typedPaid - prevPaid) < 0.005;
+    if (paidFieldUntouched && currentOrder.payment_status === 'received' &&
+        (prevPaid === 0 || Math.abs(prevPaid - prevTotal) < 0.5)) {
+      amountPaid = totalAmount; // was paid in full (or recorded as paid with ₹0) — follows the corrected total
+    }
+    const balanceDue = Math.max(0, totalAmount - amountPaid);
+
     const updatedOrder = {
       ...currentOrder,
       customer_name: editForm.customer_name,
@@ -409,6 +422,8 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
       subtotal,
       gst_amount: gstAmount,
       total_amount: totalAmount,
+      amount_paid: amountPaid,
+      balance_due: balanceDue,
     };
 
     const { error } = await dbService.updateSalesOrder(updatedOrder);
@@ -454,42 +469,22 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
     }
 
     setGeneratingInvoice(true);
-    // One more check straight against the database immediately before
-    // creating — currentOrder.invoice_id above can be stale (this view
-    // opened from a list that hasn't reloaded since another invoice was
-    // already generated for this order elsewhere).
-    const { data: freshIds } = await dbService.getInvoiceIdsForOrders([currentOrder.id]);
-    if (freshIds[currentOrder.id]) {
-      const updatedOrder = { ...currentOrder, invoice_id: freshIds[currentOrder.id] };
-      setCurrentOrder(updatedOrder);
-      dispatch({ type: 'UPDATE_SALES_ORDER', payload: updatedOrder });
-      showToast('An invoice already exists for this order — opening it', 'info');
-      setShowInvoiceView(true);
-      setGeneratingInvoice(false);
-      return;
-    }
     try {
       const invoiceData = {
-        id: `inv-${Date.now()}`,
         dueDate: null,
         terms: 'Payment due within 15 days',
         ...buildInvoiceDataFromOrder(currentOrder, 'Auto-generated from order', state.skus),
       };
 
-      // Create invoice
-      const { data: createdInvoice, error: invoiceError } = await dbService.createInvoice(invoiceData);
-      if (invoiceError) throw invoiceError;
+      // Atomic: creates the invoice and links it to this order in one step,
+      // or returns the one it already has.
+      const { data: createdInvoice, error: invoiceError } = await dbService.ensureInvoiceForOrder(currentOrder.id, invoiceData);
+      if (invoiceError || !createdInvoice) throw invoiceError || new Error('No invoice returned');
 
-      // Link invoice to order
-      const updatedOrder = { ...currentOrder, invoice_id: createdInvoice?.id || invoiceData.id };
-      await dbService.updateSalesOrder(updatedOrder);
-
-      // Update local state
-      if (createdInvoice) {
-        dispatch({ type: 'ADD_INVOICE', payload: createdInvoice });
-      }
+      const updatedOrder = { ...currentOrder, invoice_id: createdInvoice.id };
+      dispatch({ type: 'ADD_INVOICE', payload: createdInvoice, localOnly: true });
       setCurrentOrder(updatedOrder);
-      dispatch({ type: 'UPDATE_SALES_ORDER', payload: updatedOrder });
+      dispatch({ type: 'UPDATE_SALES_ORDER', payload: updatedOrder, localOnly: true });
 
       showToast('Invoice generated and linked!', 'success');
       setShowInvoiceView(true);
@@ -783,6 +778,18 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
                       value={editForm.shipping_charge || ''}
                       onChange={(e) => setEditForm(prev => ({ ...prev, shipping_charge: e.target.value }))}
                       className="w-20 px-2 py-1 border border-gray-300 rounded text-sm text-right"
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-600">Amount paid</span>
+                  <div className="flex items-center">
+                    <span className="text-sm text-gray-500 mr-1">₹</span>
+                    <input
+                      type="number"
+                      value={editForm.amount_paid ?? ''}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, amount_paid: e.target.value }))}
+                      className="w-24 px-2 py-1 border border-gray-300 rounded text-sm text-right"
                     />
                   </div>
                 </div>
