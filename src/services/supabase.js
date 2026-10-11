@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { inferState, parseAddress } from '../utils/addressParser';
+import { inferState, parseAddress, addressWithState } from '../utils/addressParser';
 
 // Supabase configuration - these will be set as environment variables
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
@@ -1184,7 +1184,7 @@ const _realDbService = {
           name: customer.name,
           email: customer.email,
           phone: normalizePhone(customer.phone),
-          address: customer.address,
+          address: addressWithState(customer.address, inferState(customer)),
           city: normalizeCity(customer.city),
           // State decides CGST+SGST vs IGST on the invoice, so never save it
           // blank when the address/pincode/city can tell us (Trichy → Tamil Nadu).

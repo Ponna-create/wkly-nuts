@@ -6,6 +6,7 @@
 --     invoice is in the current month (earlier months may already be filed).
 --   * sales_orders_keep_invoice  (BEFORE UPDATE): an order that has its invoice
 --     can't be re-pointed at another (stale browser tabs); the stray is voided.
+-- Orders dated before 2026-08-01 are ignored by the trigger (pre-invoicing era).
 -- Depends on: invoices.sales_order_id + unique index invoices_one_per_order,
 --             public.ensure_invoice_for_order(uuid, jsonb), invoice_number_seq.
 -- Functions: order_is_promotional, build_invoice_json_for_order,

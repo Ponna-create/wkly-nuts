@@ -4,7 +4,7 @@ import { ArrowLeft, Check, Minus, Plus, Trash2, Loader2, AlertTriangle, Printer,
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
 import { parseOrderPaste } from '../utils/orderPasteParser';
-import { inferState } from '../utils/addressParser';
+import { inferState, addressWithState } from '../utils/addressParser';
 import { generateA4LabelSheet } from '../utils/a4LabelSheet';
 import LabelPrinter from '../components/sales/LabelPrinter';
 import { buildInvoiceDataFromOrder, isPromotionalOrder } from '../utils/invoiceFromOrder';
@@ -288,7 +288,7 @@ export default function QuickOrder() {
       amountPaid: isCod ? 0 : totalAmount,
       balanceDue: isCod ? totalAmount : 0,
       status: 'confirmed',
-      shippingAddress: fields.address,
+      shippingAddress: addressWithState(fields.address, fields.state),
       courierNumber: fields.courierNumber || null,
     });
 
