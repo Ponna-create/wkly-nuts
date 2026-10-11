@@ -2,12 +2,13 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Check, AlertTriangle, Loader2, PackageCheck } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
-import { buildRunRecipe, shelfLifeFor, ddmmyy, addDays, boxesFor } from '../utils/batchRecipe';
+import { buildRunRecipe, shelfLifeFor, ddmmyy, addDays } from '../utils/batchRecipe';
 import { formatDate } from '../utils/dateFormat';
 
-// Batch in two taps: Save batch (uses ingredients + packaging from stock, once)
-// and Finish batch (good boxes go into finished stock, once). Everything is
-// written to production_runs, so the Production page shows the same batches.
+// Batch in two taps, over one or several days:
+//   1. Save batch   - when she starts (uses ingredients + packaging from stock, once)
+//   2. Finish batch - whenever the boxes are done, even days later (good boxes go into stock, once)
+// Open batches are listed first so she always sees what is still waiting to be finished.
 
 const todayStr = () => new Date().toISOString().split('T')[0];
 const norm = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -18,6 +19,29 @@ const SC_PHASES = [
   { value: 'P1', label: 'Phase 1 (days 1-14)' },
   { value: 'P2', label: 'Phase 2 (days 15-28)' },
 ];
+
+// Words that describe an ingredient rather than name it. "yellow raisins" must
+// not be matched to "Dry Dates Yellow" just because both say yellow.
+const FILLER = new Set(['in', 'of', 'the', 'and', 'with', 'pcs']);
+const ADJECTIVES = new Set(['yellow', 'black', 'white', 'red', 'green', 'salted', 'roasted', 'raw', 'premium',
+  'regular', 'dry', 'dried', 'whole', 'big', 'small', 'indian', 'seedless']);
+const words = (name) => String(name || '').toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 2 && !FILLER.has(w));
+const stem = (w) => w.slice(0, 4);
+
+// stock items that probably mean the same thing as a generic recipe name
+function suggestIds(recipeName, ingredients) {
+  const all = words(recipeName).map(stem);
+  const core = words(recipeName).filter(w => !ADJECTIVES.has(w)).map(stem);
+  if (core.length === 0) return [];
+  const scored = ingredients.map(i => {
+    const have = words(i.name).map(stem);
+    const coreHit = core.some(c => have.includes(c));
+    const overlap = all.filter(a => have.includes(a)).length;
+    return { id: i.id, coreHit, overlap };
+  }).filter(x => x.coreHit);
+  const best = Math.max(0, ...scored.map(x => x.overlap));
+  return scored.filter(x => x.overlap === best).map(x => x.id);
+}
 
 export default function QuickBatch() {
   const { state, showToast } = useApp();
@@ -39,6 +63,8 @@ export default function QuickBatch() {
   const [runs, setRuns] = useState([]);
   const [finishForm, setFinishForm] = useState({}); // runId -> { made, rejected }
   const [finishingId, setFinishingId] = useState('');
+  const [mapSel, setMapSel] = useState({}); // recipe name -> [ingredient ids]
+  const [savingMap, setSavingMap] = useState(false);
 
   const reload = useCallback(async () => {
     const [ing, al, pr] = await Promise.all([
@@ -84,9 +110,29 @@ export default function QuickBatch() {
     return { name: item.ingredient_name, need, have, status: have + 1e-9 >= need ? 'ok' : 'short' };
   }), [recipe, ingredients, aliases]);
 
+  const unmappedNames = stockCheck.filter(r => r.status === 'unmapped').map(r => r.name);
   const hasShort = stockCheck.some(r => r.status === 'short');
-  const hasUnmapped = stockCheck.some(r => r.status === 'unmapped');
   const boxesNum = parseInt(boxes, 10) || 0;
+
+  const selectedFor = (name) => mapSel[name] !== undefined ? mapSel[name] : suggestIds(name, ingredients);
+  const toggleMap = (name, id) => {
+    const cur = selectedFor(name);
+    setMapSel(p => ({ ...p, [name]: cur.includes(id) ? cur.filter(x => x !== id) : [...cur, id] }));
+  };
+
+  const saveMappings = async () => {
+    const todo = unmappedNames.filter(n => selectedFor(n).length > 0);
+    if (todo.length === 0) { showToast('Tick the stock item for each name first', 'error'); return; }
+    setSavingMap(true);
+    for (const name of todo) {
+      const { error } = await dbService.setIngredientAlias(name, selectedFor(name));
+      if (error) { showToast(`Could not save the match for ${name}`, 'error'); setSavingMap(false); return; }
+    }
+    await reload();
+    setSavingMap(false);
+    setProblem(null);
+    showToast('Matches saved. Recipes will use these from now on.', 'success');
+  };
 
   const buildRunPayload = () => ({
     skuId: sku.id,
@@ -131,9 +177,8 @@ export default function QuickBatch() {
       return;
     }
     setProblem(null);
-    const used = (res.consumed || []).length;
-    setMsg(`Batch ${batchNumber} saved. ${used} lot(s) used from stock${res.unmatched?.length ? `; ${res.unmatched.length} item(s) not mapped, not deducted` : ''}.`);
-    showToast(`Batch ${batchNumber} saved`, 'success');
+    setMsg(`Batch ${run.batch_number || batchNumber} saved. Stock has been taken. Finish it above when the boxes are done.`);
+    showToast(`Batch ${run.batch_number || batchNumber} saved`, 'success');
     await reload();
     setSaving(false);
   };
@@ -155,7 +200,6 @@ export default function QuickBatch() {
   };
 
   const openRuns = runs.filter(r => ['planned', 'in_progress', 'quality_check'].includes(r.status));
-  const doneRuns = runs.filter(r => r.status === 'completed').slice(0, 5);
   const field = 'w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent';
   const chip = (on) => `px-3 py-2 rounded-lg text-sm font-medium border ${on ? 'border-teal-500 bg-teal-50 text-teal-700' : 'border-gray-300 bg-white text-gray-600'}`;
 
@@ -163,7 +207,7 @@ export default function QuickBatch() {
     <div className="max-w-xl mx-auto space-y-4 pb-24">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Quick Batch</h1>
-        <p className="text-sm text-gray-500">Save when you start. Finish when the boxes are done.</p>
+        <p className="text-sm text-gray-500">Save when you start. Finish when the boxes are done, even on another day.</p>
       </div>
 
       {msg && (
@@ -171,6 +215,51 @@ export default function QuickBatch() {
           <Check className="w-4 h-4 mt-0.5 flex-shrink-0" /> {msg}
         </div>
       )}
+
+      {/* what is still waiting to be finished comes first, so she always knows what to close */}
+      {openRuns.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="text-sm font-semibold text-gray-700">Open batches · finish these when the boxes are done</h2>
+          {openRuns.map(run => {
+            const f = finishForm[run.id] || {};
+            const label = run.batch_number || (run.sku_code ? `${run.sku_code}-${ddmmyy(run.batch_date)}` : run.run_number);
+            return (
+              <div key={run.id} className="bg-white border border-orange-200 rounded-xl p-4 space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-gray-900 break-words">{label} · {run.sku_name?.trim()}</p>
+                    <p className="text-xs text-gray-500">
+                      {run.planned_quantity} {run.pack_type === 'monthly' ? 'packs' : 'boxes'} planned · started {formatDate(run.started_at || run.batch_date)}
+                    </p>
+                  </div>
+                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 font-medium flex-shrink-0">Not finished</span>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] text-gray-500 mb-0.5">Boxes finished</label>
+                    <input type="number" inputMode="numeric" min="0"
+                      value={f.made !== undefined ? f.made : String(run.planned_quantity || '')}
+                      onChange={e => setFinishForm(p => ({ ...p, [run.id]: { ...p[run.id], made: e.target.value } }))}
+                      className={field} />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-gray-500 mb-0.5">Rejected</label>
+                    <input type="number" inputMode="numeric" min="0" value={f.rejected ?? ''}
+                      onChange={e => setFinishForm(p => ({ ...p, [run.id]: { ...p[run.id], rejected: e.target.value } }))}
+                      className={field} placeholder="0" />
+                  </div>
+                </div>
+                <button type="button" onClick={() => handleFinish(run)} disabled={finishingId === run.id}
+                  className="w-full min-h-[44px] bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white font-semibold rounded-lg flex items-center justify-center gap-2">
+                  {finishingId === run.id ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</> : <><PackageCheck className="w-4 h-4" /> Finish batch and add to stock</>}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <h2 className="text-sm font-semibold text-gray-700 pt-1">Start a new batch</h2>
 
       <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
         <div>
@@ -204,15 +293,13 @@ export default function QuickBatch() {
             <input type="date" value={expiry} onChange={e => { setExpiry(e.target.value); setExpiryTouched(true); }} className={field} />
           </div>
         </div>
-        <p className="text-xs text-gray-400">
-          Expiry = made date + {shelfDays} days (the product&apos;s shelf life). You can change it.
-        </p>
+        <p className="text-xs text-gray-400">Expiry = made date + {shelfDays} days (the product&apos;s shelf life). You can change it.</p>
       </div>
 
       <div className="bg-teal-50 border border-teal-200 rounded-xl p-4">
         <p className="text-xs font-semibold text-teal-700 uppercase mb-1">Print on the sachet and box</p>
         <p className="text-lg font-bold text-teal-900 break-words">{batchNumber || '—'}</p>
-        <p className="text-sm text-teal-900">MFG {expiry || madeOn ? formatDate(madeOn) : '—'} · EXP {expiry ? formatDate(expiry) : '—'}</p>
+        <p className="text-sm text-teal-900">MFG {formatDate(madeOn)} · EXP {expiry ? formatDate(expiry) : '—'}</p>
       </div>
 
       <div className="bg-white border border-gray-200 rounded-xl p-4">
@@ -227,7 +314,7 @@ export default function QuickBatch() {
             <span className={`text-right flex-shrink-0 ${r.status === 'ok' ? 'text-gray-700' : r.status === 'short' ? 'text-red-600 font-medium' : 'text-amber-700'}`}>
               {kgText(r.need)}
               {r.status === 'short' && <span className="block text-[11px]">only {kgText(r.have)} in stock</span>}
-              {r.status === 'unmapped' && <span className="block text-[11px]">not mapped to stock</span>}
+              {r.status === 'unmapped' && <span className="block text-[11px]">match below</span>}
             </span>
           </div>
         ))}
@@ -242,98 +329,61 @@ export default function QuickBatch() {
         )}
       </div>
 
-      {(hasShort || hasUnmapped) && !problem && (
-        <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-3 py-2 text-xs">
-          <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-          <span>
-            {hasShort && 'Some ingredients are short, so the batch can\'t be saved until they are bought (Quick → Bill). '}
-            {hasUnmapped && 'Some recipe names are not mapped to a stock item (Inventory → Recipe Mapping); they won\'t be deducted.'}
-          </span>
-        </div>
-      )}
-
-      {problem && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-800 space-y-2">
-          {problem.shortages.length > 0 && (
+      {/* one-time matching of recipe names to stock items, right here */}
+      {unmappedNames.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3">
+          <div className="flex items-start gap-2 text-amber-900">
+            <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
             <div>
-              <p className="font-semibold">Not enough stock, nothing was used:</p>
-              {problem.shortages.map(s => <p key={s.name}>{s.name}: need {kgText(s.need)}, have {kgText(s.have)}</p>)}
+              <p className="text-sm font-semibold">Match these names to your stock (one time)</p>
+              <p className="text-xs">The recipe uses a short name. Tick the stock item it means. The app remembers it.</p>
             </div>
-          )}
-          {problem.unmatched.length > 0 && (
-            <div>
-              <p className="font-semibold">Not mapped to a stock item:</p>
-              <p>{problem.unmatched.join(', ')}</p>
-              <p className="text-xs mt-1">Map them in Inventory → Recipe Mapping, or save without deducting these.</p>
-              {problem.run && (
-                <button type="button" onClick={() => handleSave(true, problem.run)}
-                  className="mt-2 px-3 py-2 bg-red-600 text-white rounded-lg text-sm font-medium">
-                  Save without deducting these
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {openRuns.length > 0 && (
-        <div className="space-y-3">
-          <h2 className="text-sm font-semibold text-gray-700">Open batches</h2>
-          {openRuns.map(run => {
-            const f = finishForm[run.id] || {};
-            const label = run.batch_number || (run.sku_code ? `${run.sku_code}-${ddmmyy(run.batch_date)}` : run.run_number);
-            const legacyNotStarted = !run.stock_deducted;
+          </div>
+          {unmappedNames.map(name => {
+            const sel = selectedFor(name);
             return (
-              <div key={run.id} className="bg-white border border-gray-200 rounded-xl p-4 space-y-2">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="font-semibold text-gray-900 break-words">{label}</p>
-                    <p className="text-xs text-gray-500">
-                      {run.sku_name} · {run.planned_quantity} {run.pack_type === 'monthly' ? 'packs' : 'boxes'} planned · {formatDate(run.batch_date)}
-                      {run.expiry_date ? ` · EXP ${formatDate(run.expiry_date)}` : ''}
-                    </p>
-                  </div>
-                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium flex-shrink-0">Making</span>
+              <div key={name}>
+                <p className="text-sm font-medium text-gray-800 mb-1">{name}</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {ingredients.map(i => (
+                    <button key={i.id} type="button" onClick={() => toggleMap(name, i.id)}
+                      className={`px-2.5 py-1.5 rounded-full text-xs border ${sel.includes(i.id) ? 'border-teal-500 bg-teal-50 text-teal-800 font-semibold' : 'border-gray-300 bg-white text-gray-600'}`}>
+                      {sel.includes(i.id) ? '✓ ' : ''}{i.name}
+                    </button>
+                  ))}
                 </div>
-                {legacyNotStarted && (
-                  <p className="text-[11px] text-amber-700">Started in the old Production screen. Finishing it here will take its ingredients from stock now.</p>
-                )}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] text-gray-500 mb-0.5">Good boxes finished</label>
-                    <input type="number" inputMode="numeric" min="0"
-                      value={f.made !== undefined ? f.made : String(run.planned_quantity || '')}
-                      onChange={e => setFinishForm(p => ({ ...p, [run.id]: { ...p[run.id], made: e.target.value } }))}
-                      className={field} />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] text-gray-500 mb-0.5">Rejected / damaged</label>
-                    <input type="number" inputMode="numeric" min="0" value={f.rejected ?? ''}
-                      onChange={e => setFinishForm(p => ({ ...p, [run.id]: { ...p[run.id], rejected: e.target.value } }))}
-                      className={field} placeholder="0" />
-                  </div>
-                </div>
-                <button type="button" onClick={() => handleFinish(run)} disabled={finishingId === run.id}
-                  className="w-full min-h-[44px] bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white font-semibold rounded-lg flex items-center justify-center gap-2">
-                  {finishingId === run.id ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</> : <><PackageCheck className="w-4 h-4" /> Finish batch, add to stock</>}
-                </button>
               </div>
             );
           })}
+          <button type="button" onClick={saveMappings} disabled={savingMap}
+            className="w-full min-h-[44px] bg-amber-600 hover:bg-amber-700 disabled:bg-amber-300 text-white font-semibold rounded-lg">
+            {savingMap ? 'Saving…' : 'Save these matches'}
+          </button>
         </div>
       )}
 
-      {doneRuns.length > 0 && (
-        <div className="space-y-2">
-          <h2 className="text-sm font-semibold text-gray-700">Recently finished</h2>
-          <div className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-100">
-            {doneRuns.map(run => (
-              <div key={run.id} className="flex items-center justify-between gap-2 px-4 py-2.5 text-sm">
-                <span className="truncate">{run.batch_number || run.run_number} · {run.sku_name}</span>
-                <span className="text-gray-500 flex-shrink-0">{run.actual_quantity || 0} done{run.rejected_quantity ? `, ${run.rejected_quantity} rejected` : ''}</span>
-              </div>
-            ))}
-          </div>
+      {hasShort && (
+        <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-800 rounded-lg px-3 py-2 text-xs">
+          <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          <span>Some ingredients are short. Add the bill first (Quick → Bill), then save the batch.</span>
+        </div>
+      )}
+
+      {problem && problem.shortages.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-800">
+          <p className="font-semibold">Not enough stock, nothing was used:</p>
+          {problem.shortages.map(s => <p key={s.name}>{s.name}: need {kgText(s.need)}, have {kgText(s.have)}</p>)}
+        </div>
+      )}
+
+      {problem && problem.shortages.length === 0 && problem.unmatched.length > 0 && problem.run && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-800 space-y-2">
+          <p className="font-semibold">Not matched to stock: {problem.unmatched.join(', ')}</p>
+          <p className="text-xs">Match them above, or save the batch without deducting these.</p>
+          <button type="button" onClick={() => handleSave(true, problem.run)}
+            className="px-3 py-2 bg-red-600 text-white rounded-lg text-sm font-medium">
+            Save without deducting these
+          </button>
         </div>
       )}
 
