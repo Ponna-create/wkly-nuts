@@ -33,6 +33,7 @@ import QuickOrder from './pages/QuickOrder';
 import QuickBill from './pages/QuickBill';
 import QuickBatch from './pages/QuickBatch';
 import QuickHours from './pages/QuickHours';
+import ProfitReport from './pages/ProfitReport';
 import AiUsage from './pages/AiUsage';
 
 function App() {
@@ -71,6 +72,7 @@ function App() {
               <Route path="/quick-bill" element={<ErrorBoundary><QuickBill /></ErrorBoundary>} />
               <Route path="/quick-batch" element={<ErrorBoundary><QuickBatch /></ErrorBoundary>} />
               <Route path="/quick-hours" element={<ErrorBoundary><QuickHours /></ErrorBoundary>} />
+              <Route path="/profit" element={<ErrorBoundary><ProfitReport /></ErrorBoundary>} />
             </Routes>
           </Layout>
           <Toast />
