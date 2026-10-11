@@ -2274,6 +2274,35 @@ const _realDbService = {
     }
   },
 
+  // Many lots from one bill in a single request (then one stock recalc per
+  // ingredient, in parallel) — saving a bill with 8 items used to be ~25 round trips.
+  async addIngredientBatches(batches) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    try {
+      const rows = batches.map(b => ({
+        ingredient_id: b.ingredientId,
+        vendor_id: b.vendorId || null,
+        batch_number: b.batchNumber,
+        quantity_initial: b.quantity,
+        quantity_remaining: b.quantity,
+        price_per_unit: b.price,
+        expiry_date: b.expiryDate || null,
+        received_date: b.receivedDate || new Date().toISOString(),
+        expense_id: b.expenseId || null,
+        bill_number: b.billNumber || null,
+        status: 'active',
+      }));
+      const { data, error } = await supabase.from('ingredient_batches').insert(rows).select();
+      if (error) throw error;
+      const ids = [...new Set(rows.map(r => r.ingredient_id))];
+      await Promise.all(ids.map(id => this.recalculateIngredientStock(id)));
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error adding batches:', error);
+      return { data: null, error };
+    }
+  },
+
   async updateBatchExpiry(batchId, expiryDate) {
     if (!isSupabaseAvailable()) return { error: new Error('Supabase not configured') };
     try {
