@@ -31,6 +31,7 @@ import OmniChannels from './pages/OmniChannels';
 import GSTFiling from './pages/GSTFiling';
 import QuickOrder from './pages/QuickOrder';
 import QuickBill from './pages/QuickBill';
+import QuickBatch from './pages/QuickBatch';
 import AiUsage from './pages/AiUsage';
 
 function App() {
@@ -67,6 +68,7 @@ function App() {
               <Route path="/settings" element={<ErrorBoundary><BackupSettings /></ErrorBoundary>} />
               <Route path="/quick-order" element={<ErrorBoundary><QuickOrder /></ErrorBoundary>} />
               <Route path="/quick-bill" element={<ErrorBoundary><QuickBill /></ErrorBoundary>} />
+              <Route path="/quick-batch" element={<ErrorBoundary><QuickBatch /></ErrorBoundary>} />
             </Routes>
           </Layout>
           <Toast />

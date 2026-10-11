@@ -3295,6 +3295,9 @@ const _realDbService = {
           packaging_used: run.packagingUsed || [],
           instance_start: instanceStart,
           instance_end: instanceEnd,
+          batch_number: run.batchNumber || null,
+          shelf_life_days: run.shelfLifeDays || null,
+          expiry_date: run.expiryDate || null,
           ingredient_cost: run.ingredientCost || 0,
           packaging_cost: run.packagingCost || 0,
           process_cost: run.processCost || 0,
@@ -3904,11 +3907,203 @@ const _realDbService = {
   },
 
   // P3: Production Completed → Deduct raw materials + packaging, add finished goods
+  // ==========================================
+  // QUICK BATCH — one safe path for using stock and adding finished goods.
+  // Both steps are claimed atomically (flag flipped with a conditional update)
+  // so a double click, a second tab or the old Production screen can never
+  // deduct ingredients or add boxes twice for the same run.
+  // ==========================================
+
+  // Use the ingredients + packaging of a run (called when the batch is saved).
+  // Recipe names are resolved exactly, then through Recipe Mapping aliases.
+  // Nothing is touched unless every matched ingredient has enough stock.
+  async startProductionRun(run, opts = {}) {
+    if (!isSupabaseAvailable()) return { ok: false, error: 'Supabase not configured' };
+    if (run.stock_deducted) return { ok: true, alreadyDone: true };
+
+    const norm = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const [{ data: ingredients }, aliasRes] = await Promise.all([
+      supabase.from('ingredients').select('id, name, unit'),
+      this.getIngredientAliases(),
+    ]);
+    const aliases = aliasRes.data || [];
+
+    // 1. plan: recipe line -> candidate ingredient ids + kg needed
+    const plan = [];
+    const unmatched = [];
+    for (const item of (run.ingredients_used || [])) {
+      const name = String(item.ingredient_name || item.name || '').trim();
+      if (!name) continue;
+      const kg = item.quantity_grams !== undefined
+        ? (parseFloat(item.quantity_grams) || 0) / 1000
+        : (parseFloat(item.quantity) || 0);
+      if (!(kg > 0)) continue;
+      let ids = (ingredients || []).filter(i => norm(i.name) === norm(name)).map(i => i.id);
+      if (ids.length === 0) ids = aliases.filter(a => norm(a.alias_name) === norm(name)).map(a => a.ingredient_id);
+      if (ids.length === 0) { unmatched.push(name); continue; }
+      plan.push({ name, ids, kg });
+    }
+
+    // 2. check stock across lots (oldest bill first), tracking what earlier lines take
+    const allIds = [...new Set(plan.flatMap(p => p.ids))];
+    let lots = [];
+    if (allIds.length > 0) {
+      const { data, error } = await supabase
+        .from('ingredient_batches')
+        .select('*')
+        .in('ingredient_id', allIds)
+        .eq('status', 'active')
+        .gt('quantity_remaining', 0)
+        .order('received_date', { ascending: true });
+      if (error) return { ok: false, error: error.message };
+      lots = (data || []).map(l => ({ ...l, left: parseFloat(l.quantity_remaining) }));
+    }
+    const shortages = [];
+    const consumed = [];
+    for (const p of plan) {
+      const usable = lots.filter(l => p.ids.includes(l.ingredient_id) && l.left > 0);
+      const have = usable.reduce((s, l) => s + l.left, 0);
+      if (have + 1e-9 < p.kg) { shortages.push({ name: p.name, need: p.kg, have }); continue; }
+      let need = p.kg;
+      for (const l of usable) {
+        if (need <= 1e-9) break;
+        const take = Math.min(need, l.left);
+        l.left -= take;
+        need -= take;
+        consumed.push({
+          ingredient: p.name, ingredientId: l.ingredient_id, lotId: l.id,
+          bill: l.bill_number || l.batch_number || null, received: l.received_date,
+          kg: Math.round(take * 1000) / 1000, rate: parseFloat(l.price_per_unit) || 0,
+        });
+      }
+    }
+    if (shortages.length > 0) return { ok: false, shortages, unmatched };
+    if (unmatched.length > 0 && !opts.allowUnmatched) return { ok: false, shortages: [], unmatched };
+
+    // 3. claim the run (atomic) — only the first caller continues
+    const { data: claimed, error: claimErr } = await supabase
+      .from('production_runs')
+      .update({ stock_deducted: true })
+      .eq('id', run.id)
+      .eq('stock_deducted', false)
+      .select('id');
+    if (claimErr) return { ok: false, error: claimErr.message };
+    if (!claimed || claimed.length === 0) return { ok: true, alreadyDone: true };
+
+    try {
+      // 4. write the new lot quantities (one update per touched lot, in parallel)
+      const touched = lots.filter(l => l.left !== parseFloat(l.quantity_remaining));
+      await Promise.all(touched.map(l => supabase
+        .from('ingredient_batches')
+        .update({ quantity_remaining: Math.max(0, Math.round(l.left * 1000) / 1000), status: l.left <= 1e-9 ? 'consumed' : 'active' })
+        .eq('id', l.id)));
+      await Promise.all([...new Set(touched.map(l => l.ingredient_id))].map(id => this.recalculateIngredientStock(id)));
+
+      // 5. packaging
+      const packagingErrors = [];
+      let packagingCost = 0;
+      for (const pkg of (run.packaging_used || [])) {
+        const pkgName = String(pkg.material_name || pkg.name || '').trim();
+        const qty = parseFloat(pkg.quantity) || 0;
+        if (!pkgName || qty <= 0) continue;
+        const { data: mats } = await supabase.from('packaging_materials').select('id, name, current_stock, cost_per_unit').ilike('name', pkgName).limit(1);
+        const mat = mats && mats[0];
+        if (!mat) { packagingErrors.push(`${pkgName}: not in Packaging`); continue; }
+        await this.createPackagingTransaction({
+          material_id: mat.id, type: 'usage', quantity: qty, production_run_id: run.id,
+          reference_note: `Batch ${run.batch_number || run.run_number}`,
+        });
+        await this.updatePackagingMaterial({ id: mat.id, current_stock: Math.max(0, (parseFloat(mat.current_stock) || 0) - qty) });
+        packagingCost += qty * (parseFloat(mat.cost_per_unit) || 0);
+      }
+
+      // 6. record what was used (which bill each kg came from) and the real ingredient cost
+      const ingredientCost = Math.round(consumed.reduce((s, c) => s + c.kg * c.rate, 0) * 100) / 100;
+      const pkgCost = Math.round(packagingCost * 100) / 100;
+      const { data: updated } = await supabase
+        .from('production_runs')
+        .update({
+          ingredients_consumed: consumed,
+          ingredient_cost: ingredientCost,
+          packaging_cost: pkgCost,
+          total_cost: Math.round((ingredientCost + pkgCost + (parseFloat(run.labor_cost) || 0) + (parseFloat(run.process_cost) || 0)) * 100) / 100,
+          status: 'in_progress',
+          started_at: run.started_at || new Date().toISOString(),
+        })
+        .eq('id', run.id)
+        .select()
+        .single();
+      return { ok: true, consumed, unmatched, packagingErrors, run: updated };
+    } catch (err) {
+      await supabase.from('production_runs').update({ stock_deducted: false }).eq('id', run.id);
+      return { ok: false, error: err.message };
+    }
+  },
+
+  // Batch finished: good boxes go into finished stock exactly once.
+  async finishProductionRun(run, { made, rejected = 0 }) {
+    if (!isSupabaseAvailable()) return { ok: false, error: 'Supabase not configured' };
+    const good = parseInt(made) || 0;
+    const bad = parseInt(rejected) || 0;
+    if (good < 0) return { ok: false, error: 'Boxes finished can not be negative' };
+    if (run.finished_added) return { ok: true, alreadyDone: true };
+
+    // older runs that were never started in the new flow: use their stock now
+    if (!run.stock_deducted) {
+      const started = await this.startProductionRun(run, { allowUnmatched: true });
+      if (!started.ok) return { ok: false, ...started };
+    }
+
+    const { data: claimed, error: claimErr } = await supabase
+      .from('production_runs')
+      .update({ finished_added: true })
+      .eq('id', run.id)
+      .eq('finished_added', false)
+      .select('id');
+    if (claimErr) return { ok: false, error: claimErr.message };
+    if (!claimed || claimed.length === 0) return { ok: true, alreadyDone: true };
+
+    try {
+      const packType = run.pack_type || 'weekly';
+      const boxes = packQuantityToBoxes(packType, good);
+      if (run.sku_id && boxes > 0) {
+        const res = await this.updateInventoryStock(run.sku_id, packType, boxes, 'add', `Batch ${run.batch_number || run.run_number}`);
+        if (res && res.error) throw res.error;
+      }
+      // total = ingredients + packaging + labour (+ process); labour may have been added after the batch started
+      const { data: fresh } = await supabase
+        .from('production_runs')
+        .select('ingredient_cost, packaging_cost, labor_cost, process_cost')
+        .eq('id', run.id)
+        .single();
+      const total = ['ingredient_cost', 'packaging_cost', 'labor_cost', 'process_cost']
+        .reduce((t, k) => t + (parseFloat(fresh?.[k]) || 0), 0);
+      const { data: updated, error: upErr } = await supabase
+        .from('production_runs')
+        .update({
+          actual_quantity: good,
+          rejected_quantity: bad,
+          status: 'completed',
+          completed_at: new Date().toISOString(),
+          total_cost: Math.round(total * 100) / 100,
+          cost_per_unit: good > 0 ? Math.round((total / good) * 100) / 100 : 0,
+        })
+        .eq('id', run.id)
+        .select()
+        .single();
+      if (upErr) throw upErr;
+      return { ok: true, boxes, run: updated };
+    } catch (err) {
+      await supabase.from('production_runs').update({ finished_added: false }).eq('id', run.id);
+      return { ok: false, error: err.message };
+    }
+  },
+
   async completeProductionRun(run) {
     const results = { ingredientsDeducted: 0, packagingDeducted: 0, finishedGoodsAdded: false, errors: [] };
 
     // 1. Deduct raw materials
-    for (const ing of (run.ingredients_used || [])) {
+    for (const ing of (run.stock_deducted ? [] : (run.ingredients_used || []))) {
       try {
         const ingName = (ing.ingredient_name || ing.name || '').trim();
         if (!ingName) continue;
@@ -3942,7 +4137,7 @@ const _realDbService = {
     }
 
     // 2. Deduct packaging materials
-    for (const pkg of (run.packaging_used || [])) {
+    for (const pkg of (run.stock_deducted ? [] : (run.packaging_used || []))) {
       try {
         const pkgName = (pkg.material_name || pkg.name || '').trim();
         if (!pkgName) continue;
@@ -3980,7 +4175,7 @@ const _realDbService = {
       const qty = parseInt(run.actual_quantity) || 0;
       const packType = run.pack_type || 'weekly';
       const boxesMade = packQuantityToBoxes(packType, qty);
-      if (skuId && boxesMade > 0) {
+      if (skuId && boxesMade > 0 && !run.finished_added) {
         const reason = `Production ${run.run_number || run.id}`;
         await this.updateInventoryStock(skuId, packType, boxesMade, 'add', reason);
         results.finishedGoodsAdded = true;
@@ -3988,6 +4183,11 @@ const _realDbService = {
     } catch (err) {
       results.errors.push(`Finished goods: ${err.message}`);
     }
+
+    // remember it was done, so completing again (or finishing in Quick Batch) can't repeat it
+    try {
+      await supabase.from('production_runs').update({ stock_deducted: true, finished_added: true }).eq('id', run.id);
+    } catch (e) { /* non-fatal */ }
 
     return results;
   },
