@@ -736,6 +736,7 @@ const _realDbService = {
           sku_id: entry.skuId || null,
           work_scope: entry.workScope || null,
           work_type: entry.workType || null,
+          work_status: entry.workStatus || 'done',
         }])
         .select()
         .single();
@@ -805,6 +806,38 @@ const _realDbService = {
 
   // Labour hours logged against a batch roll up into that batch's cost, so cost per
   // box = ingredients + packaging + labour (+ process). Safe to call any time.
+  // A person's work that has been started but not stopped yet (work_status = 'open').
+  // Closing it works out hours and cost from the rate saved when it started.
+  async closeWorkSession(id, outTime) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    try {
+      const { data: row, error } = await supabase.from('work_log').select('*').eq('id', id).single();
+      if (error) throw error;
+      const toMin = (t) => {
+        const m = String(t || '').match(/^(\d{1,2}):(\d{2})/);
+        return m ? parseInt(m[1], 10) * 60 + parseInt(m[2], 10) : null;
+      };
+      const a = toMin(row.start_time);
+      const b = toMin(outTime);
+      if (a == null || b == null || b <= a) throw new Error('Out time must be after the in time');
+      const hours = Math.round(((b - a) / 60) * 100) / 100;
+      const rate = parseFloat((row.staff && row.staff[0] && row.staff[0].rate) || 0) || 0;
+      const cost = Math.round(hours * rate * 100) / 100;
+      const { data: updated, error: upErr } = await supabase
+        .from('work_log')
+        .update({ end_time: outTime, hours, cost, work_status: 'done' })
+        .eq('id', id)
+        .select()
+        .single();
+      if (upErr) throw upErr;
+      if (row.production_run_id) await this.recalcRunLabour(row.production_run_id);
+      return { data: updated, error: null };
+    } catch (error) {
+      console.error('Error closing work session:', error);
+      return { data: null, error };
+    }
+  },
+
   async recalcRunLabour(runId) {
     if (!isSupabaseAvailable() || !runId) return { error: null };
     try {

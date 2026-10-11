@@ -1,13 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Check, Loader2, Trash2 } from 'lucide-react';
+import { Check, Loader2, Trash2, Play, Square } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
 import { formatDate } from '../utils/dateFormat';
 
-// Hours in one screen. Pick what the work was FOR (a batch, a product's prep,
-// customer-order packing, or general), tick the people, set each person's own
-// in / out time. One row per person goes to Work Log with the rate used that
-// day, and batch hours roll up into the batch's cost.
+// Hours without losing anything if the page is closed:
+//   Start  -> saved right away as "working now" (person, work, in-time)
+//   Stop   -> any time later, on any device; hours and cost are worked out then
+// Past work (notebook entries, forgotten days) can still be typed in as finished hours.
+// One Work Log row per person, with the rate used that day. Batch hours roll up into batch cost.
 
 const todayStr = () => new Date().toISOString().split('T')[0];
 const num = (v) => parseFloat(v) || 0;
@@ -24,6 +25,7 @@ const hoursBetween = (a, b) => {
   const s = toMin(a), e = toMin(b);
   return s != null && e != null && e > s ? (e - s) / 60 : 0;
 };
+const hm = (mins) => `${Math.floor(mins / 60)}h ${String(Math.round(mins % 60)).padStart(2, '0')}m`;
 
 // rate in force on a given date: latest increment on or before it, else the base rate
 function rateOn(member, date) {
@@ -44,6 +46,7 @@ export default function QuickHours() {
   const { state, showToast } = useApp();
   const skus = useMemo(() => (state.skus || []).filter(s => s.skuCode || s.sku_code), [state.skus]);
 
+  const [mode, setMode] = useState('start'); // 'start' | 'finished'
   const [date, setDate] = useState(todayStr());
   const [scope, setScope] = useState('batch');
   const [runId, setRunId] = useState('');
@@ -56,7 +59,9 @@ export default function QuickHours() {
   const [sameInSet, setSameInSet] = useState(false);
   const [sameOutSet, setSameOutSet] = useState(false);
   const [rows, setRows] = useState({}); // staffId -> { on, work, inT, outT, inSet, outSet }
+  const [stopTimes, setStopTimes] = useState({}); // open entry id -> typed out time
   const [saving, setSaving] = useState(false);
+  const [busyId, setBusyId] = useState('');
 
   const [staff, setStaff] = useState([]);
   const [workTypes, setWorkTypes] = useState([]);
@@ -82,7 +87,6 @@ export default function QuickHours() {
   useEffect(() => {
     if (!defaultWork && workTypes.length) setDefaultWork(workTypes[0].name);
   }, [workTypes, defaultWork]);
-  // sensible default work when the scope is customer-order packing
   useEffect(() => {
     if (scope === 'fulfilment' && workTypes.some(w => w.name === 'Order packing')) setDefaultWork('Order packing');
   }, [scope, workTypes]);
@@ -101,17 +105,101 @@ export default function QuickHours() {
   const totalCost = calc.reduce((t, c) => t + c.cost, 0);
   const run = runs.find(r => String(r.id) === String(runId));
 
-  const applySame = () => {
-    if (!sameIn || !sameOut) { showToast('Enter the in and out time first', 'error'); return; }
-    setRows(p => {
-      const next = { ...p };
-      selected.forEach(m => { next[m.id] = { ...rowOf(m.id), ...(p[m.id] || {}), inT: sameIn, outT: sameOut }; });
-      return next;
-    });
+  const openEntries = entries.filter(e => e.work_status === 'open');
+  const openToday = openEntries.filter(e => e.work_date === todayStr());
+
+  const scopeLabel = () => {
+    if (scope === 'batch') return run ? (run.batch_number || run.run_number) : '';
+    if (scope === 'product') return skus.find(s => String(s.id) === String(skuId))?.name?.trim() || '';
+    if (scope === 'fulfilment') return 'Customer orders';
+    return 'General';
   };
 
-  // One tap for the whole group: stamps the time on every ticked person who has no
-  // in (or out) time yet. Anyone who already has a time is left alone.
+  const checkScope = () => {
+    if (scope === 'batch' && !runId) { showToast('Choose the batch', 'error'); return false; }
+    if (scope === 'product' && !skuId) { showToast('Choose the product', 'error'); return false; }
+    if (selected.length === 0) { showToast('Tick who worked', 'error'); return false; }
+    return true;
+  };
+
+  const entryBase = (c, work) => ({
+    workDate: date,
+    activity: `${work}${scopeLabel() ? ` · ${scopeLabel()}` : ''}`,
+    staff: [{ id: c.m.id, name: c.m.name, rate: c.rate }],
+    productionRunId: scope === 'batch' ? runId : null,
+    skuId: scope === 'product' ? skuId : null,
+    workScope: scope,
+    workType: work,
+  });
+
+  // START: saved immediately, so closing the page loses nothing
+  const handleStart = async () => {
+    if (!checkScope()) return;
+    setSaving(true);
+    let failed = 0;
+    let firstTime = '';
+    for (const m of selected) {
+      const r = rowOf(m.id);
+      const startAt = r.inT || nowHM();
+      if (!firstTime) firstTime = startAt;
+      const c = { m, rate: rateOn(m, date) };
+      const { error } = await dbService.createWorkLogEntry({
+        ...entryBase(c, r.work || defaultWork || 'Work'),
+        startTime: startAt, endTime: null, hours: 0, cost: 0, workStatus: 'open',
+      });
+      if (error) failed += 1;
+    }
+    setSaving(false);
+    setRows({});
+    if (failed > 0) showToast(`${selected.length - failed} started, ${failed} failed. Check "Working now".`, 'error');
+    else showToast(`Started for ${selected.length} ${selected.length === 1 ? 'person' : 'people'} at ${firstTime}. Stop them from "Working now" later.`, 'success');
+    await load();
+  };
+
+  // FINISHED: both times known (notebook entries, a forgotten day)
+  const handleSaveFinished = async () => {
+    if (!checkScope()) return;
+    for (const c of calc) {
+      if (c.hrs <= 0) { showToast(`Check ${c.m.name.trim()}'s in and out time (out must be after in)`, 'error'); return; }
+    }
+    setSaving(true);
+    let failed = 0;
+    for (const c of calc) {
+      const { error } = await dbService.createWorkLogEntry({
+        ...entryBase(c, c.r.work || defaultWork || 'Work'),
+        startTime: c.r.inT, endTime: c.r.outT, hours: round2(c.hrs), cost: round2(c.cost), workStatus: 'done',
+      });
+      if (error) failed += 1;
+    }
+    if (scope === 'batch') await dbService.recalcRunLabour(runId);
+    setSaving(false);
+    if (failed > 0) showToast(`${calc.length - failed} saved, ${failed} failed. Check the list below before retrying.`, 'error');
+    else showToast(`Hours saved for ${calc.length} ${calc.length === 1 ? 'person' : 'people'} · ₹${Math.round(totalCost)}`, 'success');
+    setRows({});
+    setSameIn(''); setSameOut(''); setSameInSet(false); setSameOutSet(false);
+    await load();
+  };
+
+  const stopOne = async (entry, outTime) => {
+    const t = outTime || nowHM();
+    setBusyId(entry.id);
+    const { error } = await dbService.closeWorkSession(entry.id, t);
+    setBusyId('');
+    if (error) { showToast(error.message || 'Could not stop this one', 'error'); return false; }
+    setStopTimes(p => { const n = { ...p }; delete n[entry.id]; return n; });
+    return true;
+  };
+
+  const stopEveryone = async () => {
+    setSaving(true);
+    let ok = 0;
+    for (const e of openToday) { if (await stopOne(e, nowHM())) ok += 1; }
+    setSaving(false);
+    showToast(`Stopped ${ok} of ${openToday.length}`, ok === openToday.length ? 'success' : 'error');
+    await load();
+  };
+
+  // typed-in group times (finished mode)
   const stampGroup = (which) => {
     const t = nowHM();
     if (selected.length === 0) { showToast('Tick the people first', 'error'); return; }
@@ -126,6 +214,14 @@ export default function QuickHours() {
     });
     if (which === 'in') { setSameIn(t); setSameInSet(true); } else { setSameOut(t); setSameOutSet(true); }
   };
+  const applySame = () => {
+    if (!sameIn || !sameOut) { showToast('Enter the in and out time first', 'error'); return; }
+    setRows(p => {
+      const next = { ...p };
+      selected.forEach(m => { next[m.id] = { ...rowOf(m.id), ...(p[m.id] || {}), inT: sameIn, outT: sameOut }; });
+      return next;
+    });
+  };
 
   const addWorkType = async () => {
     const name = newWork.trim();
@@ -138,54 +234,6 @@ export default function QuickHours() {
     setNewWorkMode(false);
   };
 
-  const scopeLabel = () => {
-    if (scope === 'batch') return run ? (run.batch_number || run.run_number) : '';
-    if (scope === 'product') return skus.find(s => String(s.id) === String(skuId))?.name?.trim() || '';
-    if (scope === 'fulfilment') return 'Customer orders';
-    return 'General';
-  };
-
-  const handleSave = async () => {
-    if (scope === 'batch' && !runId) { showToast('Choose the batch', 'error'); return; }
-    if (scope === 'product' && !skuId) { showToast('Choose the product', 'error'); return; }
-    if (selected.length === 0) { showToast('Tick who worked', 'error'); return; }
-    for (const c of calc) {
-      if (c.hrs <= 0) { showToast(`Check ${c.m.name}'s in and out time (out must be after in)`, 'error'); return; }
-    }
-    setSaving(true);
-    let failed = 0;
-    for (const c of calc) {
-      const work = c.r.work || defaultWork || 'Work';
-      const { error } = await dbService.createWorkLogEntry({
-        workDate: date,
-        activity: `${work}${scopeLabel() ? ` · ${scopeLabel()}` : ''}`,
-        startTime: c.r.inT,
-        endTime: c.r.outT,
-        staff: [{ id: c.m.id, name: c.m.name, rate: c.rate }],
-        hours: round2(c.hrs),
-        cost: round2(c.cost),
-        productionRunId: scope === 'batch' ? runId : null,
-        skuId: scope === 'product' ? skuId : null,
-        workScope: scope,
-        workType: work,
-      });
-      if (error) failed += 1;
-    }
-    if (scope === 'batch') await dbService.recalcRunLabour(runId);
-    setSaving(false);
-    if (failed > 0) {
-      showToast(`${calc.length - failed} saved, ${failed} failed. Check the list below before retrying.`, 'error');
-    } else {
-      showToast(`Hours saved for ${calc.length} ${calc.length === 1 ? 'person' : 'people'} · ₹${Math.round(totalCost)}`, 'success');
-    }
-    setRows({});
-    setSameIn('');
-    setSameOut('');
-    setSameInSet(false);
-    setSameOutSet(false);
-    await load();
-  };
-
   const handleDelete = async (entry) => {
     const { error } = await dbService.deleteWorkLogEntry(entry.id);
     if (error) { showToast('Could not delete this entry', 'error'); return; }
@@ -194,19 +242,86 @@ export default function QuickHours() {
     await load();
   };
 
-  const dayEntries = entries.filter(e => e.work_date === date);
+  const nowMin = toMin(nowHM());
+  const dayEntries = entries.filter(e => e.work_date === date && e.work_status !== 'open');
   const dayCost = dayEntries.reduce((t, e) => t + num(e.cost), 0);
   const field = 'w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent';
   const chip = (on) => `px-3 py-2 rounded-lg text-sm font-medium border text-left ${on ? 'border-teal-500 bg-teal-50 text-teal-700' : 'border-gray-300 bg-white text-gray-600'}`;
+  const nowBtn = 'px-2.5 text-xs font-medium border border-gray-300 rounded-lg bg-white text-gray-700 disabled:bg-gray-100 disabled:text-gray-400';
 
   return (
     <div className="max-w-xl mx-auto space-y-4 pb-24">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Quick Hours</h1>
-        <p className="text-sm text-gray-500">Who worked, on what, from when to when. Everyone has their own times.</p>
+        <p className="text-sm text-gray-500">Start when work begins. Stop when it ends. Nothing is lost if you close the page.</p>
       </div>
 
+      {/* WORKING NOW: survives closing the page, another phone, another day */}
+      {openEntries.length > 0 && (
+        <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-green-900">Working now ({openEntries.length})</h2>
+            {openToday.length > 1 && (
+              <button type="button" onClick={stopEveryone} disabled={saving}
+                className="px-3 py-1.5 bg-green-700 text-white rounded-lg text-xs font-semibold disabled:opacity-50">
+                Stop everyone now
+              </button>
+            )}
+          </div>
+          {openEntries.map(e => {
+            const person = (e.staff || []).map(s => s.name?.trim()).join(', ') || '—';
+            const sameDay = e.work_date === todayStr();
+            const sMin = toMin(e.start_time);
+            const elapsed = sameDay && sMin != null && nowMin != null && nowMin > sMin ? hm(nowMin - sMin) : null;
+            const typed = stopTimes[e.id] || '';
+            return (
+              <div key={e.id} className="bg-white border border-green-200 rounded-lg p-3 space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-medium text-gray-900 truncate">{person}</p>
+                    <p className="text-xs text-gray-500 truncate">{e.activity}</p>
+                  </div>
+                  <p className="text-xs text-green-800 text-right flex-shrink-0">
+                    since {e.start_time}{sameDay ? '' : ` on ${formatDate(e.work_date)}`}
+                    {elapsed && <span className="block text-[11px]">{elapsed} so far</span>}
+                  </p>
+                </div>
+                {!sameDay && (
+                  <p className="text-[11px] text-red-600">Started on an earlier day. Enter the time they finished and set it.</p>
+                )}
+                <div className="flex gap-2 items-center">
+                  <input type="time" value={typed} onChange={ev => setStopTimes(p => ({ ...p, [e.id]: ev.target.value }))}
+                    className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm w-32" aria-label="Out time" />
+                  {typed ? (
+                    <button type="button" disabled={busyId === e.id}
+                      onClick={async () => { if (await stopOne(e, typed)) await load(); }}
+                      className="flex-1 min-h-[40px] bg-teal-600 text-white rounded-lg text-sm font-semibold disabled:opacity-50">
+                      Stop at {typed}
+                    </button>
+                  ) : (
+                    <button type="button" disabled={busyId === e.id || !sameDay}
+                      onClick={async () => { if (await stopOne(e)) await load(); }}
+                      className="flex-1 min-h-[40px] bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-semibold flex items-center justify-center gap-1.5 disabled:bg-gray-300">
+                      <Square className="w-3.5 h-3.5" /> Stop now
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
+        <div className="flex gap-2">
+          <button type="button" onClick={() => setMode('start')} className={`flex-1 ${chip(mode === 'start')}`}>
+            <span className="flex items-center gap-1.5 justify-center"><Play className="w-3.5 h-3.5" /> Start work now</span>
+          </button>
+          <button type="button" onClick={() => setMode('finished')} className={`flex-1 ${chip(mode === 'finished')}`}>
+            <span className="block text-center">Enter finished hours</span>
+          </button>
+        </div>
+
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Date</label>
@@ -265,44 +380,49 @@ export default function QuickHours() {
       </div>
 
       <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-[11px] text-gray-500 mb-0.5">Everyone in</label>
-            <div className="flex gap-1.5">
-              <input type="time" value={sameIn} onChange={e => setSameIn(e.target.value)} className={field} />
-              <button type="button" disabled={sameInSet} onClick={() => stampGroup('in')}
-                className="px-2.5 text-xs font-medium border border-gray-300 rounded-lg bg-white text-gray-700 disabled:bg-gray-100 disabled:text-gray-400">
-                Now
-              </button>
+        {mode === 'finished' && (
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] text-gray-500 mb-0.5">Everyone in</label>
+                <div className="flex gap-1.5">
+                  <input type="time" value={sameIn} onChange={e => setSameIn(e.target.value)} className={field} />
+                  <button type="button" disabled={sameInSet} onClick={() => stampGroup('in')} className={nowBtn}>Now</button>
+                </div>
+              </div>
+              <div>
+                <label className="block text-[11px] text-gray-500 mb-0.5">Everyone out</label>
+                <div className="flex gap-1.5">
+                  <input type="time" value={sameOut} onChange={e => setSameOut(e.target.value)} className={field} />
+                  <button type="button" disabled={sameOutSet} onClick={() => stampGroup('out')} className={nowBtn}>Now</button>
+                </div>
+              </div>
             </div>
-          </div>
-          <div>
-            <label className="block text-[11px] text-gray-500 mb-0.5">Everyone out</label>
-            <div className="flex gap-1.5">
-              <input type="time" value={sameOut} onChange={e => setSameOut(e.target.value)} className={field} />
-              <button type="button" disabled={sameOutSet} onClick={() => stampGroup('out')}
-                className="px-2.5 text-xs font-medium border border-gray-300 rounded-lg bg-white text-gray-700 disabled:bg-gray-100 disabled:text-gray-400">
-                Now
-              </button>
-            </div>
-          </div>
-        </div>
-        <button type="button" onClick={applySame}
-          className="w-full min-h-[40px] border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white">
-          Apply typed times to ticked people
-        </button>
-        <p className="text-[11px] text-gray-400">Tick the people, then tap Now to start or stop all of them at once. Anyone can still be changed below.</p>
+            <button type="button" onClick={applySame}
+              className="w-full min-h-[40px] border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white">
+              Apply typed times to ticked people
+            </button>
+            <p className="text-[11px] text-gray-400">Use this for work that is already finished. Each person can still be changed below.</p>
+          </>
+        )}
+        {mode === 'start' && (
+          <p className="text-xs text-gray-500">
+            Tick the people who are starting. They start at the current time, and are saved at once. Change the time only if you forgot to tap earlier.
+          </p>
+        )}
 
         {staff.length === 0 && <p className="text-sm text-gray-400">No staff yet. Add them in Work Log → Staff.</p>}
         {staff.map(m => {
           const r = rowOf(m.id);
           const c = calc.find(x => x.m.id === m.id);
+          const alreadyOpen = openEntries.some(e => (e.staff || []).some(s => s.id === m.id));
           return (
             <div key={m.id} className={`rounded-lg border ${r.on ? 'border-teal-300 bg-teal-50/40' : 'border-gray-200'} p-3`}>
               <label className="flex items-center justify-between gap-2 cursor-pointer">
                 <span className="flex items-center gap-2 min-w-0">
                   <input type="checkbox" checked={r.on} onChange={e => patchRow(m.id, { on: e.target.checked })} className="w-4 h-4" />
                   <span className="font-medium text-gray-900 truncate">{m.name.trim()}</span>
+                  {alreadyOpen && mode === 'start' && <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-100 text-green-700">working</span>}
                 </span>
                 <span className="text-xs text-gray-500 flex-shrink-0">₹{rateOn(m, date)}/hr</span>
               </label>
@@ -312,31 +432,34 @@ export default function QuickHours() {
                     <option value="">{defaultWork || 'Work'} (same as above)</option>
                     {workTypes.map(w => <option key={w.id} value={w.name}>{w.name}</option>)}
                   </select>
-                  <div className="grid grid-cols-2 gap-3">
+                  {mode === 'start' ? (
                     <div>
-                      <label className="block text-[11px] text-gray-500 mb-0.5">In</label>
-                      <div className="flex gap-1.5">
-                        <input type="time" value={r.inT} onChange={e => patchRow(m.id, { inT: e.target.value })} className={field} />
-                        <button type="button" disabled={r.inSet} onClick={() => patchRow(m.id, { inT: nowHM(), inSet: true })}
-                          className="px-2.5 text-xs font-medium border border-gray-300 rounded-lg bg-white text-gray-700 disabled:bg-gray-100 disabled:text-gray-400">
-                          Now
-                        </button>
-                      </div>
+                      <label className="block text-[11px] text-gray-500 mb-0.5">Started at (blank = now)</label>
+                      <input type="time" value={r.inT} onChange={e => patchRow(m.id, { inT: e.target.value })} className={field} />
                     </div>
-                    <div>
-                      <label className="block text-[11px] text-gray-500 mb-0.5">Out</label>
-                      <div className="flex gap-1.5">
-                        <input type="time" value={r.outT} onChange={e => patchRow(m.id, { outT: e.target.value })} className={field} />
-                        <button type="button" disabled={r.outSet} onClick={() => patchRow(m.id, { outT: nowHM(), outSet: true })}
-                          className="px-2.5 text-xs font-medium border border-gray-300 rounded-lg bg-white text-gray-700 disabled:bg-gray-100 disabled:text-gray-400">
-                          Now
-                        </button>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[11px] text-gray-500 mb-0.5">In</label>
+                          <div className="flex gap-1.5">
+                            <input type="time" value={r.inT} onChange={e => patchRow(m.id, { inT: e.target.value })} className={field} />
+                            <button type="button" disabled={r.inSet} onClick={() => patchRow(m.id, { inT: nowHM(), inSet: true })} className={nowBtn}>Now</button>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-[11px] text-gray-500 mb-0.5">Out</label>
+                          <div className="flex gap-1.5">
+                            <input type="time" value={r.outT} onChange={e => patchRow(m.id, { outT: e.target.value })} className={field} />
+                            <button type="button" disabled={r.outSet} onClick={() => patchRow(m.id, { outT: nowHM(), outSet: true })} className={nowBtn}>Now</button>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                  <p className="text-xs text-gray-500">
-                    {c && c.hrs > 0 ? `${round2(c.hrs)} hours = ₹${Math.round(c.cost)}` : 'Enter in and out time'}
-                  </p>
+                      <p className="text-xs text-gray-500">
+                        {c && c.hrs > 0 ? `${round2(c.hrs)} hours = ₹${Math.round(c.cost)}` : 'Enter in and out time'}
+                      </p>
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -344,7 +467,7 @@ export default function QuickHours() {
         })}
       </div>
 
-      {calc.length > 0 && (
+      {mode === 'finished' && calc.length > 0 && (
         <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-1 text-sm">
           <div className="flex justify-between"><span className="text-gray-500">Total hours</span><b>{round2(totalHours)}</b></div>
           <div className="flex justify-between"><span className="text-gray-500">Labour cost</span><b>₹{Math.round(totalCost)}</b></div>
@@ -359,10 +482,10 @@ export default function QuickHours() {
 
       <div>
         <h2 className="text-sm font-semibold text-gray-700 mb-2">
-          Hours on {formatDate(date)} {dayEntries.length > 0 && <span className="font-normal text-gray-400">· ₹{Math.round(dayCost)}</span>}
+          Finished hours on {formatDate(date)} {dayEntries.length > 0 && <span className="font-normal text-gray-400">· ₹{Math.round(dayCost)}</span>}
         </h2>
         {dayEntries.length === 0 ? (
-          <p className="text-sm text-gray-400">Nothing logged for this date yet.</p>
+          <p className="text-sm text-gray-400">Nothing finished for this date yet.</p>
         ) : (
           <div className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-100">
             {dayEntries.map(e => (
@@ -384,10 +507,17 @@ export default function QuickHours() {
       </div>
 
       <div className="sticky bottom-0 bg-gray-50 pt-2 pb-3">
-        <button type="button" onClick={handleSave} disabled={saving}
-          className="w-full min-h-[48px] bg-teal-600 hover:bg-teal-700 disabled:bg-teal-300 text-white font-semibold rounded-xl flex items-center justify-center gap-2">
-          {saving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</> : <><Check className="w-4 h-4" /> Save hours{calc.length > 0 ? ` · ₹${Math.round(totalCost)}` : ''}</>}
-        </button>
+        {mode === 'start' ? (
+          <button type="button" onClick={handleStart} disabled={saving}
+            className="w-full min-h-[48px] bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white font-semibold rounded-xl flex items-center justify-center gap-2">
+            {saving ? <><Loader2 className="w-4 h-4 animate-spin" /> Starting…</> : <><Play className="w-4 h-4" /> Start work{selected.length > 0 ? ` for ${selected.length}` : ''} now</>}
+          </button>
+        ) : (
+          <button type="button" onClick={handleSaveFinished} disabled={saving}
+            className="w-full min-h-[48px] bg-teal-600 hover:bg-teal-700 disabled:bg-teal-300 text-white font-semibold rounded-xl flex items-center justify-center gap-2">
+            {saving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</> : <><Check className="w-4 h-4" /> Save hours{calc.length > 0 ? ` · ₹${Math.round(totalCost)}` : ''}</>}
+          </button>
+        )}
       </div>
     </div>
   );
