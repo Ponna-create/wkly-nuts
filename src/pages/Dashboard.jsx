@@ -5,6 +5,7 @@ import { AreaChart, Area, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveCont
 import { useApp } from '../context/AppContext';
 import { formatDate } from '../utils/dateFormat';
 import { countStuckOrders } from '../utils/orderAging';
+import { dbService } from '../services/supabase';
 
 const SOURCE_LABELS = {
   whatsapp: 'WhatsApp', website: 'Website', instagram: 'Instagram', inst: 'Instagram',
@@ -65,6 +66,14 @@ export default function Dashboard() {
     const id = setInterval(() => setTick(t => t + 1), 30000);
     return () => clearInterval(id);
   }, []);
+
+  // Work started but not stopped yet, and batches saved but not finished: the two
+  // things she is most likely to forget, so they show up here every day.
+  const [openWork, setOpenWork] = useState(0);
+  React.useEffect(() => {
+    dbService.getWorkLog().then(r => setOpenWork((r.data || []).filter(e => e.work_status === 'open').length)).catch(() => {});
+  }, []);
+  const openBatches = (state.productionRuns || []).filter(r => ['planned', 'in_progress', 'quality_check'].includes(r.status)).length;
 
   const [manualRefreshing, setManualRefreshing] = useState(false);
   const handleRefresh = async () => {
@@ -386,6 +395,23 @@ export default function Dashboard() {
                   <Link to="/invoices" className="flex justify-between text-gray-700 hover:text-teal-600"><span>To Be Invoiced</span><span className="font-semibold">{toBeInvoiced}</span></Link>
                 </div>
               </div>
+              {(openWork > 0 || openBatches > 0) && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-400 uppercase mb-1">Production</p>
+                  <div className="space-y-1">
+                    {openWork > 0 && (
+                      <Link to="/quick-hours" className="flex justify-between items-center rounded-md px-2 py-1 -mx-2 bg-amber-50 text-amber-800 font-semibold hover:bg-amber-100">
+                        <span>⏱ Work started, not stopped</span><span>{openWork}</span>
+                      </Link>
+                    )}
+                    {openBatches > 0 && (
+                      <Link to="/quick-batch" className="flex justify-between items-center rounded-md px-2 py-1 -mx-2 bg-amber-50 text-amber-800 font-semibold hover:bg-amber-100">
+                        <span>📦 Batches not finished</span><span>{openBatches}</span>
+                      </Link>
+                    )}
+                  </div>
+                </div>
+              )}
               <div>
                 <p className="text-xs font-semibold text-gray-400 uppercase mb-1">Purchases</p>
                 <Link to="/purchase-orders" className="flex justify-between text-gray-700 hover:text-teal-600"><span>To Be Received</span><span className="font-semibold">{poPending}</span></Link>
