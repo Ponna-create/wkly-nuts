@@ -221,6 +221,7 @@ export default function QuickBill() {
 
       const ref = billNo.trim() ? `Bill ${billNo.trim()}` : 'Bill';
       const notes = [];
+      let supplied = []; // raw-material items this vendor supplied, for the Vendors page
 
       if (category === 'raw_materials') {
         // create any new ingredients in parallel, then insert every lot in ONE request
@@ -244,6 +245,12 @@ export default function QuickBill() {
           billNumber: billNo.trim() || null,
         })));
         if (batchErr) throw batchErr;
+        supplied = resolved.map(({ l, name }) => ({
+          name: name || l.newName.trim(),
+          unit: 'kg',
+          qty: num(l.qty),
+          unitPrice: round2(num(l.amount) / num(l.qty)),
+        }));
         notes.push(`${lines.length} item(s) added to Inventory`);
       }
 
@@ -309,6 +316,22 @@ export default function QuickBill() {
             await dbService.updateMarketingContact(patch);
             notes.push(cash && !addToFee ? `Expense recorded; ${c.name}'s fee left unchanged` : `Linked to ${c.name} in Marketing`);
           }
+        }
+      }
+
+      // Vendors page: make sure the supplier exists and lists what they supplied (never blocks the bill)
+      if ((category === 'raw_materials' || category === 'packaging') && vendor.trim()) {
+        try {
+          const vr = await dbService.recordVendorSupply({
+            vendorName: vendor, items: supplied, billNo: billNo.trim() || null, billDate,
+          });
+          if (!vr.error && vr.data) {
+            dispatch({ type: vr.created ? 'ADD_VENDOR' : 'UPDATE_VENDOR', payload: vr.data, localOnly: true });
+            if (vr.created) notes.push(`${vr.data.name.trim()} added to Vendors`);
+            else if (vr.added || vr.updated) notes.push(`${vr.data.name.trim()}: ${vr.added} new item(s), ${vr.updated} price(s) updated on Vendors`);
+          }
+        } catch (vendorErr) {
+          console.warn('Vendor sync failed (bill itself is saved):', vendorErr);
         }
       }
 

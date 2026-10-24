@@ -115,6 +115,67 @@ const _realDbService = {
     }
   },
 
+  // A saved bill teaches the Vendors page who supplies what. Finds the vendor by name
+  // (ignoring spaces, capitals and punctuation) or creates it, then for raw-material
+  // bills records each item the vendor supplied with the price actually paid.
+  // Existing price-list entries (the generic "Almond", "Walnut" quotes) are left alone;
+  // bill items are kept under the stock name (for example "Almonds Premium").
+  async recordVendorSupply({ vendorName, items = [], billNo = null, billDate = null }) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    try {
+      const norm = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const clean = String(vendorName || '').trim();
+      if (!clean) return { data: null, error: null, skipped: true };
+
+      const { data: rows, error } = await supabase.from('vendors').select('*');
+      if (error) throw error;
+      let vendor = (rows || []).find(v => norm(v.name) === norm(clean));
+      let created = false;
+      if (!vendor) {
+        const res = await this.createVendor({ name: clean, ingredients: [] });
+        if (res.error || !res.data) throw res.error || new Error('Could not create vendor');
+        vendor = { ...res.data, phone: null, location: null, email: null };
+        created = true;
+      }
+
+      if (items.length === 0) return { data: vendor, created, added: 0, updated: 0, error: null };
+
+      const list = Array.isArray(vendor.ingredients) ? [...vendor.ingredients] : [];
+      let added = 0;
+      let updated = 0;
+      for (const it of items) {
+        const idx = list.findIndex(i => norm(i.name) === norm(it.name));
+        const stamp = { lastBillNo: billNo || null, lastBillDate: billDate || null };
+        if (idx >= 0) {
+          list[idx] = { ...list[idx], pricePerUnit: it.unitPrice, ...stamp };
+          updated += 1;
+        } else {
+          list.push({
+            id: Date.now() + Math.random(),
+            name: it.name,
+            unit: it.unit || 'kg',
+            quality: 5,
+            notes: `From bill${billNo ? ` ${billNo}` : ''}`,
+            quantityAvailable: it.qty || 1,
+            pricePerUnit: it.unitPrice,
+            source: 'bill',
+            ...stamp,
+          });
+          added += 1;
+        }
+      }
+      const res = await this.updateVendor({
+        id: vendor.id, name: vendor.name, phone: vendor.phone, location: vendor.location,
+        email: vendor.email, ingredients: list,
+      });
+      if (res.error) throw res.error;
+      return { data: res.data, created, added, updated, error: null };
+    } catch (error) {
+      console.error('Error recording vendor supply:', error);
+      return { data: null, error };
+    }
+  },
+
   async updateVendor(vendor) {
     if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
 
