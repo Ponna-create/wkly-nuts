@@ -81,6 +81,7 @@ export default function QuickBill() {
   const vendorNames = useMemo(() => {
     const set = new Set();
     (state.expenses || []).forEach(e => { if (e.vendor_name) set.add(e.vendor_name); });
+    (state.vendors || []).forEach(v => { if (v.name) set.add(v.name); });
     return [...set].sort();
   }, [state.expenses]);
 
@@ -124,6 +125,7 @@ export default function QuickBill() {
       if (bill.billNo) setBillNo(bill.billNo);
       if (bill.date) setBillDate(bill.date);
       setPrintedTotal(bill.total || 0);
+      if (bill.gstAmount > 0) setGst(String(bill.gstAmount));
       let exact = 0;
       const mapped = bill.items.map(it => {
         const ex = ingredients.find(i => norm(i.name) === norm(it.name));
@@ -134,7 +136,7 @@ export default function QuickBill() {
           itemId: loose ? loose.id : '__new',
           newName: loose ? '' : it.name,
           qty: String(it.qty),
-          amount: String(it.amount),
+          amount: String(Math.round(it.amount * (1 + num(it.gstPct) / 100) * 100) / 100),
           expiry: '',
           match: ex ? 'exact' : loose ? 'loose' : 'new',
         };
@@ -142,7 +144,7 @@ export default function QuickBill() {
       setLines(mapped);
       // confidence: lines add up to the printed total, header fields found,
       // and how many items matched an existing ingredient exactly
-      const sum = bill.items.reduce((t, it) => t + it.amount, 0);
+      const sum = bill.items.reduce((t, it) => t + it.amount * (1 + num(it.gstPct) / 100), 0);
       let score = 0;
       if (bill.total > 0) score += Math.abs(sum - bill.total) < 5 ? 40 : 10; else score += 15;
       if (bill.billNo) score += 10;
@@ -154,7 +156,11 @@ export default function QuickBill() {
       const addsUp = bill.total > 0
         ? (Math.abs(sum - bill.total) < 5 ? ' Item amounts add up to the bill total.' : ' Item amounts do NOT add up to the bill total, please check them.')
         : '';
-      setReadNote(`Read ${bill.items.length} items.${checks ? ` ${checks} item name(s) need a look (marked below).` : ' All item names matched.'}${addsUp}`);
+      const proforma = bill.isProforma
+        ? ' This is a PROFORMA invoice (an estimate before the final bill). Save it only if the goods have arrived, and do not enter the final tax invoice for the same goods again.'
+        : '';
+      const gstNote = bill.gstAmount > 0 ? ` GST of ₹${bill.gstAmount} was added to each line.` : '';
+      setReadNote(`Read ${bill.items.length} items.${checks ? ` ${checks} item name(s) need a look (marked below).` : ' All item names matched.'}${addsUp}${gstNote}${proforma}`);
     } catch (err) {
       console.error('Bill PDF read failed:', err);
       setReadNote('Could not read this PDF. Please type the bill in.');
@@ -361,6 +367,7 @@ export default function QuickBill() {
           <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Vendor / paid to</label>
           <input list="vendor-list" value={vendor} onChange={e => setVendor(e.target.value)} className={field} placeholder="Sri Balaji Traders" />
           <datalist id="vendor-list">{vendorNames.map(v => <option key={v} value={v} />)}</datalist>
+          <p className="text-[11px] text-gray-400 mt-1">New supplier? Just type the name. It is remembered and suggested next time.</p>
         </div>
       </div>
 

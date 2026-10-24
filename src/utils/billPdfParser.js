@@ -50,8 +50,8 @@ export function parseBillLines(lines) {
   // Header block = everything above "Bill To" / the item table. Billing apps put
   // labels ("Invoice No.", "Date") in one row and the values ("423", "05-10-2026")
   // in the row below, so the values are found by shape, not by label.
-  const head = text.split(/Bill\s*To|#\s*Item\s*Name/i)[0];
-  const DATE = /\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}/g;
+  const head = text.split(/Bill\s*To|#\s*Item\s*Name|S\.?\s*No\s+HSN/i)[0];
+  const DATE = /(?<![\d/.-])\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}(?![\d/-])/g;
   const LABEL_WORDS = /^(date|no|no\.|invoice|due|bill|estimate|number|phone|tax|of|supply)$/i;
 
   // invoice date: first date in the header that is not the due date
@@ -81,11 +81,17 @@ export function parseBillLines(lines) {
     .replace(DATE, ' ');
   if (out.billNo) v = v.replace(out.billNo, ' ');
   v = v.replace(/\s+/g, ' ').trim();
-  if (v.length >= 2 && v.length <= 60) out.vendor = v;
+  const footer = text.match(/For\s*:?\s*([A-Z][A-Za-z0-9 &.'-]{2,40}?)\s+Authori[sz]ed/);
+  if (footer) {
+    out.vendor = footer[1].trim();
+  } else if (v.length >= 2 && v.length <= 60 && !/(?:Mrs?|Ms|Bank|Account|Bill To|IFSC)\b/i.test(v)) {
+    out.vendor = v;
+  }
   if (!out.vendor) {
     const m = text.match(/For:\s*([A-Za-z0-9 &.'-]{2,40}?)(?:\s+Authori[sz]ed|$)/);
     if (m) out.vendor = m[1].trim();
   }
+  out.isProforma = /Proforma/i.test(text);
 
   const rowRe = /(\d+)\s+([A-Za-z][^₹]*?)\s+(\d+(?:[.,]\d+)?)\s*(Kg|Kgs|Gm|Gms|g|Ltr|Litre|Pcs|Pc|Nos|Packs?|Box(?:es)?)\s+₹\s*([\d,]+(?:\.\d+)?)\s+₹\s*([\d,]+(?:\.\d+)?)/gi;
   // only look below the table header, so invoice no. / date digits can't be mistaken for a row
@@ -105,6 +111,35 @@ export function parseBillLines(lines) {
   if (totals.length) out.total = toNum(totals[totals.length - 1][1]);
   const ro = text.match(/Round\s*off\s*([-+])?\s*₹\s*([\d,.]+)/i);
   if (ro) out.roundOff = (ro[1] === '-' ? -1 : 1) * toNum(ro[2]);
+  // Layout B: "S.No HSN Description GST% Qty Rate Amount" (amounts are BEFORE GST; GST is added below)
+  if (out.items.length === 0) {
+    const rowB = /(\d{1,3})\s+(\d{4,8})\s+(.+?)\s+(\d+(?:\.\d+)?)%\s+(\d+(?:\.\d+)?)\s+([\d,]+(?:\.\d+)?)\s+([\d,]+(?:\.\d+)?)(?=\s+\d{1,3}\s+\d{4,8}\s|\s+Total|$)/g;
+    const tableText = text.replace(/^[\s\S]*?Description\s+GST\s*%\s+Qty\s+Rate\s+Amount\s*/i, '');
+    let gstSum = 0;
+    let mb;
+    while ((mb = rowB.exec(tableText)) !== null) {
+      let name = mb[3].trim();
+      let packKg = 1;
+      const pack = name.match(/\s*-?\s*(\d+(?:\.\d+)?)\s*(kg|kgs|gm|gms|g)\s*$/i);
+      if (pack) {
+        const n = toNum(pack[1]);
+        packKg = pack[2].toLowerCase().startsWith('k') ? n : n / 1000;
+        name = name.slice(0, pack.index).trim();
+      }
+      const packs = toNum(mb[5]);
+      const gstPct = toNum(mb[4]);
+      const base = toNum(mb[7]);
+      gstSum += (base * gstPct) / 100;
+      out.items.push({ name, qty: Math.round(packs * packKg * 1000) / 1000, unit: 'Kg', rate: toNum(mb[6]), amount: base, gstPct });
+    }
+    if (out.items.length > 0) {
+      out.gstAmount = Math.round(gstSum * 100) / 100;
+      const bp = text.match(/Balance\s*Payable\s*([\d,]+(?:\.\d+)?)/i);
+      if (bp) out.total = toNum(bp[1]);
+      const rof = text.match(/Round\s*Off\s*(-?\s*[\d.]+)/i);
+      if (rof) out.roundOff = toNum(rof[1].replace(/\s/g, ''));
+    }
+  }
   return out;
 }
 
