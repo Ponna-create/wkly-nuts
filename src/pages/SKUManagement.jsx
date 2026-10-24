@@ -120,6 +120,7 @@ export default function SKUManagement() {
     description: '',
     skuType: 'weekly', // weekly | processed | repack | resale
     soldAs: 'both', // Recipe Pack only: weekly | monthly | both
+    innerUnit: 'sachet', // Recipe Pack only: what each inner pack is called (sachet | pouch)
     targetWeightPerSachet: '', // For weekly packs
     unitWeight: '', // For processed/single unit SKUs (in kg, e.g., 0.5 or 1)
     unitOfMeasure: 'g', // g | kg | ml — how this product is measured
@@ -269,6 +270,7 @@ export default function SKUManagement() {
       description: '',
       skuType: 'weekly',
       soldAs: 'both',
+      innerUnit: 'sachet',
       targetWeightPerSachet: '',
       unitWeight: '',
       unitOfMeasure: 'g',
@@ -312,7 +314,7 @@ export default function SKUManagement() {
 
   const handleAddRecipeItem = () => {
     if (!currentRecipeItem.ingredientId || !currentRecipeItem.gramsPerSachet) {
-      showToast('Please select ingredient and enter grams per sachet', 'error');
+      showToast('Please select the ingredient and enter the grams', 'error');
       return;
     }
 
@@ -509,7 +511,7 @@ export default function SKUManagement() {
 
     if (formData.skuType === 'weekly') {
       if (!formData.targetWeightPerSachet) {
-        showToast('Please enter target weight per sachet', 'error');
+        showToast(`Please enter target weight per ${unitWord}`, 'error');
         return;
       }
       const completedDays = getCompletedDays();
@@ -551,6 +553,7 @@ export default function SKUManagement() {
       buyPrice: formData.buyPrice !== '' ? parseFloat(formData.buyPrice) : null,
       reorderCycleDays: formData.reorderCycleDays !== '' ? parseInt(formData.reorderCycleDays) : null,
       soldAs: formData.soldAs || 'both',
+      innerUnit: formData.innerUnit || 'sachet',
       packagingMaterials: formData.packagingMaterials || [],
       processingIngredients: formData.processingIngredients || [],
       processingNotes: formData.processingNotes || '',
@@ -590,6 +593,7 @@ export default function SKUManagement() {
       description: sku.description,
       skuType: sku.skuType || 'weekly',
       soldAs: sku.soldAs || 'both',
+      innerUnit: sku.innerUnit || 'sachet',
       targetWeightPerSachet: sku.targetWeightPerSachet || '',
       unitWeight: sku.unitWeight || '',
       unitOfMeasure: sku.unitOfMeasure || 'g',
@@ -1018,6 +1022,9 @@ export default function SKUManagement() {
 
   const currentDayTotal = getCurrentDayTotal();
   const targetWeight = parseFloat(formData.targetWeightPerSachet) || 0;
+  // each inner pack of a Recipe Pack is called a sachet or a pouch, per product
+  const unitWord = formData.innerUnit === 'pouch' ? 'pouch' : 'sachet';
+  const UnitWord = unitWord.charAt(0).toUpperCase() + unitWord.slice(1);
   const completedDays = getCompletedDays();
   const allIngredients = getAllIngredients();
 
@@ -1197,7 +1204,21 @@ export default function SKUManagement() {
                 </div>
                 {formData.skuType === 'weekly' && (
                   <div>
-                    <label className="label">Target Weight per Sachet (grams) <span className="text-red-500">*</span></label>
+                    <label className="label">Each inner pack is a</label>
+                    <div className="flex gap-2">
+                      {['sachet', 'pouch'].map(u => (
+                        <button key={u} type="button" onClick={() => setFormData(f => ({ ...f, innerUnit: u }))}
+                          className={`px-4 py-2 rounded-lg text-sm font-medium border capitalize ${(formData.innerUnit || 'sachet') === u ? 'border-teal-500 bg-teal-50 text-teal-700' : 'border-gray-300 bg-white text-gray-600'}`}>
+                          {u}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-gray-400 mt-1">Only changes the wording on this product&apos;s screens (for example Grams per Pouch).</p>
+                  </div>
+                )}
+                {formData.skuType === 'weekly' && (
+                  <div>
+                    <label className="label">Target Weight per {UnitWord} (grams) <span className="text-red-500">*</span></label>
                     <input
                       type="number"
                       value={formData.targetWeightPerSachet || ''}
@@ -1340,7 +1361,7 @@ export default function SKUManagement() {
                       return;
                     }
                     if (formData.skuType === 'weekly' && !formData.targetWeightPerSachet) {
-                      showToast('Please enter target weight per sachet', 'error');
+                      showToast(`Please enter target weight per ${unitWord}`, 'error');
                       return;
                     }
                     if (formData.skuType === 'repack' && (!formData.bulkQty || !formData.bulkPrice || !formData.packSize)) {
@@ -1890,7 +1911,7 @@ export default function SKUManagement() {
                       </div>
                     </div>
                     <div>
-                      <label className="label text-sm">Grams per Sachet</label>
+                      <label className="label text-sm">Grams per {UnitWord}</label>
                       <input
                         type="number"
                         step="0.1"
@@ -2103,7 +2124,7 @@ export default function SKUManagement() {
                       <div className="bg-white rounded-lg p-2 text-center">
                         <p className="text-[10px] text-gray-500">+ Packaging / Pack</p>
                         <p className="text-lg font-bold text-gray-700">₹{packagingCost.toFixed(2)}</p>
-                        <p className="text-[10px] text-gray-400">per sachet: ₹{daysWithRecipes > 0 ? (materialCost / daysWithRecipes).toFixed(2) : '0'} material</p>
+                        <p className="text-[10px] text-gray-400">per {unitWord}: ₹{daysWithRecipes > 0 ? (materialCost / daysWithRecipes).toFixed(2) : '0'} material</p>
                       </div>
                       <div className="bg-white rounded-lg p-2 text-center">
                         <p className="text-[10px] text-gray-500">= Cost / Pack</p>
@@ -2942,7 +2963,7 @@ export default function SKUManagement() {
                       </p>
                     ) : (
                       <p className="text-sm text-primary font-semibold mt-1">
-                        Target: {sku.targetWeightPerSachet}g per sachet
+                        Target: {sku.targetWeightPerSachet}g per {sku.innerUnit === 'pouch' ? 'pouch' : 'sachet'}
                       </p>
                     )}
                   </div>
