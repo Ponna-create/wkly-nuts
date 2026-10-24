@@ -211,14 +211,25 @@ export default function NewOrderForm({ onClose }) {
     }
   };
 
+  // Which pack sizes a product is sold in (its own "Sold as" setting)
+  const sizesFor = (sku) => {
+    if (!sku || (sku.skuType || 'weekly') !== 'weekly') return ['weekly'];
+    if (sku.soldAs === 'weekly') return ['weekly'];
+    if (sku.soldAs === 'monthly') return ['monthly'];
+    return ['weekly', 'monthly'];
+  };
+
   const handleSkuChange = (skuId) => {
     const sku = skus.find(s => String(s.id) === String(skuId));
     if (sku) {
-      const pricing = getPricingForSku(sku.id, newItem.packType);
+      const allowed = sizesFor(sku);
+      const packType = allowed.includes(newItem.packType) ? newItem.packType : allowed[0];
+      const pricing = getPricingForSku(sku.id, packType);
       setNewItem(prev => ({
         ...prev,
         skuId: String(sku.id),
         skuName: sku.name,
+        packType,
         unitPrice: pricing?.sellingPrice || prev.unitPrice,
       }));
     } else {
@@ -671,8 +682,8 @@ export default function NewOrderForm({ onClose }) {
                       onChange={(e) => handlePackTypeChange(e.target.value)}
                       className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
                     >
-                      <option value="weekly">Weekly Pack</option>
-                      <option value="monthly">Monthly Pack</option>
+                      {sizesFor(skus.find(sk => String(sk.id) === String(newItem.skuId))).includes('weekly') && <option value="weekly">Weekly Pack</option>}
+                      {sizesFor(skus.find(sk => String(sk.id) === String(newItem.skuId))).includes('monthly') && <option value="monthly">Monthly Pack</option>}
                     </select>
                   </div>
 

@@ -397,6 +397,8 @@ const _realDbService = {
         monthlyShippingWeightKg: sku.monthly_pack?.shippingWeightKg ?? null,
         // Type + type-specific config (persisted in the JSONB)
         skuType: sku.weekly_pack?.skuType || 'weekly',
+        // Which pack sizes this Recipe Pack is sold in: 'weekly' | 'monthly' | 'both'
+        soldAs: sku.weekly_pack?.soldAs || 'both',
         unitWeight: sku.weekly_pack?.unitWeight ?? '',
         unitOfMeasure: sku.weekly_pack?.unitOfMeasure || 'g',
         pouchCount: sku.weekly_pack?.pouchCount ?? '',
@@ -427,6 +429,7 @@ const _realDbService = {
       // Type + type-specific config live in the JSONB (no schema column for these)
       const typeConfig = {
         skuType: sku.skuType || 'weekly',
+        soldAs: sku.soldAs || 'both',
         unitWeight: sku.unitWeight ?? null,
         unitOfMeasure: sku.unitOfMeasure || 'g',
         pouchCount: sku.pouchCount ?? null,
@@ -510,6 +513,7 @@ const _realDbService = {
     try {
       const typeConfig = {
         skuType: sku.skuType || sku.weeklyPack?.skuType || 'weekly',
+        soldAs: sku.soldAs || sku.weeklyPack?.soldAs || 'both',
         unitWeight: sku.unitWeight ?? sku.weeklyPack?.unitWeight ?? null,
         unitOfMeasure: sku.unitOfMeasure || sku.weeklyPack?.unitOfMeasure || 'g',
         pouchCount: sku.pouchCount ?? sku.weeklyPack?.pouchCount ?? null,
