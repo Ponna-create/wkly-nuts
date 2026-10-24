@@ -399,6 +399,8 @@ const _realDbService = {
         skuType: sku.weekly_pack?.skuType || 'weekly',
         // Which pack sizes this Recipe Pack is sold in: 'weekly' | 'monthly' | 'both'
         soldAs: sku.weekly_pack?.soldAs || 'both',
+        // What each inner pack of a Recipe Pack is called on screen: 'sachet' | 'pouch'
+        innerUnit: sku.weekly_pack?.innerUnit || 'sachet',
         unitWeight: sku.weekly_pack?.unitWeight ?? '',
         unitOfMeasure: sku.weekly_pack?.unitOfMeasure || 'g',
         pouchCount: sku.weekly_pack?.pouchCount ?? '',
@@ -430,6 +432,7 @@ const _realDbService = {
       const typeConfig = {
         skuType: sku.skuType || 'weekly',
         soldAs: sku.soldAs || 'both',
+        innerUnit: sku.innerUnit || 'sachet',
         unitWeight: sku.unitWeight ?? null,
         unitOfMeasure: sku.unitOfMeasure || 'g',
         pouchCount: sku.pouchCount ?? null,
@@ -514,6 +517,7 @@ const _realDbService = {
       const typeConfig = {
         skuType: sku.skuType || sku.weeklyPack?.skuType || 'weekly',
         soldAs: sku.soldAs || sku.weeklyPack?.soldAs || 'both',
+        innerUnit: sku.innerUnit || sku.weeklyPack?.innerUnit || 'sachet',
         unitWeight: sku.unitWeight ?? sku.weeklyPack?.unitWeight ?? null,
         unitOfMeasure: sku.unitOfMeasure || sku.weeklyPack?.unitOfMeasure || 'g',
         pouchCount: sku.pouchCount ?? sku.weeklyPack?.pouchCount ?? null,
