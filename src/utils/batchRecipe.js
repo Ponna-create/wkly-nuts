@@ -3,11 +3,10 @@
 // per pack), but returns plain data so Quick Batch can preview stock before saving.
 
 const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
-const BOXES_PER_MONTHLY_PACK = 4;
+import { boxesForPacks } from './packSize';
 
-export function boxesFor(packType, quantity) {
-  const q = parseFloat(quantity) || 0;
-  return packType === 'monthly' ? q * BOXES_PER_MONTHLY_PACK : q;
+export function boxesFor(packType, quantity, sku) {
+  return boxesForPacks(sku, packType, quantity);
 }
 
 export function shelfLifeFor(sku) {
@@ -24,7 +23,7 @@ export function buildRunRecipe(sku, packType, quantity) {
   const isRecipePack = (sku.skuType || 'weekly') === 'weekly';
 
   if (isRecipePack) {
-    const boxes = boxesFor(packType, qty);
+    const boxes = boxesFor(packType, qty, sku);
     const recipes = sku.recipes || {};
     DAYS.forEach(day => {
       (recipes[day] || []).forEach(item => {

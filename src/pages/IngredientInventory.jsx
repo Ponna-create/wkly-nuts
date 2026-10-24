@@ -70,6 +70,7 @@ export default function IngredientInventory() {
       skuId: sku.id,
       name: sku.name,
       isRecipe,
+      soldAs: sku.soldAs,
       qty: isRecipe ? (inv?.weeklyPacksAvailable || 0) : (inv?.singleUnitsAvailable || 0),
       minStockThreshold: inv?.minStockThreshold || 0,
     };
@@ -316,7 +317,7 @@ export default function IngredientInventory() {
                   return (
                     <tr key={r.skuId} className={isLow ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50'}>
                       <td className="px-4 py-3 font-medium text-gray-900">{r.name}</td>
-                      <td className="px-4 py-3 text-gray-400 text-xs">{r.isRecipe ? 'box (1 week)' : 'unit'}</td>
+                      <td className="px-4 py-3 text-gray-400 text-xs">{r.isRecipe ? (r.soldAs === 'monthly' ? 'pack' : 'box (1 week)') : 'unit'}</td>
                       {isEditingThis ? (
                         <>
                           <td className="px-4 py-2 text-right">

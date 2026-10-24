@@ -482,8 +482,10 @@ export default function SKUManagement() {
         });
       });
 
-      const monthlyTotalGrams = weeklyTotalGrams * 4;
-      const monthlyRawMaterialCost = weeklyRawMaterialCost * 4;
+      // "Monthly pack only" products: one monthly pack is one run of the recipe
+      const monthlyBoxes = formData.soldAs === 'monthly' ? 1 : 4;
+      const monthlyTotalGrams = weeklyTotalGrams * monthlyBoxes;
+      const monthlyRawMaterialCost = weeklyRawMaterialCost * monthlyBoxes;
 
       return {
         weeklyPack: {
@@ -493,8 +495,8 @@ export default function SKUManagement() {
           packaging: formData.packagingMaterials || [],
         },
         monthlyPack: {
-          sachets: 28,
-          weeklyPacksIncluded: 4,
+          sachets: monthlyBoxes * 7,
+          weeklyPacksIncluded: monthlyBoxes,
           totalGrams: monthlyTotalGrams,
           rawMaterialCost: monthlyRawMaterialCost,
           packaging: formData.packagingMaterials || [],
@@ -789,7 +791,7 @@ export default function SKUManagement() {
 
     // Weekly pack calculation (existing logic)
     const numberOfPacks = parseInt(calculatorData.numberOfPacks);
-    const multiplier = calculatorData.packType === 'weekly' ? numberOfPacks : numberOfPacks * 4;
+    const multiplier = calculatorData.packType === 'weekly' ? numberOfPacks : numberOfPacks * (selectedSKU?.soldAs === 'monthly' ? 1 : 4);
     const selectedVendor = calculatorData.selectedVendorId 
       ? vendors.find(v => String(v.id) === String(calculatorData.selectedVendorId))
       : null;
@@ -2073,7 +2075,7 @@ export default function SKUManagement() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">Days per Box (reorder)</label>
                     <input type="number" value={formData.reorderCycleDays || ''} onChange={e => setFormData(f => ({ ...f, reorderCycleDays: e.target.value }))}
                       className="w-full border rounded-lg px-3 py-2 text-sm" min="1" placeholder="e.g. 7" />
-                    <p className="text-[11px] text-gray-400 mt-1">Monthly orders auto-multiply boxes by 4.</p>
+                    <p className="text-[11px] text-gray-400 mt-1">{formData.soldAs === 'monthly' ? 'How many days one pack lasts, used to remind customers to reorder.' : 'Monthly orders auto-multiply boxes by 4.'}</p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Weekly Shipping Weight (kg)</label>
@@ -2111,7 +2113,7 @@ export default function SKUManagement() {
                 const weeklyPrice = parseFloat(formData.sellingPrice) || 0;
                 const monthlyPrice = parseFloat(formData.monthlySellingPrice) || 0;
                 const view = soldAs === 'monthly'
-                  ? { title: 'Monthly pack', boxes: 4, sp: monthlyPrice }
+                  ? { title: 'Monthly pack', boxes: 1, sp: monthlyPrice }
                   : { title: 'Pack', boxes: 1, sp: weeklyPrice };
                 const viewCost = totalCost * view.boxes;
                 const sp = view.sp;
@@ -2157,8 +2159,8 @@ export default function SKUManagement() {
                       </p>
                     )}
                     {soldAs === 'monthly' && (
-                      <p className="text-xs mt-2 text-amber-800">
-                        In this app a Monthly pack is <strong>4 boxes</strong>, so its cost is 4 times one box. If you sell just one box (for example a 7-pouch combo that lasts 28 days), choose <strong>Weekly box only</strong> and enter the price there.
+                      <p className="text-xs mt-2 text-gray-500">
+                        One monthly pack = one run of this recipe (the {(totalGrams / 1000).toFixed(2)} kg above). Orders and batches count it as 1 pack.
                       </p>
                     )}
                   </div>
@@ -2871,10 +2873,10 @@ export default function SKUManagement() {
                               
                               if (currentPackType === 'weekly') {
                                 weeklyPacksPossible = packsPossible;
-                                monthlyPacksPossible = Math.floor(weeklyPacksPossible / 4);
+                                monthlyPacksPossible = Math.floor(weeklyPacksPossible / (selectedSKU?.soldAs === 'monthly' ? 1 : 4));
                               } else {
                                 monthlyPacksPossible = packsPossible;
-                                weeklyPacksPossible = monthlyPacksPossible * 4;
+                                weeklyPacksPossible = monthlyPacksPossible * (selectedSKU?.soldAs === 'monthly' ? 1 : 4);
                               }
 
                               return (

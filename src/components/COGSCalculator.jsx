@@ -124,7 +124,7 @@ export default function COGSCalculator() {
       return { items: [], totalCost, totalSachets: qty, costPerSachet: costPerUnit, costPerPack: costPerUnit, margin, profit, qty, sp, isDirect: true };
     }
 
-    const multiplier = packType === 'weekly' ? qty : qty * 4;
+    const multiplier = packType === 'weekly' ? qty : qty * (selectedSKU?.soldAs === 'monthly' ? 1 : 4);
     const consolidated = new Map();
 
     if (mode === 'sku' && selectedSKU?.recipes) {
@@ -186,7 +186,7 @@ export default function COGSCalculator() {
 
   const dayBreakdown = useMemo(() => {
     if (!selectedSKU?.recipes || !results) return null;
-    const multiplier = packType === 'weekly' ? (parseInt(quantity) || 0) : (parseInt(quantity) || 0) * 4;
+    const multiplier = packType === 'weekly' ? (parseInt(quantity) || 0) : (parseInt(quantity) || 0) * (selectedSKU?.soldAs === 'monthly' ? 1 : 4);
     return DAYS.map(day => {
       const recipe = selectedSKU.recipes[day] || [];
       let dayCost = 0;

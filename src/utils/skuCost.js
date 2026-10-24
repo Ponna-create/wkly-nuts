@@ -71,7 +71,7 @@ export function liveRawMaterialCost(sku, ingredients, aliases, packType = 'weekl
   const weekly = days.reduce((sum, dayItems) =>
     sum + (dayItems || []).reduce((s, item) =>
       s + ((parseFloat(item.gramsPerSachet) || 0) / 1000) * rateOf(item.ingredientName), 0), 0);
-  return { cost: packType === 'monthly' ? weekly * 4 : weekly, unmatched: [...unmatched] };
+  return { cost: packType === 'monthly' ? weekly * (sku.soldAs === 'monthly' ? 1 : 4) : weekly, unmatched: [...unmatched] };
 }
 
 export const packagingCostOf = (materials) => (materials || []).reduce((sum, pkg) =>

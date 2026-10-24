@@ -13,7 +13,7 @@ const effectiveCycleDays = (sku, packType) => {
   const base = parseFloat(sku?.reorderCycleDays) || 0;
   if (!base) return 0;
   const isRecipe = (sku.skuType || 'weekly') === 'weekly';
-  return isRecipe && packType === 'monthly' ? base * 4 : base;
+  return isRecipe && packType === 'monthly' && sku.soldAs !== 'monthly' ? base * 4 : base;
 };
 
 const DEFAULT_TIERS = [

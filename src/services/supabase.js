@@ -43,6 +43,8 @@ const normalizeCity = (city) => {
 // at once. This converts any weekly/monthly quantity into an equivalent box
 // count so both draw from and update the SAME stock number (weeklyPacksAvailable).
 const BOXES_PER_MONTHLY_PACK = 4;
+// NOTE: for a product sold as "Monthly pack only" one pack is ONE box. Use
+// _boxesForSku (below) wherever the SKU is known; this plain version assumes 4.
 const packQuantityToBoxes = (packType, quantity) => {
   const qty = parseFloat(quantity) || 0;
   return packType === 'monthly' ? qty * BOXES_PER_MONTHLY_PACK : qty;
@@ -2951,6 +2953,19 @@ const _realDbService = {
     }
   },
 
+  // Boxes a quantity of packs represents for THIS product ("Monthly pack only" = 1 box per pack).
+  async _boxesForSku(skuId, packType, quantity) {
+    const qty = parseFloat(quantity) || 0;
+    if (packType !== 'monthly') return qty;
+    try {
+      const { data } = await supabase.from('skus').select('weekly_pack').eq('id', skuId).maybeSingle();
+      const soldAs = data && data.weekly_pack ? data.weekly_pack.soldAs : null;
+      return soldAs === 'monthly' ? qty : qty * BOXES_PER_MONTHLY_PACK;
+    } catch (e) {
+      return qty * BOXES_PER_MONTHLY_PACK;
+    }
+  },
+
   // Order of the pipeline stages ST Courier's status can actually speak to —
   // used to make sure a check never moves an order BACKWARD (a stale or
   // ambiguous read from the courier site shouldn't undo further-along
@@ -4241,7 +4256,7 @@ const _realDbService = {
 
     try {
       const packType = run.pack_type || 'weekly';
-      const boxes = packQuantityToBoxes(packType, good);
+      const boxes = await this._boxesForSku(run.sku_id, packType, good);
       if (run.sku_id && boxes > 0) {
         const res = await this.updateInventoryStock(run.sku_id, packType, boxes, 'add', `Batch ${run.batch_number || run.run_number}`);
         if (res && res.error) throw res.error;
@@ -4350,7 +4365,7 @@ const _realDbService = {
       const skuId = run.sku_id;
       const qty = parseInt(run.actual_quantity) || 0;
       const packType = run.pack_type || 'weekly';
-      const boxesMade = packQuantityToBoxes(packType, qty);
+      const boxesMade = await this._boxesForSku(skuId, packType, qty);
       if (skuId && boxesMade > 0 && !run.finished_added) {
         const reason = `Production ${run.run_number || run.id}`;
         await this.updateInventoryStock(skuId, packType, boxesMade, 'add', reason);
@@ -4383,7 +4398,7 @@ const _realDbService = {
 
         const isSingleUnit = packType === 'single' || packType === '0.5kg' || packType === '1kg';
         // A monthly order line is 4 boxes of the SAME product, not a separate item
-        const boxQty = isSingleUnit ? quantity : packQuantityToBoxes(packType, quantity);
+        const boxQty = isSingleUnit ? quantity : await this._boxesForSku(skuId, packType, quantity);
 
         // Check current stock (weekly & monthly share one box pool)
         const currentRes = await this.getInventoryBySkuId(skuId);
@@ -4417,7 +4432,7 @@ const _realDbService = {
         const quantity = parseInt(item.quantity) || 1;
         if (!skuId) continue;
         const isSingleUnit = packType === 'single' || packType === '0.5kg' || packType === '1kg';
-        const boxQty = isSingleUnit ? quantity : packQuantityToBoxes(packType, quantity);
+        const boxQty = isSingleUnit ? quantity : await this._boxesForSku(skuId, packType, quantity);
         const reason = `RTO return — Order ${order.order_number || order.id}`;
         await this.updateInventoryStock(skuId, packType, boxQty, 'add', reason);
         results.restocked++;
