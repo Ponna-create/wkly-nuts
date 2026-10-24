@@ -2104,8 +2104,20 @@ export default function SKUManagement() {
                 });
                 const packagingCost = getPackagingCost(formData.packagingMaterials);
                 const totalCost = materialCost + packagingCost;
-                const sp = parseFloat(formData.sellingPrice) || 0;
-                const margin = sp > 0 ? ((sp - totalCost) / sp * 100) : 0;
+                // The preview follows "Sold as": a Weekly box is 1 box; a Monthly pack is 4 boxes
+                // (the same way the order and batch screens count it), so a Monthly-only
+                // product is compared with its Monthly price against 4 boxes of cost.
+                const soldAs = formData.soldAs || 'both';
+                const weeklyPrice = parseFloat(formData.sellingPrice) || 0;
+                const monthlyPrice = parseFloat(formData.monthlySellingPrice) || 0;
+                const view = soldAs === 'monthly'
+                  ? { title: 'Monthly pack', boxes: 4, sp: monthlyPrice }
+                  : { title: 'Pack', boxes: 1, sp: weeklyPrice };
+                const viewCost = totalCost * view.boxes;
+                const sp = view.sp;
+                const margin = sp > 0 ? ((sp - viewCost) / sp * 100) : 0;
+                const monthlyCost = totalCost * 4;
+                const monthlyMargin = monthlyPrice > 0 ? ((monthlyPrice - monthlyCost) / monthlyPrice * 100) : 0;
                 const daysWithRecipes = DAYS.filter(d => (formData.recipes[d] || []).length > 0).length;
                 if (daysWithRecipes === 0) return null;
                 return (
@@ -2127,18 +2139,28 @@ export default function SKUManagement() {
                         <p className="text-[10px] text-gray-400">per {unitWord}: ₹{daysWithRecipes > 0 ? (materialCost / daysWithRecipes).toFixed(2) : '0'} material</p>
                       </div>
                       <div className="bg-white rounded-lg p-2 text-center">
-                        <p className="text-[10px] text-gray-500">= Cost / Pack</p>
-                        <p className="text-lg font-bold text-amber-700">₹{totalCost.toFixed(2)}</p>
-                        <p className="text-[10px] text-gray-400">selling ₹{sp.toFixed(2)}</p>
+                        <p className="text-[10px] text-gray-500">= Cost / {view.title}</p>
+                        <p className="text-lg font-bold text-amber-700">₹{viewCost.toFixed(2)}</p>
+                        <p className="text-[10px] text-gray-400">selling ₹{sp.toFixed(2)}{view.boxes > 1 ? ` · ${view.boxes} boxes` : ''}</p>
                       </div>
                       <div className={`rounded-lg p-2 text-center ${sp > 0 ? (margin > 0 ? 'bg-green-50' : 'bg-red-50') : 'bg-white'}`}>
                         <p className="text-[10px] text-gray-500">Margin</p>
                         <p className={`text-lg font-bold ${sp > 0 ? (margin > 0 ? 'text-green-700' : 'text-red-700') : 'text-gray-400'}`}>
                           {sp > 0 ? `${margin.toFixed(1)}%` : '—'}
                         </p>
-                        <p className="text-[10px] text-gray-400">{sp > 0 ? `₹${(sp - totalCost).toFixed(2)} profit` : 'set selling price'}</p>
+                        <p className="text-[10px] text-gray-400">{sp > 0 ? `₹${(sp - viewCost).toFixed(2)} profit` : (soldAs === 'monthly' ? 'set monthly price' : 'set selling price')}</p>
                       </div>
                     </div>
+                    {soldAs === 'both' && monthlyPrice > 0 && (
+                      <p className={`text-xs mt-2 ${monthlyMargin > 0 ? 'text-gray-600' : 'text-red-700 font-medium'}`}>
+                        Monthly pack (4 boxes): cost ₹{monthlyCost.toFixed(2)}, selling ₹{monthlyPrice.toFixed(2)}, margin {monthlyMargin.toFixed(1)}%
+                      </p>
+                    )}
+                    {soldAs === 'monthly' && (
+                      <p className="text-xs mt-2 text-amber-800">
+                        In this app a Monthly pack is <strong>4 boxes</strong>, so its cost is 4 times one box. If you sell just one box (for example a 7-pouch combo that lasts 28 days), choose <strong>Weekly box only</strong> and enter the price there.
+                      </p>
+                    )}
                   </div>
                 );
               })()}
