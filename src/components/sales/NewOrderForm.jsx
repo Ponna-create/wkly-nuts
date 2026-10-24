@@ -682,7 +682,7 @@ export default function NewOrderForm({ onClose }) {
                       onChange={(e) => handlePackTypeChange(e.target.value)}
                       className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
                     >
-                      {sizesFor(skus.find(sk => String(sk.id) === String(newItem.skuId))).includes('weekly') && <option value="weekly">Weekly Pack</option>}
+                      {sizesFor(skus.find(sk => String(sk.id) === String(newItem.skuId))).includes('weekly') && <option value="weekly">{sizesFor(skus.find(sk => String(sk.id) === String(newItem.skuId))).length > 1 ? 'Weekly Pack' : 'Box'}</option>}
                       {sizesFor(skus.find(sk => String(sk.id) === String(newItem.skuId))).includes('monthly') && <option value="monthly">Monthly Pack</option>}
                     </select>
                   </div>

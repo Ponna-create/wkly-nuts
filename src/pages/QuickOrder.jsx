@@ -741,7 +741,7 @@ export default function QuickOrder() {
                           onClick={() => addItem(sku, pt)}
                           className="px-3 py-1.5 bg-teal-600 text-white rounded-full text-xs font-medium hover:bg-teal-700 active:scale-95 transition"
                         >
-                          {sku.skuType === 'weekly' ? `+ ${pt === 'weekly' ? 'Weekly' : 'Monthly'}` : '+ Add'}
+                          {sku.skuType === 'weekly' && packOptionsFor(sku).length > 1 ? `+ ${pt === 'weekly' ? 'Weekly' : 'Monthly'}` : '+ Add'}
                         </button>
                       ))}
                     </div>
@@ -807,7 +807,8 @@ export default function QuickOrder() {
                         {item.skuId ? (
                           <>
                             <p className="text-sm font-medium text-gray-900 truncate">{item.skuName}</p>
-                            {skus.find(sk => String(sk.id) === String(item.skuId))?.skuType === 'weekly' && (
+                            {skus.find(sk => String(sk.id) === String(item.skuId))?.skuType === 'weekly' &&
+                              packOptionsFor(skus.find(sk => String(sk.id) === String(item.skuId))).length > 1 && (
                               <p className="text-xs text-gray-500 capitalize">{item.packType}</p>
                             )}
                           </>
