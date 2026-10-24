@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
 import { isPromotionalOrder } from '../utils/invoiceFromOrder';
+import { boxesForPacks, boxesPerMonthly } from '../utils/packSize';
 import { formatDate } from '../utils/dateFormat';
 
 // One page that answers: what did we sell, what did it cost to make, what did
@@ -35,7 +36,6 @@ function normSource(o) {
   return SOURCE_LABEL[s] ? s : 'other';
 }
 
-const boxesOf = (packType, qty) => (packType === 'monthly' ? num(qty) * 4 : num(qty));
 
 function Tile({ label, value, sub, tone }) {
   const color = tone === 'good' ? 'text-green-700' : tone === 'bad' ? 'text-red-600' : 'text-gray-900';
@@ -108,8 +108,10 @@ export default function ProfitReport() {
     const costBySku = {};
     doneRuns.forEach(x => {
       if (costBySku[x.sku_id]) return;
-      const perBox = num(x.cost_per_unit) / (x.pack_type === 'monthly' ? 4 : 1);
-      const boxes = Math.max(1, num(x.actual_quantity) * (x.pack_type === 'monthly' ? 4 : 1));
+      const runSku = skus.find(sk => String(sk.id) === String(x.sku_id));
+      const mult = x.pack_type === 'monthly' ? boxesPerMonthly(runSku) : 1;
+      const perBox = num(x.cost_per_unit) / mult;
+      const boxes = Math.max(1, num(x.actual_quantity) * mult);
       costBySku[x.sku_id] = {
         perBox, batch: x.batch_number || x.run_number, date: x.completed_at || x.batch_date,
         ing: num(x.ingredient_cost) / boxes, pkg: num(x.packaging_cost) / boxes, lab: num(x.labor_cost) / boxes,
@@ -127,7 +129,7 @@ export default function ProfitReport() {
         const sku = skus.find(s => String(s.id) === String(id));
         const gst = num(sku?.gstRate ?? 5);
         const rev = num(it.total) / (1 + gst / 100);
-        const units = boxesOf(it.pack_type || it.packType, it.quantity);
+        const units = boxesForPacks(sku, it.pack_type || it.packType, it.quantity);
         if (!prod[key]) prod[key] = { id, name, units: 0, rev: 0 };
         prod[key].units += units;
         prod[key].rev += rev;
@@ -164,7 +166,7 @@ export default function ProfitReport() {
       let units = 0; let cost = 0; let costKnown = true;
       sent.forEach(o => (o.items || []).forEach(it => {
         const id = it.sku_id || it.skuId;
-        const u = boxesOf(it.pack_type || it.packType, it.quantity);
+        const u = boxesForPacks(skus.find(sk => String(sk.id) === String(id)), it.pack_type || it.packType, it.quantity);
         units += u;
         if (costBySku[id]) cost += costBySku[id].perBox * u; else costKnown = false;
       }));
