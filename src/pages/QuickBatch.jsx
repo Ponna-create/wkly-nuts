@@ -81,7 +81,8 @@ export default function QuickBatch() {
   const isRecipe = (sku?.skuType || 'weekly') === 'weekly';
   const isSeedCycle = /seed\s*cycle/i.test(sku?.name || '');
   const skuCode = sku?.skuCode || sku?.sku_code || '';
-  const effectivePack = isRecipe ? packType : 'single';
+  const sizes = !isRecipe ? [] : sku?.soldAs === 'weekly' ? ['weekly'] : sku?.soldAs === 'monthly' ? ['monthly'] : ['weekly', 'monthly'];
+  const effectivePack = isRecipe ? (sizes.includes(packType) ? packType : (sizes[0] || 'weekly')) : 'single';
   const shelfDays = sku ? shelfLifeFor(sku) : 30;
 
   // expiry follows made date + shelf life until she edits it by hand
@@ -268,10 +269,10 @@ export default function QuickBatch() {
             {skus.map(s => <option key={s.id} value={s.id}>{s.name.trim()}</option>)}
           </select>
         </div>
-        {isRecipe && (
+        {isRecipe && sizes.length > 1 && (
           <div className="flex gap-2">
-            <button type="button" onClick={() => setPackType('weekly')} className={chip(packType === 'weekly')}>Weekly box</button>
-            <button type="button" onClick={() => setPackType('monthly')} className={chip(packType === 'monthly')}>Monthly pack (4 boxes)</button>
+            <button type="button" onClick={() => setPackType('weekly')} className={chip(effectivePack === 'weekly')}>Weekly box</button>
+            <button type="button" onClick={() => setPackType('monthly')} className={chip(effectivePack === 'monthly')}>Monthly pack (4 boxes)</button>
           </div>
         )}
         {isSeedCycle && (

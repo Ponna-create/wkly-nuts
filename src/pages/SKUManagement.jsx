@@ -119,6 +119,7 @@ export default function SKUManagement() {
     gstRate: '5',
     description: '',
     skuType: 'weekly', // weekly | processed | repack | resale
+    soldAs: 'both', // Recipe Pack only: weekly | monthly | both
     targetWeightPerSachet: '', // For weekly packs
     unitWeight: '', // For processed/single unit SKUs (in kg, e.g., 0.5 or 1)
     unitOfMeasure: 'g', // g | kg | ml — how this product is measured
@@ -267,6 +268,7 @@ export default function SKUManagement() {
       gstRate: '5',
       description: '',
       skuType: 'weekly',
+      soldAs: 'both',
       targetWeightPerSachet: '',
       unitWeight: '',
       unitOfMeasure: 'g',
@@ -548,6 +550,7 @@ export default function SKUManagement() {
       packSize: formData.packSize !== '' ? parseFloat(formData.packSize) : null,
       buyPrice: formData.buyPrice !== '' ? parseFloat(formData.buyPrice) : null,
       reorderCycleDays: formData.reorderCycleDays !== '' ? parseInt(formData.reorderCycleDays) : null,
+      soldAs: formData.soldAs || 'both',
       packagingMaterials: formData.packagingMaterials || [],
       processingIngredients: formData.processingIngredients || [],
       processingNotes: formData.processingNotes || '',
@@ -586,6 +589,7 @@ export default function SKUManagement() {
       gstRate: sku.gstRate ?? 5,
       description: sku.description,
       skuType: sku.skuType || 'weekly',
+      soldAs: sku.soldAs || 'both',
       targetWeightPerSachet: sku.targetWeightPerSachet || '',
       unitWeight: sku.unitWeight || '',
       unitOfMeasure: sku.unitOfMeasure || 'g',
@@ -1999,6 +2003,26 @@ export default function SKUManagement() {
                   <textarea value={formData.processingNotes} onChange={e => setFormData(f => ({ ...f, processingNotes: e.target.value }))}
                     className="w-full border rounded-lg px-3 py-2 text-sm" rows={2}
                     placeholder="e.g. Roast flax & pumpkin seeds at 150°C for 10 min → Mix with honey → Form balls → Pack" />
+                </div>
+
+                {/* Which pack sizes are sold */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Sold as</label>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { v: 'both', label: 'Weekly and Monthly' },
+                      { v: 'weekly', label: 'Weekly box only' },
+                      { v: 'monthly', label: 'Monthly pack only' },
+                    ].map(o => (
+                      <button key={o.v} type="button" onClick={() => setFormData(f => ({ ...f, soldAs: o.v }))}
+                        className={`px-3 py-2 rounded-lg text-sm font-medium border ${(formData.soldAs || 'both') === o.v ? 'border-teal-500 bg-teal-50 text-teal-700' : 'border-gray-300 bg-white text-gray-600'}`}>
+                        {o.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-gray-400 mt-1">
+                    Order screens only offer the sizes chosen here, so a size with no price can never be added by mistake.
+                  </p>
                 </div>
 
                 {/* Shelf Life, Selling Price (weekly + monthly), MRP & Reorder Cycle */}

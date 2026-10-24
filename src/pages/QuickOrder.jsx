@@ -409,7 +409,13 @@ export default function QuickOrder() {
   // Soak) actually have separate Weekly/Monthly pricing. Single/repack/resale
   // SKUs (Dates, Seed Cycle, Mexican Bites, etc.) have just one price, so
   // showing a "+Monthly" button for them added a second, meaningless variant.
-  const packOptionsFor = (sku) => sku.skuType === 'weekly' ? ['weekly', 'monthly'] : ['weekly'];
+  // The SKU's own "Sold as" setting decides which of the two sizes can be added.
+  const packOptionsFor = (sku) => {
+    if (sku.skuType !== 'weekly') return ['weekly'];
+    if (sku.soldAs === 'weekly') return ['weekly'];
+    if (sku.soldAs === 'monthly') return ['monthly'];
+    return ['weekly', 'monthly'];
+  };
 
   return (
     <div className="min-h-screen bg-white flex flex-col">
