@@ -5,6 +5,7 @@ import { useApp } from '../context/AppContext';
 import { getChannelFees, setChannelFee as saveChannelFee } from '../utils/settings';
 import { itemCost } from '../utils/skuCost';
 import { formatDate } from '../utils/dateFormat';
+import { costPerBoxMap, productsSentTo } from '../utils/productCost';
 
 const SOURCE_LABELS = {
   whatsapp: 'WhatsApp', website: 'Website', instagram: 'Instagram', inst: 'Instagram',
@@ -20,6 +21,7 @@ export default function Marketing() {
   const [tab, setTab] = useState('influencers');
   const [contacts, setContacts] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
+  const [runs, setRuns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
@@ -43,14 +45,18 @@ export default function Marketing() {
 
   const loadData = async () => {
     setLoading(true);
-    const [cRes, campRes] = await Promise.all([
+    const [cRes, campRes, runRes] = await Promise.all([
       dbService.getMarketingContacts(),
       dbService.getMarketingCampaigns(),
+      dbService.getProductionRuns(),
     ]);
+    setRuns(runRes.data || []);
     setContacts(cRes.data || []);
     setCampaigns(campRes.data || []);
     setLoading(false);
   };
+
+  const costMap = useMemo(() => costPerBoxMap(runs, state.skus), [runs, state.skus]);
 
   // Summary metrics
   const totalInfluencerSpend = contacts.reduce((s, c) => s + (c.fee || 0), 0);
@@ -366,6 +372,33 @@ export default function Marketing() {
                   <div><span className="text-gray-500">Orders:</span> <span className="font-medium">{contact.ordersGenerated || 0}</span></div>
                   <div><span className="text-gray-500">Revenue:</span> <span className="font-medium text-green-600">₹{(contact.revenueGenerated || 0).toLocaleString()}</span></div>
                 </div>
+                {(() => {
+                  const sent = productsSentTo(contact.id, state.salesOrders, state.skus, costMap);
+                  if (sent.orders === 0) return null;
+                  const cash = contact.fee || 0;
+                  return (
+                    <div className="mt-3 pt-3 border-t border-gray-100 text-sm space-y-1">
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Products sent (free, no invoice)</span>
+                        <span className="font-medium">{sent.units} box(es) · {sent.orders} order(s)</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Product cost (non-cash)</span>
+                        <span className="font-medium">
+                          {sent.costKnown
+                            ? `₹${Math.round(sent.cost).toLocaleString('en-IN')}`
+                            : <span className="text-amber-600">cost shows after the first finished batch (shop value ₹{Math.round(sent.retail).toLocaleString('en-IN')})</span>}
+                        </span>
+                      </div>
+                      {sent.costKnown && (
+                        <div className="flex justify-between font-semibold text-purple-700">
+                          <span>Total marketing cost for {contact.name.split(' ')[0]}</span>
+                          <span>₹{Math.round(cash + sent.cost).toLocaleString('en-IN')}</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             );
           })}
@@ -488,9 +521,10 @@ export default function Marketing() {
                   </div>
                   {(contactForm.compensationType === 'barter' || contactForm.compensationType === 'mixed') && (
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Barter given (products/value)</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">What was agreed (note only)</label>
                       <input type="text" value={contactForm.barterDetails} onChange={e => setContactForm(p => ({...p, barterDetails: e.target.value}))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. 2 Day Packs + 1 Seed Cycle (~₹600)" />
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. 2 combos for 1 reel" />
+                      <p className="text-[11px] text-gray-400 mt-1">Products you send are counted automatically from Quick Order (source Promotion / Collab). You do not need to type a value here.</p>
                     </div>
                   )}
                   <div className="grid grid-cols-3 gap-3">
