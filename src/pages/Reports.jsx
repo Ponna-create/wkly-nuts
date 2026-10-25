@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { isPromotionalOrder } from '../utils/invoiceFromOrder';
 import { BarChart3, TrendingUp, Package, ShoppingCart, Calendar, Download, IndianRupee, Factory, Users, Target, Wallet, Truck } from 'lucide-react';
 import { dbService } from '../services/supabase';
 import { useApp } from '../context/AppContext';
@@ -101,6 +102,7 @@ export default function Reports() {
 
   const filteredOrders = useMemo(() =>
     orders.filter(o => {
+      if (isPromotionalOrder(o)) return false; // free sends are not sales
       const d = o.order_date || o.created_at?.split('T')[0];
       return d >= rangeFrom && d <= rangeTo;
     }), [orders, rangeFrom, rangeTo]);

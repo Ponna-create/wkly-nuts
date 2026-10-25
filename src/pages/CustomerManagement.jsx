@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { isPromotionalOrder } from '../utils/invoiceFromOrder';
 import { Plus, Edit, Trash2, Search, X, User, Mail, Phone, MapPin, Building2, AlertTriangle, Merge, Download, Calendar, UserPlus, Clock } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
@@ -292,6 +293,7 @@ export default function CustomerManagement() {
   const customerOrderStats = useMemo(() => {
     const stats = new Map();
     (salesOrders || []).forEach(o => {
+      if (isPromotionalOrder(o)) return; // a free send is not a purchase
       const key = o.customer_id || o.customer_name;
       if (!key) return;
       const date = new Date(o.order_date);

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { isPromotionalOrder } from '../utils/invoiceFromOrder';
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
 import { formatDate } from '../utils/dateFormat';
@@ -61,7 +62,7 @@ export default function GSTFiling() {
   const gstData = useMemo(() => {
     // Sales (Output GST) - only completed/delivered/dispatched orders
     const completedOrders = filteredOrders.filter(o =>
-      ['dispatched', 'in_transit', 'delivered', 'completed'].includes(o.status)
+      ['dispatched', 'in_transit', 'delivered', 'completed'].includes(o.status) && !isPromotionalOrder(o)
     );
 
     const totalSalesRevenue = completedOrders.reduce((sum, o) => sum + (parseFloat(o.total_amount) || 0), 0);

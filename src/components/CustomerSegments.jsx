@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { isPromotionalOrder } from '../utils/invoiceFromOrder';
 import { Copy, Check, MessageCircle, Users, IndianRupee, TrendingUp, MapPin } from 'lucide-react';
 import DateRangePicker from './common/DateRangePicker';
 import CustomerDetailModal from './CustomerDetailModal';
@@ -54,7 +55,7 @@ export default function CustomerSegments({ orders, skus, nudges, showToast }) {
 
   const { profiles, cities, sources, skuNames } = useMemo(() => {
     const fulfilled = (orders || []).filter(o =>
-      FULFILLED_STATUSES.includes(o.status) && Array.isArray(o.items) && o.items.length > 0
+      FULFILLED_STATUSES.includes(o.status) && Array.isArray(o.items) && o.items.length > 0 && !isPromotionalOrder(o)
     );
 
     const byCustomer = new Map();
