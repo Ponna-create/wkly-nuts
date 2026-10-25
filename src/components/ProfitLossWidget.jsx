@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { isPromotionalOrder } from '../utils/invoiceFromOrder';
 import { Link } from 'react-router-dom';
 import { TrendingUp, TrendingDown, IndianRupee, ArrowRight } from 'lucide-react';
 import { dbService } from '../services/supabase';
@@ -20,6 +21,7 @@ export default function ProfitLossWidget() {
       ]);
 
       const orders = (ordersRes.data || []).filter(o => {
+        if (isPromotionalOrder(o)) return false; // free sends are not sales
         const d = o.order_date || o.created_at?.split('T')[0];
         return d >= monthStart && d <= today;
       });

@@ -5,6 +5,7 @@ import { AreaChart, Area, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveCont
 import { useApp } from '../context/AppContext';
 import { formatDate } from '../utils/dateFormat';
 import { countStuckOrders } from '../utils/orderAging';
+import { isPromotionalOrder } from '../utils/invoiceFromOrder';
 import { dbService } from '../services/supabase';
 
 const SOURCE_LABELS = {
@@ -103,7 +104,9 @@ export default function Dashboard() {
   const isCurrentMonth = selectedMonth === currentMonthKey();
   const lastDayToShow = isCurrentMonth ? Number(todayStr().slice(8, 10)) : daysInMonth(selectedMonth);
 
-  const monthOrders = useMemo(() => orders.filter(o => o.order_date?.slice(0, 7) === selectedMonth), [orders, selectedMonth]);
+  // Sales view of the month: free sends (Promotion / Collab) are not sales, so they stay out of
+  // sales, channel, cash-in and top-selling figures. They still appear in Pending Actions (they need packing).
+  const monthOrders = useMemo(() => orders.filter(o => o.order_date?.slice(0, 7) === selectedMonth && !isPromotionalOrder(o)), [orders, selectedMonth]);
 
   // ---- Sales Summary (merged, toggle) ----
   const [salesView, setSalesView] = useState('value'); // 'value' | 'orders'

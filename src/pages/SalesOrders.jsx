@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { isPromotionalOrder } from '../utils/invoiceFromOrder';
 import { Plus, Search, Eye, Trash2, Zap, Camera, FileSpreadsheet, MessageCircle, Truck, Printer, LayoutGrid, ClipboardList, CheckCircle2 } from 'lucide-react';
 import DeleteOrderPanel from '../components/sales/DeleteOrderPanel';
 import { useApp } from '../context/AppContext';
@@ -423,7 +424,7 @@ export default function SalesOrders() {
               {filterStatus !== 'all' ? ` (${getStatusBadge(filterStatus).label})` : ''}
             </span>
             <span className="font-medium text-gray-900">
-              Total: ₹{filteredOrders.reduce((sum, o) => sum + (o.total_amount || 0), 0).toFixed(2)}
+              Total: ₹{filteredOrders.filter(o => !isPromotionalOrder(o)).reduce((sum, o) => sum + (o.total_amount || 0), 0).toFixed(2)}
             </span>
           </div>
         </div>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { isPromotionalOrder } from '../utils/invoiceFromOrder';
 import { Plus, Trash2, Layers, ChevronDown, ChevronUp } from 'lucide-react';
 import { dbService } from '../services/supabase';
 import { useApp } from '../context/AppContext';
@@ -111,7 +112,7 @@ export default function OmniChannels() {
     const skus = state.skus || [];
     const ingredients = state.ingredients || [];
     const aliases = state.ingredientAliases || [];
-    const orders = (state.salesOrders || []).filter(o => (o.order_date || '').slice(0, 7) === monthKey);
+    const orders = (state.salesOrders || []).filter(o => (o.order_date || '').slice(0, 7) === monthKey && !isPromotionalOrder(o));
 
     return channelKeys.map(key => {
       const channelOrders = orders.filter(o => (o.order_source || 'other') === key);
