@@ -9,10 +9,7 @@ import Dashboard from './pages/Dashboard';
 import VendorManagement from './pages/VendorManagement';
 import SKUManagement from './pages/SKUManagement';
 import PricingStrategy from './pages/PricingStrategy';
-import SalesRevenue from './pages/SalesRevenue';
-import VendorComparison from './pages/VendorComparison';
 import CustomerManagement from './pages/CustomerManagement';
-import InventoryManagement from './pages/InventoryManagement';
 import IngredientInventory from './pages/IngredientInventory';
 import InvoiceManagement from './pages/InvoiceManagement';
 import SalesOrders from './pages/SalesOrders';
@@ -28,7 +25,6 @@ import HelpGuide from './pages/HelpGuide';
 import BackupSettings from './pages/BackupSettings';
 import Marketing from './pages/Marketing';
 import OmniChannels from './pages/OmniChannels';
-import GSTFiling from './pages/GSTFiling';
 import QuickOrder from './pages/QuickOrder';
 import QuickBill from './pages/QuickBill';
 import QuickBatch from './pages/QuickBatch';
@@ -56,15 +52,11 @@ function App() {
               <Route path="/ingredients" element={<ErrorBoundary><IngredientInventory /></ErrorBoundary>} />
               <Route path="/skus" element={<ErrorBoundary><SKUManagement /></ErrorBoundary>} />
               <Route path="/pricing" element={<ErrorBoundary><PricingStrategy /></ErrorBoundary>} />
-              <Route path="/sales" element={<ErrorBoundary><SalesRevenue /></ErrorBoundary>} />
-              <Route path="/vendor-comparison" element={<ErrorBoundary><VendorComparison /></ErrorBoundary>} />
               <Route path="/customers" element={<ErrorBoundary><CustomerManagement /></ErrorBoundary>} />
-              <Route path="/inventory" element={<ErrorBoundary><InventoryManagement /></ErrorBoundary>} />
               <Route path="/invoices" element={<ErrorBoundary><InvoiceManagement /></ErrorBoundary>} />
               <Route path="/reports" element={<ErrorBoundary><Reports /></ErrorBoundary>} />
               <Route path="/marketing" element={<ErrorBoundary><Marketing /></ErrorBoundary>} />
               <Route path="/omni-channels" element={<ErrorBoundary><OmniChannels /></ErrorBoundary>} />
-              <Route path="/gst" element={<ErrorBoundary><GSTFiling /></ErrorBoundary>} />
               <Route path="/help" element={<ErrorBoundary><HelpGuide /></ErrorBoundary>} />
               <Route path="/ai-usage" element={<ErrorBoundary><AiUsage /></ErrorBoundary>} />
               <Route path="/settings" element={<ErrorBoundary><BackupSettings /></ErrorBoundary>} />

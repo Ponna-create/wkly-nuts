@@ -2655,28 +2655,6 @@ const _realDbService = {
   },
 
   // Sales Orders (Phase 1)
-  // Lightweight, targeted check for a batch invoice-generation step to
-  // re-verify against the database right before creating — the caller's
-  // in-memory order list can be stale (page not reloaded since a previous
-  // print run), and trusting only that stale invoice_id was the actual
-  // cause of a real duplicate-invoice bug (same order invoiced 3-12x when
-  // "Labels"/"A4 Sheet" was run again before the page had refreshed).
-  async getInvoiceIdsForOrders(orderIds) {
-    if (!isSupabaseAvailable() || !orderIds || orderIds.length === 0) return { data: {}, error: null };
-    try {
-      const { data, error } = await supabase
-        .from('sales_orders')
-        .select('id, invoice_id')
-        .in('id', orderIds);
-      if (error) throw error;
-      const map = {};
-      (data || []).forEach(row => { map[row.id] = row.invoice_id; });
-      return { data: map, error: null };
-    } catch (error) {
-      return { data: {}, error };
-    }
-  },
-
   async getSalesOrders() {
     if (!isSupabaseAvailable()) return { data: [], error: null };
 
@@ -3039,45 +3017,6 @@ const _realDbService = {
       return { result: r, delivered: advanced === 'delivered', advancedTo: advanced };
     } catch (error) {
       return { error: error.message || 'Request failed' };
-    }
-  },
-
-  async getSalesOrdersByStatus(status) {
-    if (!isSupabaseAvailable()) return { data: [], error: null };
-
-    try {
-      const { data, error } = await supabase
-        .from('sales_orders')
-        .select('*')
-        .eq('status', status)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-
-      return { data: data || [], error: null };
-    } catch (error) {
-      console.error('Error fetching orders by status:', error);
-      return { data: [], error };
-    }
-  },
-
-  async getSalesOrdersByDate(startDate, endDate) {
-    if (!isSupabaseAvailable()) return { data: [], error: null };
-
-    try {
-      const { data, error } = await supabase
-        .from('sales_orders')
-        .select('*')
-        .gte('order_date', startDate)
-        .lte('order_date', endDate)
-        .order('order_date', { ascending: false });
-
-      if (error) throw error;
-
-      return { data: data || [], error: null };
-    } catch (error) {
-      console.error('Error fetching orders by date:', error);
-      return { data: [], error };
     }
   },
 
