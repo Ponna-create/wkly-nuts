@@ -303,15 +303,18 @@ export default function QuickOrder() {
       orderSource: src,
       influencerId: isPromo && infl ? infl : null,
       items,
-      subtotal,
+      // A promotion / collab send is a free product, not a sale: no amount, no GST,
+      // nothing to collect. Its cost is worked out from the batch cost and counted
+      // as marketing cost, not as revenue.
+      subtotal: isPromo ? 0 : subtotal,
       gstRate,
-      gstAmount,
-      shippingCharge: parseFloat(shippingCharge) || 0,
-      totalAmount,
-      paymentMethod,
-      paymentStatus: isCod ? 'pending' : 'received',
-      amountPaid: isCod ? 0 : totalAmount,
-      balanceDue: isCod ? totalAmount : 0,
+      gstAmount: isPromo ? 0 : gstAmount,
+      shippingCharge: isPromo ? 0 : (parseFloat(shippingCharge) || 0),
+      totalAmount: isPromo ? 0 : totalAmount,
+      paymentMethod: isPromo ? 'promotion' : paymentMethod,
+      paymentStatus: isPromo ? 'received' : (isCod ? 'pending' : 'received'),
+      amountPaid: isPromo ? 0 : (isCod ? 0 : totalAmount),
+      balanceDue: isPromo ? 0 : (isCod ? totalAmount : 0),
       status: 'confirmed',
       shippingAddress: addressWithState(fields.address, fields.state),
       courierNumber: fields.courierNumber || null,
@@ -482,7 +485,8 @@ export default function QuickOrder() {
             ) : (
               <>
                 <h3 className="text-base font-semibold text-gray-900">Which influencer is this for?</h3>
-                <p className="text-xs text-gray-500 mt-0.5 mb-3">The product cost is added to their marketing cost</p>
+                <p className="text-xs text-gray-500 mt-0.5 mb-1">This is a free send: no invoice, no GST, not counted as a sale.</p>
+                <p className="text-xs text-gray-500 mb-3">The product cost is added to this person&apos;s marketing cost automatically.</p>
                 <div className="grid grid-cols-1 gap-2 max-h-64 overflow-y-auto">
                   {contactList.map(c => (
                     <button
