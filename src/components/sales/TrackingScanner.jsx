@@ -4,6 +4,7 @@ import { X, Camera, Image as ImageIcon, CheckCircle, AlertCircle, Package, Searc
 import { useApp } from '../../context/AppContext';
 import { dbService } from '../../services/supabase';
 import { findBestOrderMatch, expectedWeightForOrder } from '../../utils/ocrMatch';
+import { courierHistory, suggestCourier, CONFIRMED_NEEDED, MAX_COURIER_COST } from '../../utils/courierSuggest';
 
 // Only resize/recompress when the file is actually large enough to risk
 // Vercel's ~4.5MB request-body limit (base64 inflates size ~33% on top of
@@ -188,6 +189,9 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
   const [pickerSearch, setPickerSearch] = useState('');
   const [retryingId, setRetryingId] = useState(null); // review item currently being re-read
   const [zoomedUrl, setZoomedUrl] = useState(null); // full-size photo preview overlay
+  const [slipReads, setSlipReads] = useState({}); // orderId -> { weight, amount } as the slip reader saw them
+  const [courierEdits, setCourierEdits] = useState({}); // orderId -> { weight, cost } typed in
+  const [courierSaved, setCourierSaved] = useState({}); // orderId -> { weight, cost } confirmed
   const html5QrCodeRef = useRef(null);
   const lastScanTimeRef = useRef(0);
   const processingRef = useRef(false);
@@ -207,6 +211,35 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
     (() => { const w = expectedWeightForOrder(o, skus); return w != null ? `~${Math.round(w * 100) / 100} kg` : ''; })(),
   ].filter(Boolean).join(' · ');
   const linkedCount = Object.keys(linkedOrders).length;
+
+  // Courier cost + weight: nothing the slip reader sees is saved until she
+  // confirms it here. Suggestions learn from confirmed slips (utils/courierSuggest.js).
+  const history = useMemo(() => courierHistory(state.salesOrders), [state.salesOrders]);
+  const suggestions = useMemo(() => {
+    const out = {};
+    orders.filter(o => linkedOrders[o.id]).forEach(o => { out[o.id] = suggestCourier(o, history, skus, slipReads[o.id]); });
+    return out;
+  }, [orders, linkedOrders, history, skus, slipReads]);
+  const courierValue = (id, field) => {
+    const e = courierEdits[id];
+    if (e && e[field] !== undefined) return e[field];
+    const v = suggestions[id]?.[field];
+    return v != null ? String(v) : '';
+  };
+  const setCourierField = (id, field, value) => setCourierEdits(prev => ({ ...prev, [id]: { ...prev[id], [field]: value } }));
+  const unconfirmedCount = Object.keys(linkedOrders).filter(id => !courierSaved[id]).length;
+
+  const saveCourier = async (order) => {
+    const weight = parseFloat(courierValue(order.id, 'weight'));
+    const cost = parseFloat(courierValue(order.id, 'cost'));
+    if (!(weight > 0) || !(cost > 0)) { showToast('Enter both the weight and the courier cost', 'error'); return; }
+    if (cost > MAX_COURIER_COST && !window.confirm(`₹${cost} for one parcel is unusually high. Save it anyway?`)) return;
+    const confirmedAt = new Date().toISOString();
+    const { error: err } = await dbService.updateSalesOrder({ id: order.id, shippingWeight: weight, courierAmount: cost, courierConfirmedAt: confirmedAt });
+    if (err) { showToast('Could not save the courier cost', 'error'); return; }
+    dispatch({ type: 'UPDATE_SALES_ORDER', payload: { ...order, tracking_number: linkedOrders[order.id], status: 'dispatched', shipping_weight: weight, courier_amount: cost, courier_confirmed_at: confirmedAt } });
+    setCourierSaved(prev => ({ ...prev, [order.id]: { weight, cost } }));
+  };
   const busy = batchProgress != null;
 
   const startScanner = async () => {
@@ -270,9 +303,8 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
       courierName: order.courier_name || 'ST Courier',
       status: 'dispatched',
       dispatchDate: order.dispatch_date || new Date().toISOString().split('T')[0],
-      ...(extracted.weight != null && { shippingWeight: extracted.weight }),
-      // a slip charge over ₹500 is a misread (₹60,620 was saved once), so it isn't stored
-      ...(extracted.amount != null && extracted.amount > 0 && extracted.amount <= 500 && { courierAmount: extracted.amount }),
+      // weight and courier cost are not saved from the slip reading: she
+      // confirms them in the Linked list (the reader once saved ₹60,620)
       ...(extracted.slipDate && { courierSlipDate: extracted.slipDate }),
     };
     const { error } = await dbService.updateSalesOrder(updatedOrder);
@@ -286,12 +318,11 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
         courier_name: updatedOrder.courierName,
         status: 'dispatched',
         dispatch_date: updatedOrder.dispatchDate,
-        ...(updatedOrder.shippingWeight != null && { shipping_weight: updatedOrder.shippingWeight }),
-        ...(updatedOrder.courierAmount != null && { courier_amount: updatedOrder.courierAmount }),
         ...(updatedOrder.courierSlipDate && { courier_slip_date: updatedOrder.courierSlipDate }),
       },
     });
     setLinkedOrders(prev => ({ ...prev, [order.id]: code }));
+    setSlipReads(prev => ({ ...prev, [order.id]: { weight: extracted.weight, amount: extracted.amount } }));
     return true;
   };
 
@@ -560,6 +591,7 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
   }, [pickerOpenFor, pickerSearch, sortedUnlinked]);
 
   const handleFinish = async () => {
+    if (unconfirmedCount > 0 && !window.confirm(`${unconfirmedCount} linked slip(s) have no courier cost and weight confirmed yet. Close anyway?`)) return;
     await stopScanner();
     if (linkedCount > 0) onUpdate();
     onClose();
@@ -774,14 +806,54 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
               <h3 className="font-bold text-gray-900 text-sm flex items-center gap-2">
                 <Package className="w-4 h-4 text-green-600" /> Linked ({linkedCount})
               </h3>
-              {orders.filter(o => linkedOrders[o.id]).map(o => (
-                <div key={o.id} className="flex items-center justify-between p-2 bg-green-50 rounded text-sm">
-                  <span>{o.order_number} · {o.customer_name}</span>
-                  <span className="flex items-center gap-1 text-green-700 font-mono text-xs">
-                    <CheckCircle className="w-3.5 h-3.5" /> {linkedOrders[o.id]}
-                  </span>
-                </div>
-              ))}
+              <p className="text-[11px] text-gray-500">
+                Check the weight and courier cost on each slip and press OK.
+                {history.length < CONFIRMED_NEEDED
+                  ? ` Cost suggestions start after ${CONFIRMED_NEEDED} confirmed slips (${history.length} so far).`
+                  : ` Suggestions come from ${history.length} confirmed slips.`}
+              </p>
+              {orders.filter(o => linkedOrders[o.id]).map(o => {
+                const saved = courierSaved[o.id];
+                const sug = suggestions[o.id] || {};
+                return (
+                  <div key={o.id} className="p-2 bg-green-50 rounded text-sm space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span>{o.order_number} · {o.customer_name}</span>
+                      <span className="flex items-center gap-1 text-green-700 font-mono text-xs">
+                        <CheckCircle className="w-3.5 h-3.5" /> {linkedOrders[o.id]}
+                      </span>
+                    </div>
+                    {saved ? (
+                      <p className="text-xs text-green-700 flex items-center gap-1">
+                        <CheckCircle className="w-3.5 h-3.5" /> {saved.weight} kg · ₹{saved.cost}
+                        <button onClick={() => setCourierSaved(prev => { const n = { ...prev }; delete n[o.id]; return n; })} className="ml-2 underline text-gray-500">change</button>
+                      </p>
+                    ) : (
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <label className="flex items-center gap-1 text-xs text-gray-600">Weight
+                            <input type="number" inputMode="decimal" step="0.01" min="0" value={courierValue(o.id, 'weight')}
+                              onChange={e => setCourierField(o.id, 'weight', e.target.value)}
+                              className="w-16 px-1.5 py-1 border border-gray-300 rounded text-sm bg-white" /> kg
+                          </label>
+                          <label className="flex items-center gap-1 text-xs text-gray-600">Cost ₹
+                            <input type="number" inputMode="decimal" step="1" min="0" value={courierValue(o.id, 'cost')}
+                              onChange={e => setCourierField(o.id, 'cost', e.target.value)}
+                              className="w-16 px-1.5 py-1 border border-gray-300 rounded text-sm bg-white" />
+                          </label>
+                          <button onClick={() => saveCourier(o)}
+                            className="ml-auto px-2.5 py-1 bg-teal-600 text-white rounded text-xs font-medium hover:bg-teal-700">OK</button>
+                        </div>
+                        {(sug.weightFrom || sug.costFrom) && (
+                          <p className="text-[11px] text-gray-500">
+                            {[sug.weightFrom && `Weight from ${sug.weightFrom}`, sug.costFrom && `cost ${sug.costFrom.startsWith('read') ? '' : 'from '}${sug.costFrom}`].filter(Boolean).join(' · ')}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
 
