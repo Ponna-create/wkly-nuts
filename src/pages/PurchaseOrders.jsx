@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { billPriceFeed } from '../utils/priceFeed';
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
 import {
@@ -30,6 +31,10 @@ const TABS = [
 export default function PurchaseOrders() {
   const { state, showToast } = useApp();
   const [orders, setOrders] = useState([]);
+  // Price Watch / Cost Impact read purchase orders AND every Quick Bill bill.
+  const [stockItems, setStockItems] = useState([]);
+  useEffect(() => { dbService.getIngredients().then(({ data }) => setStockItems(data || [])); }, []);
+  const priceRecords = useMemo(() => [...orders, ...billPriceFeed(stockItems, state?.expenses)], [orders, stockItems, state?.expenses]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [showCSVImport, setShowCSVImport] = useState(false);
@@ -314,10 +319,10 @@ export default function PurchaseOrders() {
       )}
 
       {/* Tab: Price Watch */}
-      {activeTab === 'pricewatch' && <PriceWatchTab orders={orders} />}
+      {activeTab === 'pricewatch' && <PriceWatchTab orders={priceRecords} />}
 
       {/* Tab: Cost Impact */}
-      {activeTab === 'costimpact' && <CostImpactTab orders={orders} skus={state?.skus || []} />}
+      {activeTab === 'costimpact' && <CostImpactTab orders={priceRecords} skus={state?.skus || []} ingredients={stockItems} />}
 
       {/* Modals */}
       {showForm && (
@@ -777,7 +782,7 @@ function MiniSparkline({ data, color = '#6b7280' }) {
 // ═══════════════════════════════════════════════
 //  COST IMPACT TAB
 // ═══════════════════════════════════════════════
-function CostImpactTab({ orders, skus }) {
+function CostImpactTab({ orders, skus, ingredients = [] }) {
   const costData = useMemo(() => {
     const sorted = [...orders]
       .filter(o => Array.isArray(o.items) && o.items.length > 0 && o.order_date)
@@ -793,9 +798,12 @@ function CostImpactTab({ orders, skus }) {
         const rate = parseFloat(item.unit_price || item.rate || 0);
         if (rate <= 0) return;
         const pricePerGram = rate / 1000;
-        latestPrices[name] = { pricePerGram, rate, date: po.order_date, vendor: po.vendor_name };
-        if (!priceHistory[name]) priceHistory[name] = [];
-        priceHistory[name].push({ pricePerGram, rate, date: po.order_date });
+        // also under the product, so an "any grade" recipe line gets the latest price of any grade
+        [name, item.product ? `product:${String(item.product).toLowerCase()}` : null].filter(Boolean).forEach(k => {
+          latestPrices[k] = { pricePerGram, rate, date: po.order_date, vendor: po.vendor_name };
+          if (!priceHistory[k]) priceHistory[k] = [];
+          priceHistory[k].push({ pricePerGram, rate, date: po.order_date });
+        });
       });
     });
 
@@ -812,7 +820,11 @@ function CostImpactTab({ orders, skus }) {
 
         const firstDayRecipe = recipes[days[0]] || [];
         for (const item of firstDayRecipe) {
-          const name = (item.ingredientName || item.ingredient_name || '').trim().toLowerCase();
+          // linked recipe line -> its stock item (or "any grade" -> the product); old lines by name
+          const linked = item.stockItemId ? ingredients.find(i => i.id === item.stockItemId) : null;
+          const name = linked ? linked.name.trim().toLowerCase()
+            : item.stockProduct && item.stockGrade === '*' ? `product:${String(item.stockProduct).toLowerCase()}`
+            : (item.ingredientName || item.ingredient_name || '').trim().toLowerCase();
           const grams = parseFloat(item.gramsPerSachet) || 0;
           if (!name || grams <= 0) continue;
 
