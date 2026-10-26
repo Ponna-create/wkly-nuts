@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { isPromotionalOrder } from '../utils/invoiceFromOrder';
+import { computeProfit } from '../utils/profit';
 import { BarChart3, TrendingUp, Package, ShoppingCart, Calendar, Download, IndianRupee, Factory, Users, Target, Wallet, Truck } from 'lucide-react';
 import { dbService } from '../services/supabase';
 import { useApp } from '../context/AppContext';
@@ -38,6 +39,7 @@ export default function Reports() {
   const [orders, setOrders] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [productions, setProductions] = useState([]);
+  const [workLog, setWorkLog] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dateRange, setDateRange] = useState('this_month');
   const [customFrom, setCustomFrom] = useState('');
@@ -47,11 +49,13 @@ export default function Reports() {
 
   const loadData = async () => {
     setLoading(true);
-    const [ordersRes, expensesRes, prodRes] = await Promise.all([
+    const [ordersRes, expensesRes, prodRes, workRes] = await Promise.all([
       dbService.getSalesOrders(),
       dbService.getExpenses(),
       dbService.getProductionRuns(),
+      dbService.getWorkLog(),
     ]);
+    if (workRes.data) setWorkLog(workRes.data);
     if (ordersRes.data) setOrders(ordersRes.data);
     if (expensesRes.data) setExpenses(expensesRes.data);
     if (prodRes.data) setProductions(prodRes.data);
@@ -205,8 +209,10 @@ export default function Reports() {
     return { runs, completed, totalUnits, totalCost, bySkuArr };
   }, [filteredProductions]);
 
-  // === PROFIT/LOSS ===
-  const netProfit = salesMetrics.total - expenseMetrics.total - productionMetrics.totalCost - salesMetrics.courierCost;
+  // === PROFIT/LOSS === the one profit rule shared with Profit & Cost (utils/profit.js)
+  const P = useMemo(() => computeProfit({ orders, expenses, runs: productions, workLog, skus: state.skus || [], from: rangeFrom, to: rangeTo }),
+    [orders, expenses, productions, workLog, state.skus, rangeFrom, rangeTo]);
+  const netProfit = P.profit;
 
   // === MONTHLY TREND (last 6 months, uses all orders not filtered) ===
   const monthlyTrend = useMemo(() => {
@@ -224,12 +230,12 @@ export default function Reports() {
         const ed = e.expense_date || e.created_at?.split('T')[0];
         return ed && ed.startsWith(key);
       });
-      const revenue = monthOrders.reduce((s, o) => s + (o.total_amount || 0), 0);
-      const expense = monthExpenses.reduce((s, e) => s + (e.total_amount || e.amount || 0), 0);
-      months.push({ key, label, revenue, expense, profit: revenue - expense, orderCount: monthOrders.length });
+      const last = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+      const mp = computeProfit({ orders, expenses, runs: productions, workLog, skus: state.skus || [], from: `${key}-01`, to: `${key}-${String(last.getDate()).padStart(2, '0')}` });
+      months.push({ key, label, revenue: mp.salesEx, expense: mp.salesEx - mp.profit, profit: mp.profit, orderCount: mp.orders });
     }
     return months;
-  }, [orders, expenses]);
+  }, [orders, expenses, productions, workLog, state.skus]);
 
   // === CUSTOMER RETENTION ===
   const customerRetention = useMemo(() => {
@@ -350,34 +356,34 @@ export default function Reports() {
         <div className="bg-white p-4 rounded-lg border border-gray-200">
           <div className="flex items-center gap-2 mb-1">
             <IndianRupee className="w-4 h-4 text-green-600" />
-            <p className="text-sm text-gray-600">Revenue</p>
+            <p className="text-sm text-gray-600">Sales (without GST)</p>
           </div>
-          <p className="text-2xl font-bold text-green-700">{salesMetrics.total.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
-          <p className="text-xs text-gray-500">{salesMetrics.count} orders</p>
+          <p className="text-2xl font-bold text-green-700">{P.salesEx.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
+          <p className="text-xs text-gray-500">{P.orders} orders · {P.salesIncl.toLocaleString('en-IN', { maximumFractionDigits: 0 })} with GST</p>
         </div>
         <div className="bg-white p-4 rounded-lg border border-gray-200">
           <div className="flex items-center gap-2 mb-1">
             <ShoppingCart className="w-4 h-4 text-red-600" />
-            <p className="text-sm text-gray-600">Expenses</p>
+            <p className="text-sm text-gray-600">Running expenses</p>
           </div>
-          <p className="text-2xl font-bold text-red-700">{expenseMetrics.total.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
-          <p className="text-xs text-gray-500">{expenseMetrics.count} entries</p>
+          <p className="text-2xl font-bold text-red-700">{P.runningExpenses.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
+          <p className="text-xs text-gray-500">Marketing, rent, repairs… (stock bought counts when sold)</p>
         </div>
         <div className="bg-white p-4 rounded-lg border border-gray-200">
           <div className="flex items-center gap-2 mb-1">
             <Factory className="w-4 h-4 text-blue-600" />
-            <p className="text-sm text-gray-600">Production Cost</p>
+            <p className="text-sm text-gray-600">Cost of boxes sold</p>
           </div>
-          <p className="text-2xl font-bold text-blue-700">{productionMetrics.totalCost.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
-          <p className="text-xs text-gray-500">{productionMetrics.totalUnits} units</p>
+          <p className="text-2xl font-bold text-blue-700">{P.cogs.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
+          <p className="text-xs text-gray-500">{P.noCost.length ? `No cost yet: ${P.noCost.join(', ')}` : P.estimated.length ? `Estimated from SKU costing: ${P.estimated.join(', ')}` : 'From each product\'s latest batch cost'}</p>
         </div>
         <div className="bg-white p-4 rounded-lg border border-gray-200">
           <div className="flex items-center gap-2 mb-1">
             <Truck className="w-4 h-4 text-purple-600" />
             <p className="text-sm text-gray-600">Courier Cost</p>
           </div>
-          <p className="text-2xl font-bold text-purple-700">{salesMetrics.courierCost.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
-          <p className="text-xs text-gray-500">What we actually paid, incl. absorbed shipping</p>
+          <p className="text-2xl font-bold text-purple-700">{P.courier.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
+          <p className="text-xs text-gray-500">Courier bills or slip amounts, whichever is larger{P.slipsSkipped > 0 && ` · ${P.slipsSkipped} slip amount(s) over ₹500 skipped as misreads`}</p>
         </div>
         <div className={`p-4 rounded-lg border ${netProfit >= 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
           <div className="flex items-center gap-2 mb-1">
@@ -387,7 +393,7 @@ export default function Reports() {
           <p className={`text-2xl font-bold ${netProfit >= 0 ? 'text-green-700' : 'text-red-700'}`}>
             {netProfit >= 0 ? '' : '-'}{Math.abs(netProfit).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
           </p>
-          <p className="text-xs text-gray-500">Revenue - Expenses - Production - Courier</p>
+          <p className="text-xs text-gray-500">Sales − boxes sold − free sends ({P.freeSends.toLocaleString('en-IN', { maximumFractionDigits: 0 })}) − expenses − courier − packing labour ({P.labourOther.toLocaleString('en-IN', { maximumFractionDigits: 0 })})</p>
         </div>
       </div>
 
@@ -529,7 +535,7 @@ export default function Reports() {
             <div className="flex justify-between py-2">
               <span className="text-gray-600">Profit Margin</span>
               <span className={`font-bold ${netProfit >= 0 ? 'text-green-700' : 'text-red-700'}`}>
-                {salesMetrics.total > 0 ? ((netProfit / salesMetrics.total) * 100).toFixed(1) : 0}%
+                {P.margin.toFixed(1)}%
               </span>
             </div>
           </div>

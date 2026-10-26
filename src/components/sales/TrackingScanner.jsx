@@ -271,7 +271,8 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
       status: 'dispatched',
       dispatchDate: order.dispatch_date || new Date().toISOString().split('T')[0],
       ...(extracted.weight != null && { shippingWeight: extracted.weight }),
-      ...(extracted.amount != null && { courierAmount: extracted.amount }),
+      // a slip charge over ₹500 is a misread (₹60,620 was saved once), so it isn't stored
+      ...(extracted.amount != null && extracted.amount > 0 && extracted.amount <= 500 && { courierAmount: extracted.amount }),
       ...(extracted.slipDate && { courierSlipDate: extracted.slipDate }),
     };
     const { error } = await dbService.updateSalesOrder(updatedOrder);
