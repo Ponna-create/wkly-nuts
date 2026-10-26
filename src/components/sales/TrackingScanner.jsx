@@ -1,9 +1,9 @@
 import React, { useState, useRef, useMemo } from 'react';
-import { Html5Qrcode } from 'html5-qrcode';
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { X, Camera, Image as ImageIcon, CheckCircle, AlertCircle, Package, Search, RefreshCw } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { dbService } from '../../services/supabase';
-import { findBestOrderMatch } from '../../utils/ocrMatch';
+import { findBestOrderMatch, expectedWeightForOrder } from '../../utils/ocrMatch';
 
 // Only resize/recompress when the file is actually large enough to risk
 // Vercel's ~4.5MB request-body limit (base64 inflates size ~33% on top of
@@ -12,6 +12,53 @@ import { findBestOrderMatch } from '../../utils/ocrMatch';
 // of whatever the phone's camera already applied, and re-encoding a file
 // that didn't need it at all was hurting real, already-fine photos for no
 // reason. Only touch it when there's an actual size problem to solve.
+// Courier slips carry the consignment number as a 1-D barcode. QR codes are
+// left out on purpose: the slip's "TRACK HERE" QR is a website link, not the
+// number. The phone's own barcode reader is used where the browser has one
+// (more robust than the JS decoder), and a sideways photo is retried rotated.
+const SLIP_FORMATS = [
+  Html5QrcodeSupportedFormats.CODE_128, Html5QrcodeSupportedFormats.CODE_39, Html5QrcodeSupportedFormats.CODE_93,
+  Html5QrcodeSupportedFormats.CODABAR, Html5QrcodeSupportedFormats.ITF, Html5QrcodeSupportedFormats.EAN_13,
+  Html5QrcodeSupportedFormats.UPC_A,
+];
+const makeSlipReader = (elementId) => new Html5Qrcode(elementId, {
+  formatsToSupport: SLIP_FORMATS,
+  useBarCodeDetectorIfSupported: true,
+  verbose: false,
+});
+const rotateFile = (file, deg) => new Promise((resolve, reject) => {
+  const img = new Image();
+  img.onload = () => {
+    const c = document.createElement('canvas');
+    const swap = deg % 180 !== 0;
+    c.width = swap ? img.height : img.width;
+    c.height = swap ? img.width : img.height;
+    const ctx = c.getContext('2d');
+    ctx.translate(c.width / 2, c.height / 2);
+    ctx.rotate((deg * Math.PI) / 180);
+    ctx.drawImage(img, -img.width / 2, -img.height / 2);
+    URL.revokeObjectURL(img.src);
+    c.toBlob(b => (b ? resolve(new File([b], file.name, { type: 'image/jpeg' })) : reject(new Error('rotate failed'))), 'image/jpeg', 0.92);
+  };
+  img.onerror = reject;
+  img.src = URL.createObjectURL(file);
+});
+// Exact consignment number from a slip photo, or throws.
+const decodeSlipBarcode = async (reader, file) => {
+  for (const deg of [0, 90, 270]) {
+    try {
+      const f = deg ? await rotateFile(file, deg) : file;
+      const text = (await reader.scanFile(f, false)).trim();
+      if (text) return text;
+    } catch { /* try the next rotation */ }
+  }
+  throw new Error('No barcode found');
+};
+// Orders already handed to the courier are the ones a slip belongs to, so
+// they come first in the pick list (oldest first), then packed, then the rest.
+const HANDED_OVER = ['fulfilled', 'collected'];
+const handoverRank = (o) => (HANDED_OVER.includes(o.status) ? 0 : o.status === 'packing' ? 1 : 2);
+
 const SIZE_THRESHOLD_BYTES = 3 * 1024 * 1024; // 3MB — leaves headroom under the ~4.5MB body limit even after base64 inflation
 const MAX_DIMENSION = 2400;
 const readRaw = (file) => new Promise((resolve, reject) => {
@@ -148,17 +195,28 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
   const aiFileInputRef = useRef(null);
 
   const unlinkedOrders = useMemo(() => orders.filter(o => !linkedOrders[o.id]), [orders, linkedOrders]);
+  const sortedUnlinked = useMemo(() => [...unlinkedOrders].sort((a, b) =>
+    handoverRank(a) - handoverRank(b) || String(a.order_date || '').localeCompare(String(b.order_date || ''))
+  ), [unlinkedOrders]);
+  // One line under each order in the pick lists: handed over or not, where
+  // it's going, what's in it and what it should weigh on the courier's scale.
+  const orderHint = (o) => [
+    HANDED_OVER.includes(o.status) ? 'Handed over' : o.status === 'packing' ? 'Packing' : 'Not packed yet',
+    o.shipping_city || (o.shipping_address || '').split(',').slice(-2).join(',').trim(),
+    (o.items || []).map(i => `${i.sku_name || i.skuName} ${i.pack_type || i.packType || ''} ×${i.quantity}`).join(', '),
+    (() => { const w = expectedWeightForOrder(o, skus); return w != null ? `~${Math.round(w * 100) / 100} kg` : ''; })(),
+  ].filter(Boolean).join(' · ');
   const linkedCount = Object.keys(linkedOrders).length;
   const busy = batchProgress != null;
 
   const startScanner = async () => {
     try {
       setError(null);
-      const html5QrCode = new Html5Qrcode('tracking-scan-reader');
+      const html5QrCode = makeSlipReader('tracking-scan-reader');
       html5QrCodeRef.current = html5QrCode;
       await html5QrCode.start(
         { facingMode: 'environment' },
-        { fps: 5, qrbox: { width: 280, height: 120 } },
+        { fps: 10, qrbox: (w, h) => ({ width: Math.floor(w * 0.85), height: Math.floor(Math.min(h, w) * 0.4) }) },
         onScanSuccess,
         () => {}
       );
@@ -261,11 +319,10 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
     const newReview = [];
     for (let i = 0; i < files.length; i++) {
       setBatchProgress({ current: i + 1, total: files.length });
-      if (!html5QrCodeRef.current) html5QrCodeRef.current = new Html5Qrcode('tracking-scan-reader');
+      if (!html5QrCodeRef.current) html5QrCodeRef.current = makeSlipReader('tracking-scan-reader');
       const previewUrl = URL.createObjectURL(files[i]);
       try {
-        const decodedText = await html5QrCodeRef.current.scanFile(files[i], false);
-        const code = decodedText.trim();
+        const code = await decodeSlipBarcode(html5QrCodeRef.current, files[i]);
         const { data: logRow } = await dbService.logAiScan({ trackingNumber: code, outcome: 'pending_review' });
         newReview.push({ id: nextReviewId(), logId: logRow?.id, trackingNumber: code, order: null, reason: 'Barcode only — no name on it, pick the order', file: files[i], previewUrl });
       } catch {
@@ -329,7 +386,13 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
         newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, reason: describeFailure(result), file: files[i], previewUrl });
         continue;
       }
-      const data = result.data;
+      let data = result.data;
+      // The printed barcode is exact; use it over the AI's reading of the digits when it decodes.
+      try {
+        if (!html5QrCodeRef.current) html5QrCodeRef.current = makeSlipReader('tracking-scan-reader');
+        const barcode = await decodeSlipBarcode(html5QrCodeRef.current, files[i]);
+        data = { ...data, trackingNumber: barcode };
+      } catch { /* no readable barcode: keep what the AI read */ }
       if (!data.trackingNumber && !data.customerName && !data.rawText) {
         dbService.logAiScan({ outcome: 'failed' });
         const reason = data.emptyReason ? `Nothing readable (${data.emptyReason})` : "Couldn't read anything in this photo";
@@ -486,13 +549,14 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
   const pickerResults = useMemo(() => {
     if (!pickerOpenFor) return [];
     const q = pickerSearch.trim().toLowerCase();
-    const pool = unlinkedOrders;
-    if (!q) return pool.slice(0, 8);
+    const pool = sortedUnlinked;
+    if (!q) return pool.slice(0, 12);
     return pool.filter(o =>
       (o.customer_name || '').toLowerCase().includes(q) ||
-      (o.order_number || '').toLowerCase().includes(q)
-    ).slice(0, 8);
-  }, [pickerOpenFor, pickerSearch, unlinkedOrders]);
+      (o.order_number || '').toLowerCase().includes(q) ||
+      (o.shipping_address || '').toLowerCase().includes(q)
+    ).slice(0, 12);
+  }, [pickerOpenFor, pickerSearch, sortedUnlinked]);
 
   const handleFinish = async () => {
     await stopScanner();
@@ -573,15 +637,15 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
                 <p className="text-sm text-gray-500 text-center py-4">No unlinked orders left</p>
               ) : (
                 <div className="space-y-1.5 max-h-64 overflow-y-auto">
-                  {unlinkedOrders.map(order => (
+                  {sortedUnlinked.map(order => (
                     <button
                       key={order.id}
                       onClick={() => handlePickOrder(order)}
                       disabled={saving}
                       className="w-full text-left p-2.5 border border-gray-200 rounded-lg hover:border-teal-400 hover:bg-teal-50 transition disabled:opacity-50"
                     >
-                      <p className="font-medium text-sm text-gray-900">{order.customer_name}</p>
-                      <p className="text-xs text-gray-500">{order.order_number} · {order.shipping_address?.slice(0, 50) || ''}</p>
+                      <p className="font-medium text-sm text-gray-900">{order.customer_name} <span className="text-xs text-gray-500 font-normal">{order.order_number}</span></p>
+                      <p className="text-xs text-gray-500">{orderHint(order)}</p>
                     </button>
                   ))}
                 </div>
@@ -673,7 +737,7 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
                         autoFocus
                         value={pickerSearch}
                         onChange={(e) => setPickerSearch(e.target.value)}
-                        placeholder="Search customer or order #..."
+                        placeholder="Search customer, order # or city..."
                         className="w-full px-2.5 py-1.5 border border-gray-300 rounded text-sm"
                       />
                       <div className="space-y-1 max-h-40 overflow-y-auto">
@@ -686,6 +750,7 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
                           >
                             <span className="font-medium text-gray-900">{o.customer_name}</span>
                             <span className="text-xs text-gray-500 ml-1.5">{o.order_number}</span>
+                            <span className="block text-[11px] text-gray-500">{orderHint(o)}</span>
                           </button>
                         ))}
                         {pickerResults.length === 0 && (
