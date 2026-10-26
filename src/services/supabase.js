@@ -2250,6 +2250,87 @@ const _realDbService = {
     }
   },
 
+  // Shelf count: sets each counted item to what's really on the shelf and
+  // logs before / counted / difference in stock_counts. Nothing is silently
+  // overwritten — every change also leaves the usual movement record:
+  //   finished boxes -> setFinishedGoodsStock ('Shelf count' in inventory_transactions)
+  //   ingredients    -> shortfall taken from the oldest lots; extra added as a
+  //                     COUNT lot at the last purchase price (cost stays sensible)
+  //   packaging      -> current_stock set + a 'count' packaging transaction
+  // lines: [{ type: 'finished'|'ingredient'|'packaging', id, name, unit, before, counted, isRecipe? }]
+  async saveStockCount(lines, note = '') {
+    if (!isSupabaseAvailable()) return { error: new Error('Supabase not configured') };
+    const day = new Date().toISOString().split('T')[0];
+    const reason = `Shelf count ${day}${note ? ` (${note})` : ''}`;
+    const errors = [];
+    for (const l of lines) {
+      const counted = Math.max(0, parseFloat(l.counted) || 0);
+      const before = parseFloat(l.before) || 0;
+      const diff = Math.round((counted - before) * 1000) / 1000;
+      try {
+        if (l.type === 'finished') {
+          const r = await this.setFinishedGoodsStock(l.id, l.isRecipe ? { weeklyPacksAvailable: counted } : { singleUnitsAvailable: counted }, reason);
+          if (r.error) throw r.error;
+        } else if (l.type === 'ingredient' && diff !== 0) {
+          if (diff < 0) {
+            const r = await this.consumeIngredientFIFO(l.id, -diff);
+            if (!r.success && r.error && !/No active batches/.test(r.error)) throw new Error(r.error);
+          } else {
+            const { data: lastLot } = await supabase.from('ingredient_batches').select('price_per_unit')
+              .eq('ingredient_id', l.id).order('received_date', { ascending: false }).limit(1);
+            const r = await this.addIngredientBatch({
+              ingredientId: l.id, batchNumber: `COUNT-${day}`, quantity: diff,
+              price: parseFloat(lastLot?.[0]?.price_per_unit) || 0, receivedDate: day,
+            });
+            if (r.error) throw r.error;
+          }
+          await this.recalculateIngredientStock(l.id);
+        } else if (l.type === 'packaging') {
+          const r = await this.updatePackagingMaterial({ id: l.id, current_stock: counted });
+          if (r.error) throw r.error;
+          if (diff !== 0) await this.createPackagingTransaction({ material_id: l.id, type: 'count', quantity: diff, reference_note: reason });
+        }
+        await supabase.from('stock_counts').insert([{
+          item_type: l.type, item_id: String(l.id), item_name: l.name, unit: l.unit || null,
+          before_qty: before, counted_qty: counted, difference: diff, note: note || null,
+        }]);
+      } catch (err) {
+        errors.push(`${l.name}: ${err.message || err}`);
+      }
+    }
+    return { error: errors.length ? new Error(errors.join('; ')) : null, saved: lines.length - errors.length };
+  },
+
+  async getStockCounts(limit = 30) {
+    if (!isSupabaseAvailable()) return { data: [], error: null };
+    const { data, error } = await supabase.from('stock_counts').select('*').order('counted_at', { ascending: false }).limit(limit);
+    return { data: data || [], error };
+  },
+
+  // When "Refuse hand-over when boxes are short" is on (Settings key
+  // blockHandoverWhenShort, switched on after the shelf count), an order
+  // can't move to fulfilled-or-later unless every item's boxes are in stock.
+  // Returns a message listing what's short, or null.
+  async stockShortForOrder(orderId) {
+    const { data: flag } = await this.getAppSetting('blockHandoverWhenShort');
+    if (flag !== true) return null;
+    const { data: o } = await supabase.from('sales_orders').select('items, stock_deducted_at').eq('id', orderId).single();
+    if (!o || o.stock_deducted_at) return null;
+    const short = [];
+    for (const item of (o.items || [])) {
+      const skuId = item.sku_id || item.skuId;
+      if (!skuId) continue;
+      const packType = item.pack_type || item.packType || 'weekly';
+      const qty = parseInt(item.quantity) || 1;
+      const isSingleUnit = packType === 'single' || packType === '0.5kg' || packType === '1kg';
+      const need = isSingleUnit ? qty : await this._boxesForSku(skuId, packType, qty);
+      const { data: inv } = await this.getInventoryBySkuId(skuId);
+      const have = inv ? (isSingleUnit ? (inv.singleUnitsAvailable || 0) : (inv.weeklyPacksAvailable || 0)) : 0;
+      if (have < need) short.push(`${item.sku_name || item.skuName || 'Item'}: need ${need}, have ${have}`);
+    }
+    return short.length ? `Not enough stock to hand over — ${short.join('; ')}` : null;
+  },
+
   async deleteInventory(inventoryId) {
     if (!isSupabaseAvailable()) return { error: new Error('Supabase not configured') };
 
@@ -2898,6 +2979,13 @@ const _realDbService = {
           payload[dbCol] = val;
         }
       });
+
+      // Optional guard (off until the shelf count is done): refuse to hand
+      // over an order whose boxes aren't in stock, before anything is saved.
+      if (payload.status && STOCK_OUT_STATUSES.includes(payload.status)) {
+        const short = await this.stockShortForOrder(order.id);
+        if (short) return { data: null, error: new Error(short) };
+      }
 
       const { data, error } = await supabase
         .from('sales_orders')

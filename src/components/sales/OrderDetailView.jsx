@@ -96,7 +96,7 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
     const { error, stock } = await dbService.updateSalesOrder(updateData);
 
     if (error) {
-      showToast('Error updating status', 'error');
+      showToast(error.message && /Not enough stock/.test(error.message) ? error.message : 'Error updating status', 'error');
     } else {
       if (stock?.deducted > 0) showToast(`${stock.deducted} item(s) taken out of stock`, 'success');
       if (stock?.restocked > 0) showToast(`${stock.restocked} item(s) put back in stock`, 'success');
