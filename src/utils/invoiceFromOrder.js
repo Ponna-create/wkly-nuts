@@ -9,11 +9,22 @@ export function isPromotionalOrder(order) {
 
 // Maps a sales order onto the shape dbService.createInvoice() expects.
 // `skus` (optional) is state.skus — used to attach each item's HSN code for the GST invoice.
+// Invoice date = the order date (it used to be the day the invoice was made),
+// but never before the 1st of this month, so a late invoice for an old order
+// can't land in a month whose GST is already filed.
+export function invoiceDateForOrder(order, today = new Date()) {
+  const t = today.toISOString().split('T')[0];
+  const d = String(order.order_date || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || d > t) return t;
+  const monthStart = `${t.slice(0, 7)}-01`;
+  return d < monthStart ? monthStart : d;
+}
+
 export function buildInvoiceDataFromOrder(order, notePrefix, skus) {
   return {
     customerId: order.customer_id,
     orderSource: order.order_source,
-    invoiceDate: new Date().toISOString().split('T')[0],
+    invoiceDate: invoiceDateForOrder(order),
     items: (order.items || []).map(item => {
       const skuId = item.sku_id || item.skuId;
       const sku = (skus || []).find(s => String(s.id) === String(skuId));
@@ -27,7 +38,7 @@ export function buildInvoiceDataFromOrder(order, notePrefix, skus) {
         hsnCode: sku?.hsnCode || '',
       };
     }),
-    gstRate: order.gst_rate || 5,
+    gstRate: order.gst_rate ?? 5,
     subtotal: order.subtotal || 0,
     gstAmount: order.gst_amount || 0,
     discountPercent: order.discount_percent || 0,

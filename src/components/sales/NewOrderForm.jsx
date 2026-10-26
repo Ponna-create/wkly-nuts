@@ -87,16 +87,20 @@ export default function NewOrderForm({ onClose }) {
       const rate = sku?.gstRate ?? 5;
       return sum + (item.total || 0) / (1 + rate / 100);
     }, 0);
-    const gstAmount = itemsTotal - subtotal;
-    const gstRate = subtotal > 0 ? (gstAmount / subtotal) * 100 : 0;
+    const gstRate = subtotal > 0 ? ((itemsTotal - subtotal) / subtotal) * 100 : 0;
+    // discount comes off the GST-inclusive price the customer sees, and the
+    // taxable value and GST shrink with it (GST used to stay at the full-price figure)
     const discountAmount = formData.discountPercent > 0
-      ? (subtotal * formData.discountPercent) / 100
+      ? (itemsTotal * formData.discountPercent) / 100
       : formData.discountAmount;
+    const keep = itemsTotal > 0 ? Math.max(0, itemsTotal - discountAmount) / itemsTotal : 1;
+    const taxable = subtotal * keep;
+    const gstAmount = (itemsTotal - subtotal) * keep;
     const totalAmount = itemsTotal - discountAmount + (formData.shippingCharge || 0);
 
     setFormData(prev => ({
       ...prev,
-      subtotal,
+      subtotal: taxable,
       gstRate,
       gstAmount,
       discountAmount,
@@ -753,12 +757,8 @@ export default function NewOrderForm({ onClose }) {
               {/* Summary Section */}
               <div className="p-4 bg-gray-50 rounded-lg space-y-2">
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Subtotal:</span>
-                  <span className="font-medium">₹{formData.subtotal.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">GST ({formData.gstRate.toFixed(1)}%, incl. in price):</span>
-                  <span className="font-medium">₹{formData.gstAmount.toFixed(2)}</span>
+                  <span className="text-gray-600">Items:</span>
+                  <span className="font-medium">₹{formData.items.reduce((t, i) => t + (i.total || 0), 0).toFixed(2)}</span>
                 </div>
                 <div className="flex gap-2">
                   <input
@@ -771,6 +771,10 @@ export default function NewOrderForm({ onClose }) {
                     className="flex-1 px-2 py-1 border border-gray-300 rounded text-sm"
                   />
                   <span className="text-gray-600">- ₹{formData.discountAmount.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-xs text-gray-500">
+                  <span>Taxable value ₹{formData.subtotal.toFixed(2)} + GST ({formData.gstRate.toFixed(1)}%, incl. in price)</span>
+                  <span>₹{formData.gstAmount.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">Shipping:</span>

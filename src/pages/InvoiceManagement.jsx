@@ -550,7 +550,7 @@ export default function InvoiceManagement() {
       invoiceDate: invoice.invoiceDate || invoice.invoice_date || new Date().toISOString().split('T')[0],
       dueDate: invoice.dueDate || invoice.due_date || '',
       items: invoice.items || [],
-      gstRate: invoice.gstRate || invoice.gst_rate || 5,
+      gstRate: invoice.gstRate ?? invoice.gst_rate ?? 5,
       // stored discount is ex-GST; the form works in GST-inclusive amounts
       discountAmount: Math.round(
         (invoice.discountAmount || invoice.discount_amount || 0) *
@@ -1783,10 +1783,14 @@ export default function InvoiceManagement() {
     showToast(`Exported ${invoicesToExport.length} invoice(s) with item details to CSV`, 'success');
   };
 
-  const exportGSTReport = () => {
+  const exportGSTReport = async () => {
     const invoicesToExport = filteredInvoices.length > 0 ? filteredInvoices : invoices;
     const paidOrSent = invoicesToExport.filter(inv => inv.status === 'paid' || inv.status === 'sent');
-    if (paidOrSent.length === 0) {
+    // Credit notes issued in the same month (RTO / refused / returned) reduce
+    // the month's sales; they were left out of the export before.
+    const { data: allCreditNotes } = await dbService.getCreditNotes();
+    const monthCreditNotes = (allCreditNotes || []).filter(cn => !selectedMonth || String(cn.credit_note_date || '').startsWith(selectedMonth));
+    if (paidOrSent.length === 0 && monthCreditNotes.length === 0) {
       showToast('No paid/sent invoices to export for GST', 'error');
       return;
     }
@@ -1845,7 +1849,7 @@ export default function InvoiceManagement() {
       const isTN = custState.includes('tamil') || custState.includes('chennai') || custState.includes('tn') || !custState;
       const placeOfSupply = customer?.state || 'MISSING — verify';
       const items = inv.items || [];
-      const gstRate = inv.gstRate || 5;
+      const gstRate = inv.gstRate ?? 5;
       const channel = getChannel(inv);
       si += 1;
 
@@ -1906,6 +1910,28 @@ export default function InvoiceManagement() {
     csvRows.push('');
     csvRows.push(['', '', '', '', '', '', 'TOTALS', '', '', totalTaxable.toFixed(2), '', totalCGST.toFixed(2), totalSGST.toFixed(2), totalIGST.toFixed(2), totalTax.toFixed(2), grandTotal.toFixed(2), ''].join(','));
 
+    // Credit notes: shown as minus amounts, then the net for the month.
+    const cnTot = { taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
+    if (monthCreditNotes.length > 0) {
+      const q = (v) => { const t = String(v ?? ''); return t.includes(',') ? `"${t}"` : t; };
+      csvRows.push('');
+      csvRows.push('Credit Notes');
+      csvRows.push(['SI No', 'Date', 'Credit Note #', 'Customer', 'Against Invoice #', 'Reason', 'Taxable Value', 'CGST', 'SGST', 'IGST', 'Total Tax', 'Total'].join(','));
+      monthCreditNotes.forEach((cn, i) => {
+        const taxable = parseFloat(cn.taxable_value) || 0;
+        const cgst = parseFloat(cn.cgst_amount) || 0;
+        const sgst = parseFloat(cn.sgst_amount) || 0;
+        const igst = parseFloat(cn.igst_amount) || 0;
+        const total = parseFloat(cn.total_amount) || 0;
+        cnTot.taxable += taxable; cnTot.cgst += cgst; cnTot.sgst += sgst; cnTot.igst += igst; cnTot.total += total;
+        csvRows.push([i + 1, formatDate(cn.credit_note_date), q(cn.credit_note_number), q(cn.customer_name), q(cn.invoice_number), q(cn.reason),
+          (-taxable).toFixed(2), (-cgst).toFixed(2), (-sgst).toFixed(2), (-igst).toFixed(2), (-(cgst + sgst + igst)).toFixed(2), (-total).toFixed(2)].join(','));
+      });
+      csvRows.push(['', '', '', '', '', 'CREDIT NOTE TOTAL', (-cnTot.taxable).toFixed(2), (-cnTot.cgst).toFixed(2), (-cnTot.sgst).toFixed(2), (-cnTot.igst).toFixed(2), (-(cnTot.cgst + cnTot.sgst + cnTot.igst)).toFixed(2), (-cnTot.total).toFixed(2)].join(','));
+      csvRows.push('');
+      csvRows.push(['', '', '', '', '', 'NET (invoices − credit notes)', (totalTaxable - cnTot.taxable).toFixed(2), (totalCGST - cnTot.cgst).toFixed(2), (totalSGST - cnTot.sgst).toFixed(2), (totalIGST - cnTot.igst).toFixed(2), (totalTax - cnTot.cgst - cnTot.sgst - cnTot.igst).toFixed(2), (grandTotal - cnTot.total).toFixed(2)].join(','));
+    }
+
     // HSN-wise Summary — same section your auditor's own register ends with,
     // so this export can go straight to him in the format he already expects.
     csvRows.push('');
@@ -1928,7 +1954,7 @@ export default function InvoiceManagement() {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-    showToast(`GST report exported: ${paidOrSent.length} invoices, ₹${grandTotal.toFixed(0)} total`, 'success');
+    showToast(`GST report exported: ${paidOrSent.length} invoices, ₹${grandTotal.toFixed(0)} total${monthCreditNotes.length ? `, ${monthCreditNotes.length} credit note(s) −₹${cnTot.total.toFixed(0)}` : ''}`, 'success');
   };
 
   // Get status icon and color

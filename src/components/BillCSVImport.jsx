@@ -3,6 +3,10 @@ import { X, Upload, FileSpreadsheet, Check, AlertCircle, Download, ChevronDown, 
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
 
+// '₹1,200' / '1200.50' -> number; NaN when empty
+const money = (v) => parseFloat(String(v ?? '').replace(/[₹,\s]|rs\.?/gi, ''));
+const moneyOr0 = (v) => money(v) || 0;
+
 const EXPENSE_CSV_SAMPLE = `date,description,category,vendor,amount,gst_amount,total,payment_method,bill_number,notes
 2026-03-01,Almonds 5kg,raw_materials,Jagan Traders,2500,125,2625,upi,INV-001,Premium quality
 2026-03-01,Packing Tape 10 rolls,packaging,Local Store,400,20,420,cash,,
@@ -133,13 +137,17 @@ export default function BillCSVImport({ type = 'expense', onClose, onImportCompl
           notes: [],
         };
       }
+      const quantity = parseFloat(row.quantity) || 1;
+      const unitPrice = moneyOr0(row.unit_price || row.price);
+      const gstPercent = Number.isFinite(parseFloat(row.gst_percent ?? row.gst)) ? parseFloat(row.gst_percent ?? row.gst) : 5;
       const item = {
         name: row.item_name || row.item || row.description || '',
-        quantity: parseFloat(row.quantity) || 1,
+        quantity,
         unit: row.unit || 'pcs',
-        unit_price: parseFloat(row.unit_price || row.price) || 0,
-        gst_percent: parseFloat(row.gst_percent || row.gst) || 5,
-        total: parseFloat(row.total) || 0,
+        unit_price: unitPrice,
+        gst_percent: gstPercent,
+        // no total column: quantity × price + GST (was saved as ₹0)
+        total: money(row.total) || Math.round(quantity * unitPrice * (1 + gstPercent / 100) * 100) / 100,
         expiry_date: row.expiry_date || null,
       };
       groups[key].items.push(item);
@@ -178,9 +186,10 @@ export default function BillCSVImport({ type = 'expense', onClose, onImportCompl
             description: row.description || row.item || '',
             category: row.category || detectCategory(row.description || row.item || row.vendor || ''),
             vendor_name: row.vendor || '',
-            amount: parseFloat(row.amount) || 0,
-            gst_amount: parseFloat(row.gst_amount || row.gst) || 0,
-            total_amount: parseFloat(row.total) || parseFloat(row.amount) || 0,
+            amount: moneyOr0(row.amount),
+            gst_amount: moneyOr0(row.gst_amount || row.gst),
+            // no total column: amount + GST
+            total_amount: money(row.total) || (moneyOr0(row.amount) + moneyOr0(row.gst_amount || row.gst)),
             payment_method: row.payment_method || row.payment || 'cash',
             payment_status: 'paid',
             bill_number: row.bill_number || row.invoice || '',
