@@ -243,6 +243,16 @@ export const mockDbService = {
 
   // ══════════ INGREDIENTS ══════════
   async getIngredients() { return { data: table('ingredients'), error: null }; },
+  async getBillItemMemory() { return { data: table('bill_item_memory'), error: null }; },
+  async rememberBillItems(rows) {
+    const t = table('bill_item_memory');
+    (rows || []).forEach(r => {
+      const i = t.findIndex(m => m.vendor_key === r.vendor_key && m.name_key === r.name_key);
+      if (i >= 0) t[i] = { ...t[i], ...r, product: null }; else t.push({ ...r, product: null });
+    });
+    saveTable('bill_item_memory', t);
+    return { error: null };
+  },
   async createIngredient(i) {
     const rows = table('ingredients');
     const rec = { id: crypto.randomUUID(), ...i, created_at: new Date().toISOString() };

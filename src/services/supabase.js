@@ -2396,12 +2396,30 @@ const _realDbService = {
     }
   },
 
-  async createIngredient({ name, unit }) {
+  // What bill wordings were matched to (see utils/billItemMatch.js).
+  async getBillItemMemory() {
+    if (!isSupabaseAvailable()) return { data: [], error: null };
+    const { data, error } = await supabase.from('bill_item_memory').select('vendor_key, name_key, ingredient_id, product');
+    return { data: data || [], error };
+  },
+
+  // rows: [{ vendor_key, name_key, ingredient_id }] — later answers replace earlier ones
+  async rememberBillItems(rows) {
+    if (!isSupabaseAvailable() || !rows || rows.length === 0) return { error: null };
+    const { error } = await supabase.from('bill_item_memory')
+      .upsert(rows.map(r => ({ ...r, product: null, updated_at: new Date().toISOString() })), { onConflict: 'vendor_key,name_key' });
+    return { error };
+  },
+
+  // A new stock item is its own product with one "Standard" grade until more
+  // grades are added.
+  async createIngredient({ name, unit, product, grade }) {
     if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
     try {
+      const clean = String(name).trim();
       const { data, error } = await supabase
         .from('ingredients')
-        .insert([{ name: String(name).trim(), unit: unit || 'Kg', current_stock_total: 0 }])
+        .insert([{ name: clean, unit: unit || 'Kg', current_stock_total: 0, product: product || clean, grade: grade || 'Standard' }])
         .select()
         .single();
       if (error) throw error;
