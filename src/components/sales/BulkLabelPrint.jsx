@@ -8,11 +8,13 @@ import { buildInvoiceDataFromOrder, isPromotionalOrder } from '../../utils/invoi
 import { getBusinessInfo } from '../../utils/settings';
 import DateRangePicker from '../common/DateRangePicker';
 import { generateA4LabelSheet } from '../../utils/a4LabelSheet';
+import { LABEL_SIZES, getSavedLabelSize, saveLabelSize, labelQrValue, printLabels } from '../../utils/labelPrint';
 
 export default function BulkLabelPrint({ orders, onClose, onPrinted, showToast }) {
   const { state, dispatch } = useApp();
   const printRef = useRef(null);
-  const [labelSize, setLabelSize] = useState('a4');
+  const [labelSize, setLabelSizeState] = useState(() => getSavedLabelSize('a4'));
+  const setLabelSize = (size) => { setLabelSizeState(size); saveLabelSize(size); };
   const today = new Date().toISOString().split('T')[0];
   const [dateFrom, setDateFrom] = useState(today);
   const [dateTo, setDateTo] = useState(today);
@@ -103,35 +105,15 @@ export default function BulkLabelPrint({ orders, onClose, onPrinted, showToast }
       // A4 uses the same compact multi-per-page grid (6 labels/sheet) as the
       // "A4 Sheet" button and Quick Order's A4 print — not the detailed
       // one-label-per-page layout below, which only makes sense for an
-      // actual 4x6 thermal sticker printer.
+      // actual thermal sticker printer.
       generateA4LabelSheet(selectedOrders);
       showToast(`${selectedOrders.length} label(s) downloaded as an A4 sheet`, 'success');
     } else {
-      const printContent = printRef.current;
-      const printWindow = window.open('', '_blank');
-
-      printWindow.document.write(`
-        <html>
-          <head>
-            <title>Bulk Labels - ${dateFrom}${dateTo && dateTo !== dateFrom ? ' to ' + dateTo : ''}</title>
-            <style>
-              @page { size: 152mm 102mm; margin: 0; }
-              * { margin: 0; padding: 0; box-sizing: border-box; }
-              body { font-family: Arial, Helvetica, sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-              .label-page { page-break-after: always; }
-              .label-page:last-child { page-break-after: avoid; }
-            </style>
-          </head>
-          <body>
-            ${sanitizeHtml(printContent.innerHTML)}
-          </body>
-        </html>
-      `);
-      printWindow.document.close();
-      setTimeout(() => {
-        printWindow.print();
-        printWindow.close();
-      }, 400);
+      printLabels({
+        title: `Bulk Labels - ${dateFrom}${dateTo && dateTo !== dateFrom ? ' to ' + dateTo : ''}`,
+        html: sanitizeHtml(printRef.current.innerHTML),
+        size: labelSize,
+      });
       showToast(`Printing ${selectedOrders.length} labels`, 'success');
     }
 
@@ -147,7 +129,6 @@ export default function BulkLabelPrint({ orders, onClose, onPrinted, showToast }
   // Render a single label
   const renderLabel = (order) => {
     const items = order.items || [];
-    const trackingNumber = order.tracking_number || '';
     const courierName = order.courier_name || 'ST Courier';
     const shippingDate = order.dispatch_date || order.order_date || dateFrom;
     const address = order.shipping_address || '';
@@ -232,14 +213,9 @@ export default function BulkLabelPrint({ orders, onClose, onPrinted, showToast }
 
           {/* QR Code */}
           <div style={{ padding: `${8*s}px`, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <QRCodeSVG
-              value={JSON.stringify({ id: order.id, orderNumber: order.order_number, customer: order.customer_name, tracking: trackingNumber || undefined, total: order.total_amount })}
-              size={isA4 ? 110 : 75}
-              level="M"
-              includeMargin={true}
-            />
-            <div style={{ fontSize: `${8*s}px`, color: '#555', marginTop: '2px', letterSpacing: '1px', fontWeight: '500' }}>
-              {trackingNumber || order.order_number}
+            <QRCodeSVG value={labelQrValue(order)} size={isA4 ? 150 : 120} level="M" includeMargin={true} />
+            <div style={{ fontSize: `${11*s}px`, color: '#000', marginTop: '2px', letterSpacing: '1px', fontWeight: 'bold' }}>
+              {order.order_number}
             </div>
           </div>
         </div>
@@ -258,8 +234,9 @@ export default function BulkLabelPrint({ orders, onClose, onPrinted, showToast }
           </div>
           <div className="flex items-center gap-2">
             <div className="flex rounded-lg border border-gray-300 overflow-hidden">
-              <button onClick={() => setLabelSize('4x6')} className={`px-3 py-1.5 text-sm font-medium ${labelSize === '4x6' ? 'bg-teal-600 text-white' : 'bg-white text-gray-600'}`}>4x6</button>
-              <button onClick={() => setLabelSize('a4')} className={`px-3 py-1.5 text-sm font-medium ${labelSize === 'a4' ? 'bg-teal-600 text-white' : 'bg-white text-gray-600'}`}>A4</button>
+              {Object.entries(LABEL_SIZES).map(([key, size]) => (
+                <button key={key} onClick={() => setLabelSize(key)} className={`px-3 py-1.5 text-sm font-medium ${labelSize === key ? 'bg-teal-600 text-white' : 'bg-white text-gray-600'}`}>{size.name}</button>
+              ))}
             </div>
             <button onClick={handlePrint} disabled={selectedOrders.length === 0} className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 font-medium disabled:opacity-50">
               <Printer className="w-4 h-4" /> Print All ({selectedOrders.length})

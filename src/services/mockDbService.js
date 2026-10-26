@@ -85,6 +85,10 @@ export const mockDbService = {
     const row = table('sales_orders').find(r => r.id === id);
     return { data: row || null, error: row ? null : { message: 'Not found' } };
   },
+  async getSalesOrderByNumber(orderNumber) {
+    const row = table('sales_orders').find(r => r.order_number === orderNumber);
+    return { data: row || null, error: row ? null : { message: 'Not found' } };
+  },
   async createSalesOrder(order) {
     const rows = table('sales_orders');
     const rec = {
