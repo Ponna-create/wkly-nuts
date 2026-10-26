@@ -7,6 +7,8 @@ import {
   IndianRupee, Calendar, TrendingUp, ChevronDown, ChevronUp, FileSpreadsheet
 } from 'lucide-react';
 import BillCSVImport from '../components/BillCSVImport';
+import { isPromotionalOrder } from '../utils/invoiceFromOrder';
+import { costPerBoxMap, productCostOfOrders } from '../utils/productCost';
 
 const CATEGORIES = [
   { value: 'raw_materials', label: 'Raw Materials' },
@@ -63,6 +65,20 @@ export default function Expenses() {
   });
   const thisMonthTotal = thisMonthExpenses.reduce((sum, e) => sum + (parseFloat(e.total_amount) || 0), 0);
 
+  // Marketing this month = cash paid to influencers (real expense rows) +
+  // cost of products sent free for promotion/collab. The product cost is
+  // worked out from the boxes sent × batch cost per box, not saved as an
+  // expense row, because the ingredients/packaging were already paid for
+  // through supplier bills — so it's shown here but kept out of the totals.
+  const now = new Date();
+  const inThisMonth = (d) => { const x = new Date(d); return x.getMonth() === now.getMonth() && x.getFullYear() === now.getFullYear(); };
+  const influencerCash = thisMonthExpenses
+    .filter(e => e.category === 'advertising' && (e.marketing_contact_id || (e.subcategory || '').startsWith('Influencer')))
+    .reduce((sum, e) => sum + (parseFloat(e.total_amount) || 0), 0);
+  const promoOrders = (state.salesOrders || []).filter(o =>
+    isPromotionalOrder(o) && !['cancelled', 'returned'].includes(o.status) && inThisMonth(o.order_date));
+  const productSent = productCostOfOrders(promoOrders, state.skus, costPerBoxMap(state.productionRuns, state.skus));
+
   const handleDelete = async (id) => {
     if (!confirm('Delete this expense?')) return;
     const { error } = await dbService.deleteExpense(id);
@@ -112,6 +128,23 @@ export default function Expenses() {
             ))}
           </div>
         </div>
+      </div>
+
+      {/* Marketing this month: influencer cash + product sent free */}
+      <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+        <div className="flex items-center gap-2 text-gray-500 text-sm mb-2">
+          <TrendingUp className="w-4 h-4" />
+          <span>Marketing this month</span>
+        </div>
+        <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2 text-sm">
+          <span>Cash to influencers <b className="text-gray-900">₹{influencerCash.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</b></span>
+          <span>+ Product sent for collabs <b className="text-gray-900">₹{productSent.cost.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</b> <span className="text-xs text-gray-400">({productSent.orders} send{productSent.orders === 1 ? '' : 's'}, {productSent.units} box{productSent.units === 1 ? '' : 'es'}, automatic)</span></span>
+          <span>= <b className="text-gray-900">₹{(influencerCash + productSent.cost).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</b></span>
+        </div>
+        <p className="text-xs text-gray-400 mt-2">
+          Product sent is worked out from the boxes sent × their batch cost. It isn't added to the expense totals above, because those ingredients and packaging were already paid for through supplier bills.
+          {!productSent.costKnown && ' Some products have no finished batch with a cost yet, so this is lower than the real figure.'}
+        </p>
       </div>
 
       {/* Header */}

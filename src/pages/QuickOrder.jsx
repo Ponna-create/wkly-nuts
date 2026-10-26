@@ -11,6 +11,8 @@ import { buildInvoiceDataFromOrder, isPromotionalOrder } from '../utils/invoiceF
 import TrackingScanner from '../components/sales/TrackingScanner';
 
 const EMPTY_FIELDS = { name: '', phone: '', courierNumber: '', address: '', city: '', state: '', pincode: '', oldStylePostalCode: '' };
+const EMPTY_PROMO = { pick: null, name: '', handle: '', cash: '', payMethod: 'UPI' };
+const instaHandle = (h) => { const t = String(h || '').trim().replace(/^@+/, ''); return t ? `@${t}` : ''; };
 
 export default function QuickOrder() {
   const { state, dispatch, showToast } = useApp();
@@ -28,6 +30,10 @@ export default function QuickOrder() {
     dbService.getMarketingContacts().then(r => setContactList(r.data || []));
   }, [showSourcePopup]);
   const [popupPromo, setPopupPromo] = useState(false);
+  // Promotion / Collab details asked in the popup: who it's for (existing
+  // contact id, 'new' or 'none'), a new influencer's name + Instagram ID, and
+  // any cash paid to them for this send (recorded as a marketing expense).
+  const [promo, setPromo] = useState(EMPTY_PROMO);
   const [customSourceMode, setCustomSourceMode] = useState(false);
   const [customSourceInput, setCustomSourceInput] = useState('');
   const [pasteText, setPasteText] = useState('');
@@ -229,8 +235,8 @@ export default function QuickOrder() {
     // (from the Save button) is ignored.
     const ov = opts && typeof opts === 'object' && Object.prototype.hasOwnProperty.call(opts, 'source') ? opts : null;
     const src = ((ov ? ov.source : orderSource) || '').trim();
-    const infl = ov ? ov.influencerId : influencerId;
-    const contacts = contactList;
+    let infl = ov ? ov.influencerId : influencerId;
+    const promoIn = (ov && ov.promo) || promo;
     if (!canSave) {
       if (!fields.name.trim()) showToast('Enter a name', 'error');
       else if (fields.phone.replace(/\D/g, '').length < 10) showToast('Enter a valid 10-digit phone number', 'error');
@@ -242,8 +248,10 @@ export default function QuickOrder() {
       return;
     }
     // Source must be confirmed on every order (popup when it hasn't been chosen).
+    // A promotion / collab always asks who it's for, so a new influencer can
+    // be added right here.
     const isPromo = isPromotionalOrder({ order_source: src });
-    if (!src || (isPromo && infl === null && contacts.length > 0)) {
+    if (!src || (isPromo && infl === null)) {
       setPopupPromo(isPromo);
       setShowSourcePopup(true);
       return;
@@ -292,6 +300,26 @@ export default function QuickOrder() {
       }
     }
 
+    // New influencer typed in the promo popup → add them to Marketing first,
+    // so the order (and any cash paid) links to them.
+    const promoCash = isPromo ? (parseFloat(promoIn.cash) || 0) : 0;
+    let influencer = isPromo && infl ? contactList.find(c => String(c.id) === String(infl)) : null;
+    if (isPromo && infl === 'new') {
+      const { data: created, error: cErr } = await dbService.createMarketingContact({
+        name: promoIn.name.trim(), platform: 'instagram', handle: instaHandle(promoIn.handle),
+        contactDate: orderDate, status: 'active', fee: 0,
+        compensationType: promoCash > 0 ? 'mixed' : 'barter', notes: 'Added from Quick Order',
+      });
+      if (cErr || !created) {
+        showToast('Could not add the influencer to Marketing', 'error');
+        setSaving(false);
+        return;
+      }
+      infl = created.id;
+      influencer = created;
+      setContactList(prev => [...prev, created]);
+    }
+
     // COD: the cash isn't collected until delivery, so it starts unpaid —
     // unlike UPI/prepaid, which is treated as paid in full at order time.
     const hasUnpricedItem = zeroPriceItems.length > 0;
@@ -328,14 +356,51 @@ export default function QuickOrder() {
     }
 
     dispatch({ type: 'ADD_SALES_ORDER', payload: order });
+
+    // Cash paid to the influencer for this send → a marketing expense linked
+    // to them (same shape Quick Bill uses for "Influencer (cash)"), and added
+    // to their fee in Marketing. The product cost itself is NOT written as an
+    // expense: it's worked out from the boxes sent, so it isn't counted twice.
+    let cashNote = '';
+    if (isPromo && promoCash > 0) {
+      const who = influencer ? `${influencer.name}${influencer.handle ? ` (${influencer.handle})` : ''}` : 'Influencer';
+      const { error: expErr } = await dbService.createExpense({
+        category: 'advertising',
+        subcategory: 'Influencer (cash)',
+        description: `Collab payment: ${who} — ${order.order_number}`,
+        vendorName: influencer?.name || null,
+        amount: promoCash,
+        gstAmount: 0,
+        totalAmount: promoCash,
+        paymentMethod: promoIn.payMethod || 'UPI',
+        paymentStatus: 'paid',
+        paymentDate: orderDate,
+        billDate: orderDate,
+        expenseScope: 'ops',
+        marketingContactId: influencer?.id || null,
+      });
+      if (expErr) {
+        showToast(`Order saved, but the ₹${promoCash} payment wasn't recorded. Add it in Quick Bill.`, 'error');
+      } else {
+        cashNote = ` · ₹${promoCash} added to marketing expenses`;
+        if (influencer) {
+          const fee = Math.round(((parseFloat(influencer.fee) || 0) + promoCash) * 100) / 100;
+          const compensationType = influencer.compensationType === 'barter' ? 'mixed' : (influencer.compensationType || 'mixed');
+          await dbService.updateMarketingContact({ ...influencer, fee, compensationType });
+          setContactList(prev => prev.map(c => (c.id === influencer.id ? { ...c, fee, compensationType } : c)));
+        }
+      }
+    }
+
     setOrderSource('');
     setInfluencerId(null);
+    setPromo(EMPTY_PROMO);
     setCustomSourceMode(false);
     setCustomSourceInput('');
     // createSalesOrder's return doesn't carry phone (that's only joined in
     // getSalesOrders) — attach it here so the label preview has it.
     setJustSaved({ ...order, phone: fields.phone });
-    showToast(`Order ${order.order_number} created for ${fields.name}`, 'success');
+    showToast(`Order ${order.order_number} created for ${fields.name}${cashNote}`, 'success');
     resetForm();
   };
 
@@ -469,7 +534,7 @@ export default function QuickOrder() {
                       type="button"
                       onClick={() => {
                         setOrderSource(opt.value);
-                        if (opt.value === 'promotion' && contactList.length > 0) {
+                        if (opt.value === 'promotion') {
                           setPopupPromo(true);
                         } else {
                           handleSave({ source: opt.value, influencerId: '' });
@@ -484,28 +549,92 @@ export default function QuickOrder() {
               </>
             ) : (
               <>
-                <h3 className="text-base font-semibold text-gray-900">Which influencer is this for?</h3>
-                <p className="text-xs text-gray-500 mt-0.5 mb-1">This is a free send: no invoice, no GST, not counted as a sale.</p>
-                <p className="text-xs text-gray-500 mb-3">The product cost is added to this person&apos;s marketing cost automatically.</p>
-                <div className="grid grid-cols-1 gap-2 max-h-64 overflow-y-auto">
+                <h3 className="text-base font-semibold text-gray-900">Who is this collab for?</h3>
+                <p className="text-xs text-gray-500 mt-0.5 mb-1">Free send: no invoice, no GST, not counted as a sale.</p>
+                <p className="text-xs text-gray-500 mb-3">The product cost counts as this person&apos;s marketing cost automatically.</p>
+                <div className="grid grid-cols-1 gap-2 max-h-56 overflow-y-auto">
                   {contactList.map(c => (
                     <button
                       key={c.id}
                       type="button"
-                      onClick={() => { setInfluencerId(c.id); handleSave({ source: 'promotion', influencerId: c.id }); }}
-                      className="px-3 py-3 rounded-xl border border-gray-300 text-sm font-medium text-gray-700 text-left hover:border-teal-500 hover:bg-teal-50"
+                      onClick={() => setPromo(p => ({ ...p, pick: c.id }))}
+                      className={`px-3 py-2.5 rounded-xl border text-sm font-medium text-left ${String(promo.pick) === String(c.id) ? 'border-teal-500 bg-teal-50 text-teal-800' : 'border-gray-300 text-gray-700'}`}
                     >
                       {c.name} <span className="text-xs text-gray-400">{c.platform}{c.handle ? ` · ${c.handle}` : ''}</span>
                     </button>
                   ))}
                   <button
                     type="button"
-                    onClick={() => { setInfluencerId(''); handleSave({ source: 'promotion', influencerId: '' }); }}
-                    className="px-3 py-3 rounded-xl border border-dashed border-gray-300 text-sm text-gray-600"
+                    onClick={() => setPromo(p => ({ ...p, pick: 'new' }))}
+                    className={`px-3 py-2.5 rounded-xl border text-sm font-medium text-left ${promo.pick === 'new' ? 'border-teal-500 bg-teal-50 text-teal-800' : 'border-gray-300 text-teal-700'}`}
+                  >
+                    + New influencer
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPromo(p => ({ ...p, pick: 'none', cash: '' }))}
+                    className={`px-3 py-2.5 rounded-xl border border-dashed text-sm text-left ${promo.pick === 'none' ? 'border-teal-500 bg-teal-50 text-teal-800' : 'border-gray-300 text-gray-600'}`}
                   >
                     Not for an influencer
                   </button>
                 </div>
+
+                {promo.pick === 'new' && (
+                  <div className="grid grid-cols-2 gap-2 mt-3">
+                    <input
+                      type="text"
+                      value={promo.name}
+                      onChange={e => setPromo(p => ({ ...p, name: e.target.value }))}
+                      placeholder="Influencer name"
+                      className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                    />
+                    <input
+                      type="text"
+                      value={promo.handle}
+                      onChange={e => setPromo(p => ({ ...p, handle: e.target.value }))}
+                      placeholder="Instagram ID, e.g. @name"
+                      className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                    />
+                  </div>
+                )}
+
+                {promo.pick && promo.pick !== 'none' && (
+                  <div className="mt-3">
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">Cash paid to them for this (optional)</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="number"
+                        min="0"
+                        inputMode="decimal"
+                        value={promo.cash}
+                        onChange={e => setPromo(p => ({ ...p, cash: e.target.value }))}
+                        placeholder="₹0 if product only"
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                      />
+                      <select
+                        value={promo.payMethod}
+                        onChange={e => setPromo(p => ({ ...p, payMethod: e.target.value }))}
+                        className="px-2 py-2 border border-gray-300 rounded-lg text-sm"
+                      >
+                        {['UPI', 'Cash', 'Bank Transfer'].map(m => <option key={m}>{m}</option>)}
+                      </select>
+                    </div>
+                    <p className="text-[11px] text-gray-400 mt-1">Recorded as a marketing expense and added to their spend in Marketing.</p>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  disabled={!promo.pick || (promo.pick === 'new' && !promo.name.trim()) || saving}
+                  onClick={() => {
+                    const influencerChoice = promo.pick === 'none' ? '' : promo.pick;
+                    setInfluencerId(influencerChoice);
+                    handleSave({ source: 'promotion', influencerId: influencerChoice, promo });
+                  }}
+                  className="w-full mt-3 px-4 py-3 bg-teal-600 text-white rounded-xl font-semibold disabled:opacity-40"
+                >
+                  Save free send
+                </button>
               </>
             )}
             <button
