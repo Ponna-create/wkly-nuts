@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { inferState, parseAddress, addressWithState } from '../utils/addressParser';
+import { stockIdsForLine } from '../utils/batchRecipe';
 
 // Supabase configuration - these will be set as environment variables
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
@@ -4072,15 +4073,16 @@ const _realDbService = {
   // ==========================================
 
   // Use the ingredients + packaging of a run (called when the batch is saved).
-  // Recipe names are resolved exactly, then through Recipe Mapping aliases.
-  // Nothing is touched unless every matched ingredient has enough stock.
+  // Recipe lines linked to a stock item (or "any grade" of a product) use
+  // that link; old unlinked lines fall back to the same spelling, then
+  // Recipe Mapping (stockIdsForLine). Nothing is touched unless every matched
+  // ingredient has enough stock.
   async startProductionRun(run, opts = {}) {
     if (!isSupabaseAvailable()) return { ok: false, error: 'Supabase not configured' };
     if (run.stock_deducted) return { ok: true, alreadyDone: true };
 
-    const norm = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     const [{ data: ingredients }, aliasRes] = await Promise.all([
-      supabase.from('ingredients').select('id, name, unit'),
+      supabase.from('ingredients').select('id, name, unit, product, grade'),
       this.getIngredientAliases(),
     ]);
     const aliases = aliasRes.data || [];
@@ -4095,8 +4097,7 @@ const _realDbService = {
         ? (parseFloat(item.quantity_grams) || 0) / 1000
         : (parseFloat(item.quantity) || 0);
       if (!(kg > 0)) continue;
-      let ids = (ingredients || []).filter(i => norm(i.name) === norm(name)).map(i => i.id);
-      if (ids.length === 0) ids = aliases.filter(a => norm(a.alias_name) === norm(name)).map(a => a.ingredient_id);
+      const ids = stockIdsForLine(item, ingredients, aliases);
       if (ids.length === 0) { unmatched.push(name); continue; }
       plan.push({ name, ids, kg });
     }
@@ -4163,7 +4164,11 @@ const _realDbService = {
         const pkgName = String(pkg.material_name || pkg.name || '').trim();
         const qty = parseFloat(pkg.quantity) || 0;
         if (!pkgName || qty <= 0) continue;
-        const { data: mats } = await supabase.from('packaging_materials').select('id, name, current_stock, cost_per_unit').ilike('name', pkgName).limit(1);
+        // linked packaging item first; old unlinked lines by name
+        const matQuery = supabase.from('packaging_materials').select('id, name, current_stock, cost_per_unit');
+        const { data: mats } = pkg.material_id
+          ? await matQuery.eq('id', pkg.material_id).limit(1)
+          : await matQuery.ilike('name', pkgName).limit(1);
         const mat = mats && mats[0];
         if (!mat) { packagingErrors.push(`${pkgName}: not in Packaging`); continue; }
         await this.createPackagingTransaction({

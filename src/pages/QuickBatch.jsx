@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Check, AlertTriangle, Loader2, PackageCheck } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
-import { buildRunRecipe, shelfLifeFor, ddmmyy, addDays } from '../utils/batchRecipe';
+import { buildRunRecipe, shelfLifeFor, ddmmyy, addDays, stockIdsForLine } from '../utils/batchRecipe';
 import { formatDate } from '../utils/dateFormat';
 
 // Batch in two taps, over one or several days:
@@ -11,7 +11,6 @@ import { formatDate } from '../utils/dateFormat';
 // Open batches are listed first so she always sees what is still waiting to be finished.
 
 const todayStr = () => new Date().toISOString().split('T')[0];
-const norm = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const num = (v) => parseFloat(v) || 0;
 const kgText = (v) => `${Math.round(v * 100) / 100} kg`;
 
@@ -100,11 +99,10 @@ export default function QuickBatch() {
     return same === 0 ? base : `${base}-${same + 1}`;
   }, [skuCode, madeOn, isSeedCycle, phase, runs]);
 
-  // stock check, using the same name -> mapped ingredient rules the save uses
+  // stock check, using the same line -> stock item rule the save uses
   const stockCheck = useMemo(() => recipe.ingredients.map(item => {
     const need = num(item.quantity_grams) / 1000;
-    let ids = ingredients.filter(i => norm(i.name) === norm(item.ingredient_name)).map(i => i.id);
-    if (!ids.length) ids = aliases.filter(a => norm(a.alias_name) === norm(item.ingredient_name)).map(a => a.ingredient_id);
+    const ids = stockIdsForLine(item, ingredients, aliases);
     if (!ids.length) return { name: item.ingredient_name, need, have: 0, status: 'unmapped' };
     const have = ingredients.filter(i => ids.includes(i.id))
       .reduce((s, i) => s + (i.ingredient_batches || []).filter(b => b.status === 'active').reduce((t, b) => t + num(b.quantity_remaining), 0), 0);
