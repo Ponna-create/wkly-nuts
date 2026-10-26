@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, ChevronDown, ChevronRight, Package, AlertCircle, Search, X, Edit2, Check, RefreshCw, Warehouse, Boxes, Link2 } from 'lucide-react';
+import { Plus, ChevronDown, ChevronRight, Package, AlertCircle, Search, X, Edit2, Check, RefreshCw, Warehouse, Boxes } from 'lucide-react';
 import { dbService } from '../services/supabase';
 import { useApp } from '../context/AppContext';
-import IngredientAliasMapping from '../components/IngredientAliasMapping';
 
 import { formatDate as formatDateShared } from '../utils/dateFormat';
 const formatDate = (date) => {
@@ -228,11 +227,6 @@ export default function IngredientInventory() {
           className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium flex-1 transition-all ${activeTab === 'finished' ? 'bg-teal-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}>
           <Boxes className="w-4 h-4" /> Finished Goods
         </button>
-        <button onClick={() => setActiveTab('mapping')}
-          className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium flex-1 transition-all ${activeTab === 'mapping' ? 'bg-purple-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}
-          title="Map generic recipe ingredient names to specific graded stock, for accurate live costing">
-          <Link2 className="w-4 h-4" /> Recipe Mapping
-        </button>
       </div>
 
       {/* Summary tiles */}
@@ -260,7 +254,7 @@ export default function IngredientInventory() {
       </div>
 
       {/* Search */}
-      {activeTab !== 'mapping' && (
+      {(
         <div className="relative max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
           <input type="text" placeholder={activeTab === 'raw' ? 'Search ingredients...' : 'Search finished goods...'}
@@ -269,21 +263,6 @@ export default function IngredientInventory() {
         </div>
       )}
 
-      {/* Recipe Mapping tab */}
-      {activeTab === 'mapping' && (
-        <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-          <p className="text-sm text-gray-500 mb-4">
-            Recipes reference ingredients by a generic name (e.g. "Almonds"), but stock is tracked by specific graded ingredient (e.g. "Almonds Premium", "Almonds Regular"). Map each generic name to whichever graded ingredient(s) it actually means — live cost blends whichever ones currently have stock.
-          </p>
-          <IngredientAliasMapping
-            skus={state.skus || []}
-            ingredients={ingredients}
-            aliases={aliases}
-            onSaved={loadAliases}
-            showToast={showToast}
-          />
-        </div>
-      )}
 
       {/* Finished Goods tab */}
       {activeTab === 'finished' && (

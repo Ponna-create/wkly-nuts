@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Edit, Trash2, Calculator, X, Package, ChevronLeft, ChevronRight, Check, Printer, FlaskConical, IndianRupee } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
+import StockLinkSelect, { PackagingLinkSelect, stockLinkValue, stockLinkFields, suggestStockLink } from '../components/StockLinkSelect';
 import logo from '../assets/wkly-nuts-logo.png';
 import { formatDate } from '../utils/dateFormat';
 import { liveRawMaterialCost } from '../utils/skuCost';
@@ -187,6 +188,7 @@ export default function SKUManagement() {
   // Load the packaging master list once, so packaging cost can auto-fill (still editable)
   useEffect(() => {
     dbService.getPackagingMaterials().then(({ data }) => setAvailablePackagingMaterials(data || []));
+    dbService.getIngredients().then(({ data }) => setStockItems(data || []));
   }, []);
 
   // Total packaging cost for a product: sum of qty x price-per-unit across its materials
@@ -312,6 +314,22 @@ export default function SKUManagement() {
     setShowForm(false);
   };
 
+  // Stock items (product + grade) recipe lines link to, so batches take the right stock.
+  const [stockItems, setStockItems] = useState([]);
+  const pickVendorIngredient = (ingredientId) => {
+    const ing = getIngredientsByVendor(formData.selectedVendorId).find(i => String(i.id) === String(ingredientId));
+    const vendorName = vendors.find(v => v.id == formData.selectedVendorId)?.name || '';
+    setCurrentRecipeItem({ ...currentRecipeItem, ingredientId, stockLink: suggestStockLink(ing?.name, vendorName, stockItems) });
+  };
+  const relinkRecipeItem = (itemId, value) => setFormData(f => ({
+    ...f,
+    recipes: { ...f.recipes, [currentDay]: f.recipes[currentDay].map(it => it.id === itemId ? { ...it, ...stockLinkFields(value, stockItems) } : it) },
+  }));
+  const relinkSingleUnitIngredient = (itemId, value) => setFormData(f => ({
+    ...f,
+    singleUnitIngredients: f.singleUnitIngredients.map(it => it.id === itemId ? { ...it, ...stockLinkFields(value, stockItems) } : it),
+  }));
+
   const handleAddRecipeItem = () => {
     if (!currentRecipeItem.ingredientId || !currentRecipeItem.gramsPerSachet) {
       showToast('Please select the ingredient and enter the grams', 'error');
@@ -320,6 +338,10 @@ export default function SKUManagement() {
 
     if (!formData.selectedVendorId) {
       showToast('Please select a vendor first', 'error');
+      return;
+    }
+    if (!currentRecipeItem.stockLink) {
+      showToast('Choose which stock item this uses (Uses stock item)', 'error');
       return;
     }
 
@@ -346,6 +368,7 @@ export default function SKUManagement() {
       vendorName: ingredient.vendorName,
       pricePerGram: ingredient.pricePerUnit / (ingredient.unit === 'kg' ? 1000 : 1),
       unit: ingredient.unit,
+      ...stockLinkFields(currentRecipeItem.stockLink, stockItems),
     };
 
     setFormData({
@@ -396,6 +419,10 @@ export default function SKUManagement() {
       showToast('Please select a vendor first', 'error');
       return;
     }
+    if (!currentRecipeItem.stockLink) {
+      showToast('Choose which stock item this uses (Uses stock item)', 'error');
+      return;
+    }
 
     const vendorIngredients = getIngredientsByVendor(formData.selectedVendorId);
     const ingredient = vendorIngredients.find((ing) => ing.id == currentRecipeItem.ingredientId);
@@ -420,6 +447,7 @@ export default function SKUManagement() {
       vendorName: ingredient.vendorName,
       pricePerGram: ingredient.pricePerUnit / (ingredient.unit === 'kg' ? 1000 : 1),
       unit: ingredient.unit,
+      ...stockLinkFields(currentRecipeItem.stockLink, stockItems),
     };
 
     setFormData({
@@ -1477,6 +1505,8 @@ export default function SKUManagement() {
                               className="w-16 border rounded-lg px-2 py-1.5 text-sm" placeholder="Qty" min="0" title="Quantity" />
                             <input type="number" value={pkg.price_per_unit || ''} onChange={e => { const u = [...formData.packagingMaterials]; u[idx] = { ...u[idx], price_per_unit: e.target.value }; setFormData(f => ({ ...f, packagingMaterials: u })); }}
                               className="w-20 border rounded-lg px-2 py-1.5 text-sm" placeholder="₹/unit" min="0" step="0.01" title="Price per unit" />
+                            <PackagingLinkSelect pkg={pkg} materials={availablePackagingMaterials} className="w-36 border rounded-lg px-2 py-1.5 text-xs"
+                              onPick={(patch) => setFormData(f => ({ ...f, packagingMaterials: f.packagingMaterials.map((p, i) => i === idx ? { ...p, ...patch } : p) }))} />
                             <button type="button" onClick={() => setFormData(f => ({ ...f, packagingMaterials: f.packagingMaterials.filter((_, i) => i !== idx) }))}
                               className="p-1 text-red-400 hover:text-red-600"><X className="w-4 h-4" /></button>
                           </div>
@@ -1577,6 +1607,9 @@ export default function SKUManagement() {
                             <span className="text-sm text-gray-600 ml-3">
                               {item.gramsPerUnit}g ({item.percentage}%)
                             </span>
+                            <StockLinkSelect value={stockLinkValue(item)} ingredients={stockItems}
+                              onChange={(v) => relinkSingleUnitIngredient(item.id, v)}
+                              className="mt-1 block w-full max-w-xs border rounded-md px-2 py-1 text-xs" />
                           </div>
                           <button
                             onClick={() => handleRemoveSingleUnitIngredient(item.id)}
@@ -1623,7 +1656,7 @@ export default function SKUManagement() {
                         <div className="relative" style={{ zIndex: 99999, isolation: 'isolate' }}>
                           <select
                             value={currentRecipeItem.ingredientId}
-                            onChange={(e) => setCurrentRecipeItem({ ...currentRecipeItem, ingredientId: e.target.value })}
+                            onChange={(e) => pickVendorIngredient(e.target.value)}
                             onClick={(e) => e.stopPropagation()}
                             onMouseDown={(e) => e.stopPropagation()}
                             className="input-field"
@@ -1655,6 +1688,12 @@ export default function SKUManagement() {
                           placeholder="e.g., 500"
                         />
                       </div>
+                    </div>
+                    <div className="mb-3">
+                      <label className="label text-sm">Uses stock item</label>
+                      <StockLinkSelect value={currentRecipeItem.stockLink || ''} ingredients={stockItems} className="input-field"
+                        onChange={(v) => setCurrentRecipeItem({ ...currentRecipeItem, stockLink: v })} />
+                      <p className="text-[11px] text-gray-500 mt-1">What a batch takes out of stock for this line. Pick a grade, or "any grade".</p>
                     </div>
                     <button onClick={handleAddSingleUnitIngredient} className="btn-primary w-full flex items-center justify-center gap-2">
                       <Plus className="w-5 h-5" />
@@ -1718,6 +1757,8 @@ export default function SKUManagement() {
                                 className="w-16 border rounded-lg px-2 py-1.5 text-sm" placeholder="Qty" min="0" title="Quantity" />
                               <input type="number" value={pkg.price_per_unit || ''} onChange={e => { const u = [...formData.packagingMaterials]; u[idx] = { ...u[idx], price_per_unit: e.target.value }; setFormData(f => ({ ...f, packagingMaterials: u })); }}
                                 className="w-20 border rounded-lg px-2 py-1.5 text-sm" placeholder="₹/unit" min="0" step="0.01" title="Price per unit" />
+                              <PackagingLinkSelect pkg={pkg} materials={availablePackagingMaterials} className="w-36 border rounded-lg px-2 py-1.5 text-xs"
+                                onPick={(patch) => setFormData(f => ({ ...f, packagingMaterials: f.packagingMaterials.map((p, i) => i === idx ? { ...p, ...patch } : p) }))} />
                               <button type="button" onClick={() => setFormData(f => ({ ...f, packagingMaterials: f.packagingMaterials.filter((_, i) => i !== idx) }))}
                                 className="p-1 text-red-400 hover:text-red-600"><X className="w-4 h-4" /></button>
                             </div>
@@ -1859,6 +1900,9 @@ export default function SKUManagement() {
                           <span className="text-sm text-gray-600 ml-3">
                             {item.gramsPerSachet}g ({item.percentage}%)
                           </span>
+                          <StockLinkSelect value={stockLinkValue(item)} ingredients={stockItems}
+                            onChange={(v) => relinkRecipeItem(item.id, v)}
+                            className="mt-1 block w-full max-w-xs border rounded-md px-2 py-1 text-xs" />
                         </div>
                         <button
                           onClick={() => handleRemoveRecipeItem(item.id)}
@@ -1891,7 +1935,7 @@ export default function SKUManagement() {
                       <div className="relative" style={{ zIndex: 99999, isolation: 'isolate' }}>
                       <select
                         value={currentRecipeItem.ingredientId}
-                        onChange={(e) => setCurrentRecipeItem({ ...currentRecipeItem, ingredientId: e.target.value })}
+                        onChange={(e) => pickVendorIngredient(e.target.value)}
                           onClick={(e) => e.stopPropagation()}
                           onMouseDown={(e) => e.stopPropagation()}
                         className="input-field"
@@ -1924,6 +1968,12 @@ export default function SKUManagement() {
                       />
                     </div>
                   </div>
+                    <div className="mb-3">
+                      <label className="label text-sm">Uses stock item</label>
+                      <StockLinkSelect value={currentRecipeItem.stockLink || ''} ingredients={stockItems} className="input-field"
+                        onChange={(v) => setCurrentRecipeItem({ ...currentRecipeItem, stockLink: v })} />
+                      <p className="text-[11px] text-gray-500 mt-1">What a batch takes out of stock for this line. Pick a grade, or "any grade".</p>
+                    </div>
                   <button onClick={handleAddRecipeItem} className="btn-primary w-full flex items-center justify-center gap-2">
                     <Plus className="w-5 h-5" />
                     Add to {currentDay} Recipe
@@ -1967,6 +2017,8 @@ export default function SKUManagement() {
                         <option value="sheets">sheets</option>
                         <option value="meters">meters</option>
                       </select>
+                      <PackagingLinkSelect pkg={pkg} materials={availablePackagingMaterials} className="w-36 border rounded-lg px-2 py-1.5 text-xs"
+                        onPick={(patch) => setFormData(f => ({ ...f, packagingMaterials: f.packagingMaterials.map((p, i) => i === idx ? { ...p, ...patch } : p) }))} />
                       <button type="button" onClick={() => setFormData(f => ({ ...f, packagingMaterials: f.packagingMaterials.filter((_, i) => i !== idx) }))}
                         className="p-1 text-red-400 hover:text-red-600"><X className="w-4 h-4" /></button>
                     </div>
