@@ -31,6 +31,24 @@ export async function extractPdfLines(file) {
 }
 
 const toNum = (s) => parseFloat(String(s).replace(/,/g, '')) || 0;
+
+// Stock is kept in kg (ingredients) or pieces (packaging). A bill line's
+// quantity is converted to that: grams -> kg; pieces/packs of a named weight
+// ("Almonds 500 g", 4 Pcs) -> kg; pieces with no weight stay pieces and are
+// flagged so the quantity gets checked rather than saved as kg.
+function normaliseQty(name, qty, unitRaw) {
+  const unit = String(unitRaw || '').toLowerCase();
+  if (/^(kg|kgs)$/.test(unit)) return { name, qty, unit: 'Kg' };
+  if (/^(gm|gms|g)$/.test(unit)) return { name, qty: Math.round((qty / 1000) * 1000) / 1000, unit: 'Kg' };
+  if (/^(ltr|litre)$/.test(unit)) return { name, qty, unit: 'Ltr' };
+  const pack = name.match(/\s*-?\s*(\d+(?:\.\d+)?)\s*(kg|kgs|gm|gms|g)\s*$/i);
+  if (pack) {
+    const n = toNum(pack[1]);
+    const packKg = pack[2].toLowerCase().startsWith('k') ? n : n / 1000;
+    return { name: name.slice(0, pack.index).trim(), qty: Math.round(qty * packKg * 1000) / 1000, unit: 'Kg' };
+  }
+  return { name, qty, unit: 'Pcs', qtyNote: `${qty} ${unitRaw} on the bill: enter the weight in kg if this is an ingredient` };
+}
 const TITLES = /^(estimate|invoice|tax invoice|bill|proforma invoice|bill of supply|purchase|cash memo|quotation)$/i;
 
 function toIsoDate(s) {
@@ -99,9 +117,7 @@ export function parseBillLines(lines) {
   let m;
   while ((m = rowRe.exec(body)) !== null) {
     out.items.push({
-      name: m[2].trim(),
-      qty: toNum(m[3]),
-      unit: m[4],
+      ...normaliseQty(m[2].trim(), toNum(m[3]), m[4]),
       rate: toNum(m[5]),
       amount: toNum(m[6]),
     });

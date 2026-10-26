@@ -145,6 +145,7 @@ export default function QuickBill() {
           match: m.match,
           product: m.product || '',
           billName: it.name,
+          qtyNote: it.qtyNote || '',
         };
       });
       setLines(mapped);
@@ -552,6 +553,7 @@ export default function QuickBill() {
                     className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-[13px]" placeholder="New item name" />
                 )}
                 {flag && <p className="text-[11px] text-amber-700 pl-0.5">{flag}</p>}
+                {l.qtyNote && <p className="text-[11px] text-amber-700 pl-0.5">{l.qtyNote}</p>}
               </div>
             );
           })}

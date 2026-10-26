@@ -2597,15 +2597,21 @@ const _realDbService = {
     try {
       const { data: batch, error: fetchErr } = await supabase
         .from('ingredient_batches')
-        .select('ingredient_id, quantity_remaining, waste_quantity')
+        .select('ingredient_id, quantity_initial, quantity_remaining, waste_quantity')
         .eq('id', batchId)
         .single();
       if (fetchErr) throw fetchErr;
 
+      const initial = parseFloat(batch.quantity_initial || 0);
       const newWaste = Math.max(0, parseFloat(wasteQuantity) || 0);
+      if (newWaste > initial) throw new Error(`Waste ${newWaste} is more than the ${initial} bought in this lot (check kg vs grams)`);
       const oldWaste = parseFloat(batch.waste_quantity || 0);
       const delta = newWaste - oldWaste;
-      const newRemaining = Math.max(0, parseFloat(batch.quantity_remaining || 0) - delta);
+      // Remaining can never go above what's left after waste: a mistyped big
+      // waste clamped remaining to 0, and correcting it then added the whole
+      // difference back (a 3 kg almond lot showed 199.8 kg remaining).
+      const newRemaining = Math.min(Math.max(0, initial - newWaste),
+        Math.max(0, parseFloat(batch.quantity_remaining || 0) - delta));
 
       const { data, error } = await supabase
         .from('ingredient_batches')
