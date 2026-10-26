@@ -23,6 +23,11 @@ export function costPerBoxMap(runs, skus) {
 // What one influencer has been sent, from the orders linked to them in Quick Order.
 export function productsSentTo(contactId, orders, skus, costMap) {
   const mine = (orders || []).filter(o => String(o.influencer_id || '') === String(contactId) && o.status !== 'cancelled');
+  return productCostOfOrders(mine, skus, costMap);
+}
+
+// Units, cost (batch cost per box) and retail value of a set of free-send orders.
+export function productCostOfOrders(mine, skus, costMap) {
   let units = 0;
   let cost = 0;
   let retail = 0;
