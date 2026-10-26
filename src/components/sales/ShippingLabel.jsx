@@ -43,7 +43,8 @@ export function labelData(order, overrides = {}) {
     weight,
     dimensions: overrides.dimensions ?? (hasMonthly ? '26.7 x 20.3 x 21.6 cm' : '21.6 x 14.0 x 10.2 cm'),
     shipDate: overrides.shipDate ?? (order.dispatch_date || order.order_date || ''),
-    courier: overrides.courier ?? (order.courier_name || 'ST Courier'),
+    // Only the courier actually set on the order — never a guessed default.
+    courier: overrides.courier ?? (order.courier_name || ''),
     contents,
     isCod: order.payment_method === 'cod',
     total: Number(order.total_amount || 0),
@@ -113,7 +114,7 @@ export default function ShippingLabel({ order, settings, overrides, paper = '4x6
       show.weight && ['WEIGHT:', `${d.weight} KG`],
       show.dimensions && ['DIMENSIONS:', d.dimensions],
       show.shipDate && ['SHIP DATE:', d.shipDate],
-      show.courier && ['COURIER:', d.courier],
+      show.courier && d.courier && ['COURIER:', d.courier],
     ].filter(Boolean);
     return (
       <div style={box}>
