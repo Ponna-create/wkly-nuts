@@ -2696,6 +2696,19 @@ const _realDbService = {
     }
   },
 
+  // Shipping-label QR codes hold just the order number (short = coarse QR =
+  // scans reliably off a thermal label); resolve it to the full order.
+  async getSalesOrderByNumber(orderNumber) {
+    if (!isSupabaseAvailable()) return { data: null, error: null };
+    const { data, error } = await supabase
+      .from('sales_orders')
+      .select('id')
+      .eq('order_number', orderNumber)
+      .maybeSingle();
+    if (error || !data) return { data: null, error: error || new Error('Order not found') };
+    return this.getSalesOrderById(data.id);
+  },
+
   async getSalesOrderById(orderId) {
     if (!isSupabaseAvailable()) return { data: null, error: null };
 

@@ -4,6 +4,7 @@ import { X, Printer, Edit3, ChevronDown } from 'lucide-react';
 import { sanitizeHtml } from '../../utils/sanitize';
 import { getBusinessInfo } from '../../utils/settings';
 import { dbService } from '../../services/supabase';
+import { LABEL_SIZES, getSavedLabelSize, saveLabelSize, labelQrValue, printLabels } from '../../utils/labelPrint';
 
 // Box presets
 const BOX_PRESETS = [
@@ -14,7 +15,8 @@ const BOX_PRESETS = [
 
 export default function LabelPrinter({ order, onClose, labelSize: initialSize = '4x6', onPrinted }) {
   const printRef = useRef(null);
-  const [labelSize, setLabelSize] = useState(initialSize);
+  const [labelSize, setLabelSizeState] = useState(() => getSavedLabelSize(initialSize === 'a4' ? 'a4' : '4x5'));
+  const setLabelSize = (size) => { setLabelSizeState(size); saveLabelSize(size); };
   const [editing, setEditing] = useState(false);
 
   const isA4 = labelSize === 'a4';
@@ -55,26 +57,11 @@ export default function LabelPrinter({ order, onClose, labelSize: initialSize = 
   const dimensions = boxType === 2 ? customDimensions : BOX_PRESETS[boxType].dimensions;
 
   const handlePrint = () => {
-    const printContent = printRef.current;
-    const printWindow = window.open('', '_blank');
-    const pageWidth = isA4 ? '210mm' : '152mm';
-    const pageHeight = isA4 ? '297mm' : '102mm';
-
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Shipping Label - ${order.order_number}</title>
-          <style>
-            @page { size: ${pageWidth} ${pageHeight}; margin: 0; }
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: Arial, Helvetica, sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          </style>
-        </head>
-        <body>${sanitizeHtml(printContent.innerHTML)}</body>
-      </html>
-    `);
-    printWindow.document.close();
-    setTimeout(() => { printWindow.print(); printWindow.close(); }, 400);
+    printLabels({
+      title: `Shipping Label - ${order.order_number}`,
+      html: `<div class="label-page" style="padding:${isA4 ? '15mm' : '3mm'}">${sanitizeHtml(printRef.current.outerHTML)}</div>`,
+      size: labelSize,
+    });
     // Stamp so the Sales Orders list can show this order's label as printed.
     if (order.id) {
       dbService.updateSalesOrder({ id: order.id, label_printed_at: new Date().toISOString() })
@@ -93,8 +80,9 @@ export default function LabelPrinter({ order, onClose, labelSize: initialSize = 
           <h2 className="text-xl font-bold text-gray-900">Shipping Label</h2>
           <div className="flex items-center gap-3">
             <div className="flex rounded-lg border border-gray-300 overflow-hidden">
-              <button onClick={() => setLabelSize('4x6')} className={`px-3 py-1.5 text-sm font-medium transition ${labelSize === '4x6' ? 'bg-teal-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>4x6 Thermal</button>
-              <button onClick={() => setLabelSize('a4')} className={`px-3 py-1.5 text-sm font-medium transition ${labelSize === 'a4' ? 'bg-teal-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>A4 Paper</button>
+              {Object.entries(LABEL_SIZES).map(([key, size]) => (
+                <button key={key} onClick={() => setLabelSize(key)} className={`px-3 py-1.5 text-sm font-medium transition ${labelSize === key ? 'bg-teal-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>{key === 'a4' ? 'A4 Paper' : `${size.name} Thermal`}</button>
+              ))}
             </div>
             <button onClick={() => setEditing(!editing)} className={`flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-medium transition ${editing ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
               <Edit3 className="w-4 h-4" />
@@ -163,7 +151,7 @@ export default function LabelPrinter({ order, onClose, labelSize: initialSize = 
 
         {/* Label Preview */}
         <div className="p-6 bg-blue-50 flex justify-center">
-          <div ref={printRef} style={{ width: isA4 ? '540px' : '380px', fontFamily: 'Arial, Helvetica, sans-serif' }}>
+          <div ref={printRef} style={{ width: isA4 ? '540px' : '360px', fontFamily: 'Arial, Helvetica, sans-serif' }}>
             <div style={{ border: '3px solid #000', borderRadius: `${4*s}px`, background: '#fff', overflow: 'hidden' }}>
 
               {/* === TOP ROW: SHIP TO + FROM === */}
@@ -229,12 +217,9 @@ export default function LabelPrinter({ order, onClose, labelSize: initialSize = 
 
               {/* === BOTTOM: QR Code === */}
               <div style={{ padding: `${10*s}px`, display: 'flex', flexDirection: 'column', alignItems: 'center', background: '#fff' }}>
-                <QRCodeSVG
-                  value={order.id}
-                  size={isA4 ? 150 : 120} level="L" includeMargin={true}
-                />
-                <div style={{ fontSize: `${9*s}px`, color: '#555', marginTop: `${2*s}px`, letterSpacing: '1px', fontWeight: '500' }}>
-                  {trackingNumber || order.order_number}
+                <QRCodeSVG value={labelQrValue(order)} size={isA4 ? 150 : 120} level="M" includeMargin={true} />
+                <div style={{ fontSize: `${11*s}px`, color: '#000', marginTop: `${2*s}px`, letterSpacing: '1px', fontWeight: 'bold' }}>
+                  {order.order_number}
                 </div>
               </div>
 

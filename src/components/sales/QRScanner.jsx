@@ -44,8 +44,11 @@ export default function QRScanner({ onClose, onScanComplete }) {
       await html5QrCode.start(
         { facingMode: 'environment' },
         {
-          fps: 2,            // Reduced from 10 → 2 to avoid rapid-fire
-          qrbox: { width: 250, height: 250 },
+          // 10 fps so the camera locks on quickly; the 3-second cooldown in
+          // onScanSuccess (not a low frame rate) is what stops rapid-fire.
+          fps: 10,
+          // Scan box scales with the camera view instead of a fixed 250px.
+          qrbox: (w, h) => { const side = Math.floor(Math.min(w, h) * 0.7); return { width: side, height: side }; },
           aspectRatio: 1.0,
         },
         onScanSuccess,
@@ -78,26 +81,33 @@ export default function QRScanner({ onClose, onScanComplete }) {
     // ── GATE 2: Processing lock ──
     if (processingRef.current) return;
 
+    // Labels printed from now on hold just the order number ("SO-2026-00352").
+    // Older labels hold JSON or the order id — still accepted.
     let data;
-    try {
-      data = JSON.parse(decodedText);
-    } catch {
-      const trimmed = decodedText.trim();
-      if (trimmed.length >= 20 && !trimmed.includes(' ')) {
-        data = { id: trimmed, orderNumber: '' };
-      } else {
-        setError('Invalid QR code format');
-        return;
+    const trimmed = decodedText.trim();
+    if (/^[A-Z]{2,5}-\d{4}-\d+$/i.test(trimmed)) {
+      data = { id: '', orderNumber: trimmed.toUpperCase() };
+    } else {
+      try {
+        data = JSON.parse(trimmed);
+      } catch {
+        if (trimmed.length >= 20 && !trimmed.includes(' ')) {
+          data = { id: trimmed, orderNumber: '' };
+        } else {
+          setError('Invalid QR code format');
+          return;
+        }
       }
     }
 
-    if (!data.id) {
+    if (!data.id && !data.orderNumber) {
       setError('Invalid QR code - not a WKLY Nuts order');
       return;
     }
 
     // ── GATE 3: Client-side dedup ──
-    if (scannedIdsRef.current.has(data.id)) {
+    const scanKey = data.orderNumber || data.id;
+    if (scannedIdsRef.current.has(scanKey)) {
       setLastScan({ ...data, status: 'duplicate', message: 'Already scanned in this session' });
       lastScanTimeRef.current = now;
       return;
@@ -106,19 +116,22 @@ export default function QRScanner({ onClose, onScanComplete }) {
     // Lock everything
     processingRef.current = true;
     lastScanTimeRef.current = now;
-    scannedIdsRef.current.add(data.id);
+    scannedIdsRef.current.add(scanKey);
 
     try {
       // ── GATE 4: SERVER-SIDE CHECK — fetch order from DB ──
-      const { data: dbOrder, error: fetchError } = await dbService.getSalesOrderById(data.id);
+      const { data: dbOrder, error: fetchError } = data.id
+        ? await dbService.getSalesOrderById(data.id)
+        : await dbService.getSalesOrderByNumber(data.orderNumber);
 
       if (fetchError || !dbOrder) {
-        scannedIdsRef.current.delete(data.id);
+        scannedIdsRef.current.delete(scanKey);
         setLastScan({ ...data, status: 'error', message: 'Order not found in database' });
         showToast(`Order not found`, 'error');
         return;
       }
 
+      data.id = dbOrder.id;
       if (!data.orderNumber) data.orderNumber = dbOrder.order_number;
 
       // Check if already dispatched or beyond
@@ -139,7 +152,7 @@ export default function QRScanner({ onClose, onScanComplete }) {
       });
 
       if (updateError) {
-        scannedIdsRef.current.delete(data.id);
+        scannedIdsRef.current.delete(scanKey);
         setLastScan({ ...data, status: 'error', message: updateError.message });
         showToast(`Error updating ${data.orderNumber}`, 'error');
         return;
@@ -164,7 +177,7 @@ export default function QRScanner({ onClose, onScanComplete }) {
       }
 
     } catch (err) {
-      scannedIdsRef.current.delete(data.id);
+      scannedIdsRef.current.delete(scanKey);
       setLastScan({ ...data, status: 'error', message: err.message || 'Unknown error' });
       console.error('Scan processing error:', err);
     } finally {
