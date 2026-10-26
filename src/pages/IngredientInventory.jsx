@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, ChevronDown, ChevronRight, Package, AlertCircle, Search, X, Edit2, Check, RefreshCw, Warehouse, Boxes } from 'lucide-react';
+import { Plus, ChevronDown, ChevronRight, Package, AlertCircle, Search, X, Edit2, Check, RefreshCw, Warehouse, Boxes, ClipboardCheck } from 'lucide-react';
 import { dbService } from '../services/supabase';
+import StockCount from '../components/StockCount';
 import { useApp } from '../context/AppContext';
 
 import { formatDate as formatDateShared } from '../utils/dateFormat';
@@ -31,7 +32,7 @@ export default function IngredientInventory() {
   const [savingWaste, setSavingWaste] = useState(false);
 
   const [billFilter, setBillFilter] = useState('');
-  const [activeTab, setActiveTab] = useState('raw'); // 'raw' | 'finished'
+  const [activeTab, setActiveTab] = useState('raw'); // 'raw' | 'finished' | 'count'
   const [finishedGoods, setFinishedGoods] = useState([]);
   const [loadingFinished, setLoadingFinished] = useState(true);
   const [editingStock, setEditingStock] = useState(null); // { skuId, weekly, monthly, single }
@@ -227,6 +228,10 @@ export default function IngredientInventory() {
           className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium flex-1 transition-all ${activeTab === 'finished' ? 'bg-teal-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}>
           <Boxes className="w-4 h-4" /> Finished Goods
         </button>
+        <button onClick={() => setActiveTab('count')}
+          className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium flex-1 transition-all ${activeTab === 'count' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}>
+          <ClipboardCheck className="w-4 h-4" /> Stock count
+        </button>
       </div>
 
       {/* Summary tiles */}
@@ -254,7 +259,7 @@ export default function IngredientInventory() {
       </div>
 
       {/* Search */}
-      {(
+      {activeTab !== 'count' && (
         <div className="relative max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
           <input type="text" placeholder={activeTab === 'raw' ? 'Search ingredients...' : 'Search finished goods...'}
@@ -263,6 +268,12 @@ export default function IngredientInventory() {
         </div>
       )}
 
+
+      {/* Stock count tab */}
+      {activeTab === 'count' && (
+        <StockCount skus={state.skus || []} finishedGoods={finishedGoods} ingredients={ingredients}
+          onSaved={() => { loadIngredients(); loadFinished(); }} showToast={showToast} />
+      )}
 
       {/* Finished Goods tab */}
       {activeTab === 'finished' && (
