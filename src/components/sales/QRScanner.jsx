@@ -146,7 +146,8 @@ export default function QRScanner({ onClose, onScanComplete }) {
       }
 
       // ── SAFE TO MARK FULFILLED — update order ──
-      const { error: updateError } = await dbService.updateSalesOrder({
+      // Saving 'fulfilled' also takes the order's boxes out of stock, once.
+      const { error: updateError, stock } = await dbService.updateSalesOrder({
         id: data.id,
         status: 'fulfilled',
       });
@@ -163,17 +164,8 @@ export default function QRScanner({ onClose, onScanComplete }) {
       setScannedOrders(prev => [...prev, { ...data, scannedAt: new Date(), previousStatus: dbOrder.status, boxesSmall: 0, boxesBig: 0 }]);
       showToast(`✓ ${data.orderNumber} → Fulfilled!`, 'success');
 
-      // Deduct inventory (non-blocking, don't fail the scan)
-      try {
-        const orderItems = dbOrder.items || data.items || [];
-        if (orderItems.length > 0) {
-          const invResult = await dbService.deductInventoryForOrder({ id: data.id, items: orderItems });
-          if (invResult?.warnings?.length > 0) {
-            showToast(`Stock: ${invResult.warnings[0]}`, 'error');
-          }
-        }
-      } catch (invErr) {
-        console.warn('Inventory deduction warning:', invErr);
+      if (stock?.warnings?.length > 0) {
+        showToast(`Stock: ${stock.warnings[0]}`, 'error');
       }
 
     } catch (err) {

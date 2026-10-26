@@ -461,37 +461,8 @@ export default function InvoiceManagement() {
           dispatch({ type: 'UPDATE_INVOICE', payload: invoiceData });
         }
         
-        // Reduce inventory if status changed to 'paid' from another status
-        const wasNotPaid = editingInvoice.status !== 'paid';
-        const isNowPaid = formData.status === 'paid';
-        
-        if (wasNotPaid && isNowPaid && invoiceData.items && invoiceData.items.length > 0) {
-          console.log('📦 Reducing inventory stock (status changed to paid)...');
-          try {
-            for (const item of invoiceData.items) {
-              await dbService.updateInventoryStock(
-                item.skuId,
-                item.packType,
-                item.quantity,
-                'subtract'
-              );
-              console.log(`✅ Reduced ${item.quantity} ${item.packType} packs of ${item.skuName}`);
-            }
-            // Reload inventory to reflect changes
-            if (isSupabaseAvailable()) {
-              const inventoryResult = await dbService.getInventory();
-              if (!inventoryResult.error) {
-                dispatch({ type: 'SET_INVENTORY', payload: inventoryResult.data });
-              }
-            }
-            showToast('Invoice updated and inventory reduced', 'success');
-          } catch (error) {
-            console.error('Error reducing stock:', error);
-            showToast('Invoice updated but inventory update failed', 'warning');
-          }
-        } else {
-          showToast('Invoice updated successfully', 'success');
-        }
+        // Stock is never changed from invoices; it follows the order status.
+        showToast('Invoice updated successfully', 'success');
       } else {
         // Create new invoice - save to database first
         console.log('📝 Creating new invoice with data:', {
@@ -533,32 +504,6 @@ export default function InvoiceManagement() {
         }
       }
       
-      // Reduce inventory stock if status is 'paid'
-      if (formData.status === 'paid' && invoiceData.items && invoiceData.items.length > 0) {
-        console.log('📦 Reducing inventory stock for paid invoice...');
-        try {
-          for (const item of invoiceData.items) {
-            await dbService.updateInventoryStock(
-              item.skuId,
-              item.packType,
-              item.quantity,
-              'subtract'
-            );
-            console.log(`✅ Reduced ${item.quantity} ${item.packType} packs of ${item.skuName}`);
-          }
-          // Reload inventory to reflect changes
-          if (isSupabaseAvailable()) {
-            const inventoryResult = await dbService.getInventory();
-            if (!inventoryResult.error) {
-              dispatch({ type: 'SET_INVENTORY', payload: inventoryResult.data });
-            }
-          }
-          showToast('Inventory updated successfully', 'success');
-        } catch (error) {
-          console.error('Error reducing stock:', error);
-          showToast('Warning: Invoice created but inventory update failed', 'warning');
-        }
-      }
       
       resetForm();
     } catch (error) {
@@ -717,28 +662,7 @@ export default function InvoiceManagement() {
         updatedInvoice.invoice_number = currentInvoiceNumber;
       }
       
-      // Reduce stock only when invoice is marked as paid
-      if (invoice.items && invoice.items.length > 0) {
-        try {
-          for (const item of invoice.items) {
-            await dbService.updateInventoryStock(
-              item.skuId,
-              item.packType,
-              item.quantity,
-              'subtract'
-            );
-          }
-          
-          // Reload inventory to reflect changes
-          const inventoryRes = await dbService.getInventory();
-          if (inventoryRes.data) {
-            dispatch({ type: 'LOAD_INVENTORY', payload: inventoryRes.data });
-          }
-        } catch (error) {
-          console.error('Error reducing stock:', error);
-          showToast('Error reducing stock', 'error');
-        }
-      }
+      // Stock is never changed from invoices; it follows the order status.
     }
 
     // Save to database first (before updating local state) to ensure persistence

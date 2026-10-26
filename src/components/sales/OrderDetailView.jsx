@@ -91,33 +91,23 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
       updateData.actual_delivery_date = new Date().toISOString().split('T')[0];
     }
 
-    const { error } = await dbService.updateSalesOrder(updateData);
+    // Saving the status also moves finished-box stock (once): out at
+    // fulfilled-or-later, back on returned/cancelled if it had gone out.
+    const { error, stock } = await dbService.updateSalesOrder(updateData);
 
     if (error) {
       showToast('Error updating status', 'error');
     } else {
-      // Order returned (RTO) → put the packs back into finished-goods stock
+      if (stock?.deducted > 0) showToast(`${stock.deducted} item(s) taken out of stock`, 'success');
+      if (stock?.restocked > 0) showToast(`${stock.restocked} item(s) put back in stock`, 'success');
+      if (stock?.warnings?.length > 0) showToast(`Stock warning: ${stock.warnings[0]}`, 'error');
       if (newStatus === 'returned') {
-        const restock = await dbService.restockInventoryForOrder(currentOrder);
-        if (restock.restocked > 0) {
-          showToast(`${restock.restocked} item(s) returned to stock`, 'success');
-        }
         // Never edit or delete the original invoice — a Credit Note against
         // it is the GST-correct way to reverse the taxable value. Only
         // prompt when there's actually an invoice to reverse, and skip if
         // one's already been issued for this order.
         if (currentOrder.invoice_id && creditNotes.length === 0) {
           openCreditNoteModal();
-        }
-      }
-      // Deduct finished goods from inventory once fulfilled (scanned/boxed for courier)
-      if (newStatus === 'fulfilled') {
-        const invResult = await dbService.deductInventoryForOrder(currentOrder);
-        if (invResult.deducted > 0) {
-          showToast(`${invResult.deducted} item(s) deducted from inventory`, 'success');
-        }
-        if (invResult.warnings.length > 0) {
-          showToast(`Stock warning: ${invResult.warnings[0]}`, 'error');
         }
       }
       showToast(`Status updated to ${getStatusBadge(newStatus).label}`, 'success');
