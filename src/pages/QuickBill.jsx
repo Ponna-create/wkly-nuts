@@ -3,6 +3,7 @@ import { Check, Loader2, Plus, Trash2 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
 import { parseBillPdf } from '../utils/billPdfParser';
+import { matchBillLine, keyOf } from '../utils/billItemMatch';
 
 // One screen for every rupee going out. A bill/expense is saved once and fans
 // out to the place that needs it: raw material -> Inventory lot (with bill
@@ -33,7 +34,10 @@ const SCOPES = [
 const todayStr = () => new Date().toISOString().split('T')[0];
 const num = (v) => parseFloat(v) || 0;
 const round2 = (v) => Math.round(v * 100) / 100;
-const emptyLine = () => ({ key: Math.random().toString(36).slice(2), itemId: '', newName: '', qty: '', amount: '', expiry: '' });
+// billName = the item name as printed on the bill (kept so the chosen item can
+// be remembered for that vendor's wording); product = set when the line still
+// needs a grade chosen.
+const emptyLine = () => ({ key: Math.random().toString(36).slice(2), itemId: '', newName: '', qty: '', amount: '', expiry: '', billName: '', product: '' });
 
 export default function QuickBill() {
   const { state, dispatch, showToast } = useApp();
@@ -58,6 +62,7 @@ export default function QuickBill() {
   const [lastSaved, setLastSaved] = useState('');
   const [ingredients, setIngredients] = useState([]);
   const [materials, setMaterials] = useState([]);
+  const [billMemory, setBillMemory] = useState([]);
 
   // fetched fresh: an influencer added in Marketing a minute ago must show up here
   const [contacts, setContacts] = useState(state.marketingContacts || []);
@@ -71,6 +76,7 @@ export default function QuickBill() {
     dbService.getMarketingContacts().then(r => setContacts(r.data || []));
     dbService.getIngredients().then(r => setIngredients(r.data || []));
     dbService.getPackagingMaterials().then(r => setMaterials(r.data || []));
+    dbService.getBillItemMemory().then(r => setBillMemory(r.data || []));
   }, []);
 
   const selectedContact = contacts.find(c => String(c.id) === String(influencerId));
@@ -101,7 +107,6 @@ export default function QuickBill() {
     setDesc(''); setInfluencerId(''); setMachineOther(''); setPrintedTotal(0); setReadNote(''); setConfidence(null);
   };
 
-  const norm = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
   const handleFile = async (e) => {
     const file = e.target.files && e.target.files[0];
@@ -128,17 +133,18 @@ export default function QuickBill() {
       if (bill.gstAmount > 0) setGst(String(bill.gstAmount));
       let exact = 0;
       const mapped = bill.items.map(it => {
-        const ex = ingredients.find(i => norm(i.name) === norm(it.name));
-        const loose = ex || ingredients.find(i => norm(i.name).includes(norm(it.name)) || norm(it.name).includes(norm(i.name)));
-        if (ex) exact += 1;
+        const m = matchBillLine(it.name, bill.vendor || vendor, ingredients, billMemory);
+        if (m.match === 'exact' || m.match === 'remembered') exact += 1;
         return {
           key: Math.random().toString(36).slice(2),
-          itemId: loose ? loose.id : '__new',
-          newName: loose ? '' : it.name,
+          itemId: m.itemId,
+          newName: m.newName || '',
           qty: String(it.qty),
           amount: String(Math.round(it.amount * (1 + num(it.gstPct) / 100) * 100) / 100),
           expiry: '',
-          match: ex ? 'exact' : loose ? 'loose' : 'new',
+          match: m.match,
+          product: m.product || '',
+          billName: it.name,
         };
       });
       setLines(mapped);
@@ -174,6 +180,7 @@ export default function QuickBill() {
     if (isStockCategory) {
       if (!vendor.trim()) return 'Enter the vendor so stock can be traced to the bill';
       for (const l of lines) {
+        if (l.match === 'grade' && !l.itemId) return `Choose which ${l.product} (the grade) for "${l.billName}"`;
         const named = l.itemId && l.itemId !== '__new' ? true : l.newName.trim().length > 0;
         if (!named) return 'Choose the item on every line (or type a new name)';
         if (num(l.qty) <= 0) return 'Enter the quantity on every line';
@@ -256,6 +263,12 @@ export default function QuickBill() {
           billNumber: billNo.trim() || null,
         })));
         if (batchErr) throw batchErr;
+        // Remember what each printed name was matched to, for this vendor,
+        // so the next bill from them matches without asking (never blocks the save).
+        const toRemember = resolved.filter(({ l }) => l.billName).map(({ l, id }) => ({
+          vendor_key: keyOf(vendor) || '*', name_key: keyOf(l.billName), ingredient_id: id,
+        }));
+        dbService.rememberBillItems(toRemember).catch(() => {});
         supplied = resolved.map(({ l, name }) => ({
           name: name || l.newName.trim(),
           unit: 'kg',
@@ -495,15 +508,32 @@ export default function QuickBill() {
           </div>
           {lines.map((l) => {
             const item = pickList.find(i => String(i.id) === String(l.itemId));
-            const flag = l.match === 'new' || l.itemId === '__new' ? 'New item: will be created' : l.match === 'loose' ? 'Matched loosely, check the name' : '';
+            // A line that needs a grade shows only that product's grades first.
+            const askGrade = l.match === 'grade' && category === 'raw_materials';
+            const gradeItems = askGrade ? ingredients.filter(i => i.product === l.product) : [];
+            const flag = askGrade && !l.itemId
+              ? `"${l.billName}": which ${l.product}? Your choice is remembered for ${vendor.trim() || 'this vendor'}.`
+              : l.match === 'new' || l.itemId === '__new' ? 'New item: will be created'
+              : l.match === 'loose' ? 'Matched loosely, check the name'
+              : l.match === 'remembered' && l.billName ? `"${l.billName}" matched as you chose before` : '';
             return (
               <div key={l.key} className="space-y-1">
                 <div className="grid grid-cols-[minmax(0,1fr)_56px_82px_24px] gap-1.5 items-center">
-                  <select value={l.itemId} onChange={e => setLine(l.key, { itemId: e.target.value, match: undefined })}
-                    className="min-w-0 w-full px-1.5 py-2 border border-gray-300 rounded-lg text-[13px] bg-white">
-                    <option value="">Choose…</option>
-                    {pickList.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
-                    <option value="__new">+ New item</option>
+                  <select value={l.itemId} onChange={e => setLine(l.key, askGrade && e.target.value !== '__all' ? { itemId: e.target.value } : e.target.value === '__all' ? { match: undefined, itemId: '' } : { itemId: e.target.value, match: undefined })}
+                    className={`min-w-0 w-full px-1.5 py-2 border rounded-lg text-[13px] bg-white ${askGrade && !l.itemId ? 'border-amber-500 ring-1 ring-amber-300' : 'border-gray-300'}`}>
+                    {askGrade ? (
+                      <>
+                        <option value="">Which {l.product}?</option>
+                        {gradeItems.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+                        <option value="__all">Something else…</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="">Choose…</option>
+                        {pickList.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+                        <option value="__new">+ New item</option>
+                      </>
+                    )}
                   </select>
                   <input type="number" inputMode="decimal" min="0" step="any" value={l.qty} placeholder={unitOf(item)}
                     onChange={e => setLine(l.key, { qty: e.target.value })}
