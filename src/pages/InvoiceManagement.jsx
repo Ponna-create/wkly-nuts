@@ -7,6 +7,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import logo from '../assets/wkly-nuts-logo.png';
 import { getBusinessInfo } from '../utils/settings';
+import { boxesPerMonthly } from '../utils/packSize';
 import { formatDate } from '../utils/dateFormat';
 
 export default function InvoiceManagement() {
@@ -91,7 +92,13 @@ export default function InvoiceManagement() {
     if (packType === 'single' || packType === '0.5kg' || packType === '1kg') {
       return inv.singleUnitsAvailable || 0;
     }
-    return packType === 'weekly' ? inv.weeklyPacksAvailable : inv.monthlyPacksAvailable;
+    // One box count for each product (stored in weeklyPacksAvailable; the old
+    // monthly column is frozen at 0). A monthly pack uses 4 boxes, or 1 for a
+    // "Monthly pack only" product, so show how many whole packs that makes.
+    const boxes = inv.weeklyPacksAvailable || 0;
+    if (packType !== 'monthly') return boxes;
+    const sku = skus.find(s => String(s.id) === String(skuId));
+    return Math.floor(boxes / boxesPerMonthly(sku));
   };
 
   // Handle SKU selection - auto-fetch price

@@ -166,6 +166,13 @@ export const mockDbService = {
   async getExpenses() {
     return { data: table('expenses').sort((a, b) => b.expense_date?.localeCompare(a.expense_date)), error: null };
   },
+  async findExpenseByBill(vendorName, billNumber) {
+    if (!vendorName || !billNumber) return { data: null, error: null };
+    const squash = s => String(s || '').toLowerCase().replace(/\s+/g, '');
+    const match = table('expenses').find(e =>
+      squash(e.bill_number || e.billNumber) === squash(billNumber) && squash(e.vendor_name || e.vendorName) === squash(vendorName));
+    return { data: match || null, error: null };
+  },
   async createExpense(e) {
     const rows = table('expenses');
     const rec = { id: crypto.randomUUID(), ...e, created_at: new Date().toISOString() };

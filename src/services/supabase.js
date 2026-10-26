@@ -3063,6 +3063,21 @@ const _realDbService = {
     }
   },
 
+  // A bill already entered for this vendor with this bill number (ignoring
+  // case and spaces), or null. Quick Bill checks this before saving so the
+  // same paper bill can't be added twice (bill 1046 was, five minutes apart).
+  async findExpenseByBill(vendorName, billNumber) {
+    if (!isSupabaseAvailable() || !vendorName || !billNumber) return { data: null, error: null };
+    const squash = s => String(s).toLowerCase().replace(/\s+/g, '');
+    const { data, error } = await supabase
+      .from('expenses')
+      .select('id, vendor_name, bill_number, bill_date, total_amount, created_at')
+      .not('bill_number', 'is', null);
+    if (error) return { data: null, error };
+    const match = (data || []).find(e => squash(e.bill_number) === squash(billNumber) && squash(e.vendor_name || '') === squash(vendorName));
+    return { data: match || null, error: null };
+  },
+
   async createExpense(expense) {
     if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
     try {

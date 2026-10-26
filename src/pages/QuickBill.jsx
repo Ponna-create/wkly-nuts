@@ -197,6 +197,17 @@ export default function QuickBill() {
     const problem = validate();
     if (problem) { showToast(problem, 'error'); return; }
     setSaving(true);
+    // Same vendor + same bill number already entered → refuse, so stock and
+    // cost aren't added twice for one paper bill.
+    if (billNo.trim() && vendor.trim()) {
+      const { data: dup } = await dbService.findExpenseByBill(vendor.trim(), billNo.trim());
+      if (dup) {
+        const when = dup.bill_date || (dup.created_at || '').slice(0, 10);
+        showToast(`Bill ${billNo.trim()} from ${vendor.trim()} is already entered (${when}, ₹${Number(dup.total_amount || 0).toLocaleString('en-IN')}). It can't be added twice.`, 'error');
+        setSaving(false);
+        return;
+      }
+    }
     const label = CATEGORIES.find(c => c.value === category)?.label || category;
     const gstAmt = num(gst);
     try {
