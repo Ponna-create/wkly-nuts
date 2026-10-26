@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useReducer, useCallback, useEffect, useState } from 'react';
 import { dbService, isSupabaseAvailable } from '../services/supabase';
-import { getDbMode, syncBusinessInfoFromCloud } from '../utils/settings';
+import { getDbMode, syncSettingsFromCloud } from '../utils/settings';
 
 const AppContext = createContext();
 
@@ -480,7 +480,7 @@ export function AppProvider({ children }) {
           // land there before load finishes, otherwise a second device
           // never sees changes made on the first one.
           const [, vendorsRes, skusRes, pricingRes, targetsRes, customersRes, invoicesRes, inventoryRes, ingredientsRes, ingredientAliasesRes, salesOrdersRes, expensesRes, purchaseOrdersRes, documentsRes, productionRunsRes] = await Promise.all([
-            syncBusinessInfoFromCloud(),
+            syncSettingsFromCloud(),
             dbService.getVendors(),
             dbService.getSKUs(),
             dbService.getPricingStrategies(),

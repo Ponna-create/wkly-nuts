@@ -1,8 +1,36 @@
 import React, { useState, useEffect } from 'react';
-import { Database, Download, Upload, Check, AlertCircle, AlertTriangle, Clock, HardDrive, Loader2, RefreshCw, Settings, Wifi, WifiOff, Building2, Save } from 'lucide-react';
+import { Database, Download, Upload, Check, AlertCircle, AlertTriangle, Clock, HardDrive, Loader2, RefreshCw, Settings, Wifi, WifiOff, Building2, Save, Printer } from 'lucide-react';
 import { dbService } from '../services/supabase';
 import { useApp } from '../context/AppContext';
-import { getDbMode, setDbMode, getBusinessInfo, setBusinessInfo, syncBusinessInfoFromCloud } from '../utils/settings';
+import { getDbMode, setDbMode, getBusinessInfo, setBusinessInfo, getLabelSettings, setLabelSettings, syncSettingsFromCloud } from '../utils/settings';
+import ShippingLabel, { LABEL_TEMPLATES } from '../components/sales/ShippingLabel';
+import { LABEL_SIZES, labelRenderWidth } from '../utils/labelPrint';
+
+// Example order for the label preview only — never saved.
+const SAMPLE_ORDER = {
+  id: 'sample',
+  order_number: 'SO-2026-00350',
+  customer_name: 'Customer Name',
+  shipping_address: '1 Flat 2, Sample Street, Krishnanagar, Kovilpatti, Tamil Nadu 628501',
+  phone: '9876543210',
+  order_date: '2026-10-22',
+  courier_name: 'ST Courier',
+  payment_method: 'upi',
+  total_amount: 399,
+  items: [{ sku_name: 'Seed Cycle', pack_type: 'weekly', quantity: 1 }],
+};
+const LABEL_FIELDS = [
+  ['phone', 'Customer phone'],
+  ['sender', 'From (your address)'],
+  ['returnAddress', 'Return address line'],
+  ['contents', 'Contents (product list)'],
+  ['shipDate', 'Ship date'],
+  ['courier', 'Courier name'],
+  ['weight', 'Weight'],
+  ['dimensions', 'Box size'],
+  ['price', 'Order value (price)'],
+];
+const FONT_SCALES = [[0.9, 'Small'], [1, 'Normal'], [1.15, 'Large']];
 
 export default function BackupSettings() {
   const { showToast, useDatabase } = useApp();
@@ -22,13 +50,23 @@ export default function BackupSettings() {
   // sync in AppContext should already cover this, but landing here directly
   // (deep link, page refresh) shouldn't risk showing a stale value from
   // whatever device saved last.
+  const [labelSettings, setLabelSettingsState] = useState(getLabelSettings);
+
   useEffect(() => {
-    syncBusinessInfoFromCloud().then(() => {
+    syncSettingsFromCloud().then(() => {
       const fresh = getBusinessInfo();
       setBusinessInfoState(fresh);
       setSameAsRegistered(!!fresh.registeredAddress && fresh.registeredAddress === fresh.returnAddress);
+      setLabelSettingsState(getLabelSettings());
     });
   }, []);
+
+  const updateLabel = (patch) => setLabelSettingsState(prev => ({ ...prev, ...patch }));
+  const toggleLabelField = (key) => setLabelSettingsState(prev => ({ ...prev, show: { ...prev.show, [key]: !prev.show[key] } }));
+  const handleLabelSave = () => {
+    setLabelSettings(labelSettings);
+    showToast('Shipping label settings saved for all devices', 'success');
+  };
 
   // ==========================================
   // BUSINESS INFO (GSTIN, addresses) — used on invoices & shipping labels
@@ -407,6 +445,81 @@ export default function BackupSettings() {
           >
             <Save className="w-4 h-4" /> Save Business Info
           </button>
+        </div>
+      </div>
+
+      {/* Shipping Label — template, paper size, text size, which details print */}
+      <div className="bg-white border border-gray-200 rounded-lg p-6">
+        <div className="flex items-center gap-3 mb-5">
+          <Printer className="w-6 h-6 text-teal-600" />
+          <h2 className="text-lg font-semibold text-gray-900">Shipping Label</h2>
+        </div>
+        <p className="text-sm text-gray-600 mb-4">
+          How the courier label looks when you print it. Saved for every device.
+        </p>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="space-y-5">
+            <div>
+              <label className="block text-sm font-semibold text-gray-900 mb-2">Layout</label>
+              <div className="space-y-2">
+                {Object.entries(LABEL_TEMPLATES).map(([key, t]) => (
+                  <label key={key} className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer ${labelSettings.template === key ? 'border-teal-500 bg-teal-50' : 'border-gray-200'}`}>
+                    <input type="radio" name="labelTemplate" checked={labelSettings.template === key} onChange={() => updateLabel({ template: key })} className="mt-1 text-teal-600" />
+                    <span>
+                      <span className="block text-sm font-semibold text-gray-900">{t.name}</span>
+                      <span className="block text-xs text-gray-500">{t.note}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-900 mb-2">Paper size</label>
+                <div className="flex rounded-lg border border-gray-300 overflow-hidden">
+                  {Object.entries(LABEL_SIZES).map(([key, size]) => (
+                    <button key={key} type="button" onClick={() => updateLabel({ size: key })} className={`flex-1 px-3 py-1.5 text-sm font-medium ${labelSettings.size === key ? 'bg-teal-600 text-white' : 'bg-white text-gray-600'}`}>{size.name}</button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-900 mb-2">Text size</label>
+                <div className="flex rounded-lg border border-gray-300 overflow-hidden">
+                  {FONT_SCALES.map(([value, name]) => (
+                    <button key={name} type="button" onClick={() => updateLabel({ fontScale: value })} className={`flex-1 px-3 py-1.5 text-sm font-medium ${labelSettings.fontScale === value ? 'bg-teal-600 text-white' : 'bg-white text-gray-600'}`}>{name}</button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-900 mb-2">Print on the label</label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {LABEL_FIELDS.map(([key, name]) => (
+                  <label key={key} className="flex items-center gap-2 text-sm text-gray-700">
+                    <input type="checkbox" checked={!!labelSettings.show[key]} onChange={() => toggleLabelField(key)} className="w-4 h-4 text-teal-600 rounded" />
+                    {name}
+                  </label>
+                ))}
+              </div>
+              <p className="text-xs text-gray-500 mt-2">Name, address, PIN, order number and QR always print. Cash-on-delivery orders always show the amount to collect.</p>
+            </div>
+
+            <button onClick={handleLabelSave} className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 text-sm font-medium">
+              <Save className="w-4 h-4" /> Save Label Settings
+            </button>
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-900 mb-2">Preview (example order)</label>
+            <div className="bg-blue-50 rounded-lg p-4 flex justify-center overflow-x-auto">
+              <div style={{ width: `${labelRenderWidth(labelSettings.size === 'a4' ? '4x6' : labelSettings.size)}px` }}>
+                <ShippingLabel order={SAMPLE_ORDER} settings={labelSettings} paper={labelSettings.size === 'a4' ? '4x6' : labelSettings.size} business={businessInfo} />
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 

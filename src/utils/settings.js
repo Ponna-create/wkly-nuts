@@ -65,6 +65,45 @@ export const syncBusinessInfoFromCloud = async () => {
   }
 };
 
+// Shipping label layout: template, paper size, text size and which details
+// print. Synced across devices the same way as businessInfo, so every phone
+// prints the same label.
+export const DEFAULT_LABEL_SETTINGS = {
+  template: 'compact',
+  size: '4x6',
+  fontScale: 1,
+  show: {
+    phone: true,
+    sender: true,
+    returnAddress: true,
+    contents: true,
+    weight: true,
+    dimensions: false,
+    shipDate: true,
+    courier: true,
+    price: false,
+  },
+};
+export const getLabelSettings = () => {
+  const saved = getSetting('labelSettings', {});
+  return { ...DEFAULT_LABEL_SETTINGS, ...saved, show: { ...DEFAULT_LABEL_SETTINGS.show, ...(saved.show || {}) } };
+};
+export const setLabelSettings = (labelSettings) => {
+  setSetting('labelSettings', labelSettings);
+  dbService.setAppSetting('labelSettings', labelSettings).catch(() => {});
+};
+
+// Pulls every cross-device setting into localStorage once at app boot.
+export const syncSettingsFromCloud = async () => {
+  await syncBusinessInfoFromCloud();
+  try {
+    const { data } = await dbService.getAppSetting('labelSettings');
+    if (data) setSetting('labelSettings', data);
+  } catch (err) {
+    console.warn('Could not sync label settings from cloud:', err);
+  }
+};
+
 // Channels manually added on the Omni Channels page that don't have any real
 // orders yet — without this they'd have nowhere to persist and "Add Channel"
 // would silently do nothing.

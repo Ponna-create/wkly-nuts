@@ -1,4 +1,6 @@
-// Shared shipping-label print settings for LabelPrinter and BulkLabelPrint.
+// Shared shipping-label printing for LabelPrinter, BulkLabelPrint and the
+// Settings preview. Layout lives in components/sales/ShippingLabel.jsx; the
+// chosen template/size/details live in label settings (utils/settings.js).
 //
 // The QR on a label holds ONLY the order number (e.g. "SO-2026-00352").
 // It used to hold the whole order as JSON (id, customer, tracking, total) or
@@ -7,35 +9,24 @@
 // (21x21 modules) that prints with big, crisp squares at the same size.
 
 // Thermal sizes are portrait, 4 inches wide. The old page was 152x102mm
-// (6x4 landscape), which a 4x5 printer shrank to fit, shrinking the QR too.
+// (6x4 landscape), which made the printer shrink everything, QR included.
 export const LABEL_SIZES = {
-  '4x5': { name: '4×5', width: '101.6mm', height: '127mm' },
   '4x6': { name: '4×6', width: '101.6mm', height: '152.4mm' },
+  '4x5': { name: '4×5', width: '101.6mm', height: '127mm' },
   a4: { name: 'A4', width: '210mm', height: '297mm' },
 };
 
-const STORAGE_KEY = 'wkly.labelSize';
-
-// Remembered per device — the printer is attached to the device, not the account.
-export function getSavedLabelSize(fallback) {
-  try {
-    const v = localStorage.getItem(STORAGE_KEY);
-    if (v && LABEL_SIZES[v]) return v;
-  } catch (e) { /* storage blocked: use the fallback */ }
-  return LABEL_SIZES[fallback] ? fallback : '4x5';
-}
-
-export function saveLabelSize(size) {
-  try { localStorage.setItem(STORAGE_KEY, size); } catch (e) { /* ignore */ }
-}
+// Width the label is drawn at (CSS px) so it fills the page inside the padding.
+export const labelRenderWidth = (size) => (size === 'a4' ? 540 : 362);
+export const labelPadding = (size) => (size === 'a4' ? '15mm' : '3mm');
 
 export const labelQrValue = (order) => order.order_number || order.id;
 
 // Opens the print window for one or more `.label-page` blocks. A label that
 // is taller than the page (very long address) is scaled down to fit instead
-// of spilling its QR onto a second sticker.
+// of spilling onto a second sticker.
 export function printLabels({ title, html, size }) {
-  const page = LABEL_SIZES[size] || LABEL_SIZES['4x5'];
+  const page = LABEL_SIZES[size] || LABEL_SIZES['4x6'];
   const printWindow = window.open('', '_blank');
   if (!printWindow) return false;
   printWindow.document.write(`

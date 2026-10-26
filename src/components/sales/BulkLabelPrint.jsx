@@ -1,27 +1,27 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
-import { QRCodeSVG } from 'qrcode.react';
 import { X, Printer, CheckSquare, Square } from 'lucide-react';
 import { sanitizeHtml } from '../../utils/sanitize';
 import { dbService } from '../../services/supabase';
 import { useApp } from '../../context/AppContext';
 import { buildInvoiceDataFromOrder, isPromotionalOrder } from '../../utils/invoiceFromOrder';
-import { getBusinessInfo } from '../../utils/settings';
+import { getBusinessInfo, getLabelSettings, setLabelSettings } from '../../utils/settings';
 import DateRangePicker from '../common/DateRangePicker';
 import { generateA4LabelSheet } from '../../utils/a4LabelSheet';
-import { LABEL_SIZES, getSavedLabelSize, saveLabelSize, labelQrValue, printLabels } from '../../utils/labelPrint';
+import { LABEL_SIZES, labelRenderWidth, labelPadding, printLabels } from '../../utils/labelPrint';
+import ShippingLabel from './ShippingLabel';
 
 export default function BulkLabelPrint({ orders, onClose, onPrinted, showToast }) {
   const { state, dispatch } = useApp();
   const printRef = useRef(null);
-  const [labelSize, setLabelSizeState] = useState(() => getSavedLabelSize('a4'));
-  const setLabelSize = (size) => { setLabelSizeState(size); saveLabelSize(size); };
+  const [settings, setSettingsState] = useState(getLabelSettings);
+  const labelSize = settings.size;
+  const setLabelSize = (size) => { const next = { ...settings, size }; setSettingsState(next); setLabelSettings(next); };
   const today = new Date().toISOString().split('T')[0];
   const [dateFrom, setDateFrom] = useState(today);
   const [dateTo, setDateTo] = useState(today);
   const [selectedIds, setSelectedIds] = useState(new Set());
 
   const isA4 = labelSize === 'a4';
-  const s = isA4 ? 1.4 : 1;
 
   // Filter orders by the selected date range — a Sat+Sun+Monday backlog can
   // now be pulled in together instead of one calendar day at a time.
@@ -126,102 +126,14 @@ export default function BulkLabelPrint({ orders, onClose, onPrinted, showToast }
 
   const businessInfo = getBusinessInfo();
 
-  // Render a single label
-  const renderLabel = (order) => {
-    const items = order.items || [];
-    const courierName = order.courier_name || 'ST Courier';
-    const shippingDate = order.dispatch_date || order.order_date || dateFrom;
-    const address = order.shipping_address || '';
-
-    const hasMonthly = items.some(i => (i.pack_type || i.packType || '').toLowerCase().includes('month'));
-    const dimensions = hasMonthly ? '26.7 x 20.3 x 21.6 cm' : '21.6 x 14.0 x 10.2 cm';
-    const estimatedWeight = items.reduce((s, i) => {
-      const qty = i.quantity || 0;
-      const pt = (i.pack_type || i.packType || '').toLowerCase();
-      return s + (pt.includes('month') ? qty * 1.0 : qty * 0.25);
-    }, 0);
-
-    const itemsSummary = items.map(i =>
-      `${i.sku_name || i.skuName} (${i.pack_type || i.packType}) x${i.quantity}`
-    ).join(', ');
-
-    return (
-      <div key={order.id} className="label-page" style={{ padding: isA4 ? '15mm' : '3mm' }}>
-        <div style={{
-          border: '3px solid #000',
-          borderRadius: '4px',
-          background: '#fff',
-          overflow: 'hidden',
-          fontFamily: 'Arial, Helvetica, sans-serif',
-        }}>
-          {/* SHIP TO + FROM */}
-          <div style={{ display: 'flex', borderBottom: '2px solid #000' }}>
-            <div style={{ flex: 1, padding: `${8*s}px ${10*s}px`, borderRight: '2px solid #000' }}>
-              <div style={{ display: 'inline-block', background: '#000', color: '#fff', fontWeight: 'bold', fontSize: `${10*s}px`, padding: `${2*s}px ${6*s}px`, borderRadius: '2px' }}>SHIP TO:</div>
-              <div style={{ marginTop: `${4*s}px` }}>
-                <div style={{ fontSize: `${10*s}px`, fontWeight: '500', lineHeight: '1.4' }}>{order.customer_name}</div>
-                {address && <div style={{ fontSize: `${9*s}px`, color: '#333', lineHeight: '1.4', marginTop: '2px' }}>{address}</div>}
-                {(order.courier_number || order.phone) && <div style={{ fontSize: `${9*s}px`, color: '#333', marginTop: '2px' }}>Ph: {order.courier_number || order.phone}</div>}
-              </div>
-            </div>
-            <div style={{ flex: 1, padding: `${8*s}px ${10*s}px` }}>
-              <div style={{ fontWeight: 'bold', fontSize: `${10*s}px` }}>FROM:</div>
-              <div style={{ marginTop: `${4*s}px` }}>
-                <div style={{ fontSize: `${10*s}px`, fontWeight: '500' }}>{businessInfo.companyName || 'WKLY Nuts'}</div>
-                <div style={{ fontSize: `${9*s}px`, color: '#333', marginTop: '2px' }}>{businessInfo.registeredAddress || 'Chennai, Tamil Nadu, India'}</div>
-              </div>
-            </div>
-          </div>
-
-          {/* If undelivered, return to */}
-          <div style={{ borderBottom: '2px solid #000', padding: `${6*s}px ${10*s}px` }}>
-            <div style={{ fontSize: `${8*s}px`, fontWeight: 'bold', color: '#555' }}>IF UNDELIVERED, PLEASE RETURN TO:</div>
-            <div style={{ fontSize: `${9*s}px`, marginTop: '2px' }}>
-              <span style={{ fontWeight: '500' }}>{businessInfo.companyName || 'WKLY Nuts'}</span>
-              {' — '}
-              {businessInfo.returnAddress || businessInfo.registeredAddress || 'Chennai, Tamil Nadu, India'}
-              {businessInfo.phone && ` | Ph: ${businessInfo.phone}`}
-            </div>
-          </div>
-
-          {/* Details + Remarks */}
-          <div style={{ display: 'flex', borderBottom: '2px solid #000' }}>
-            <div style={{ flex: 1, borderRight: '2px solid #000' }}>
-              {[
-                ['ORDER ID:', order.order_number],
-                ['WEIGHT:', `${estimatedWeight.toFixed(1)} KG`],
-                ['DIMENSIONS:', dimensions],
-                ['SHIP DATE:', shippingDate],
-                ['COURIER:', courierName],
-              ].map(([label, val], i, arr) => (
-                <div key={i} style={{ display: 'flex', borderBottom: i < arr.length - 1 ? '1px solid #000' : 'none', fontSize: `${9*s}px` }}>
-                  <div style={{ fontWeight: 'bold', padding: `${4*s}px ${8*s}px`, minWidth: `${isA4 ? 140 : 95}px`, borderRight: '1px solid #ccc', background: '#f5f5f5' }}>{label}</div>
-                  <div style={{ padding: `${4*s}px ${8*s}px`, fontWeight: '500' }}>{val}</div>
-                </div>
-              ))}
-            </div>
-            <div style={{ minWidth: `${isA4 ? 160 : 110}px`, padding: `${4*s}px ${8*s}px` }}>
-              <div style={{ fontWeight: 'bold', fontSize: `${9*s}px`, marginBottom: `${3*s}px` }}>REMARKS:</div>
-              <div style={{ fontSize: `${8*s}px`, color: '#444', lineHeight: '1.3' }}>
-                {order.payment_method === 'cod' ? (
-                  <span style={{ fontWeight: 'bold', color: '#c00' }}>COD ₹{(order.total_amount||0).toFixed(0)}</span>
-                ) : itemsSummary || 'NO REMARKS'}
-                {order.total_amount && <div style={{ marginTop: '3px', fontWeight: 'bold', fontSize: `${9*s}px` }}>₹{order.total_amount.toFixed(0)}</div>}
-              </div>
-            </div>
-          </div>
-
-          {/* QR Code */}
-          <div style={{ padding: `${8*s}px`, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <QRCodeSVG value={labelQrValue(order)} size={isA4 ? 150 : 120} level="M" includeMargin={true} />
-            <div style={{ fontSize: `${11*s}px`, color: '#000', marginTop: '2px', letterSpacing: '1px', fontWeight: 'bold' }}>
-              {order.order_number}
-            </div>
-          </div>
-        </div>
+  // Render a single label (layout chosen in Settings -> Shipping Label)
+  const renderLabel = (order) => (
+    <div key={order.id} className="label-page" style={{ padding: labelPadding(labelSize) }}>
+      <div style={{ width: `${labelRenderWidth(labelSize)}px` }}>
+        <ShippingLabel order={order} settings={settings} paper={labelSize} business={businessInfo} />
       </div>
-    );
-  };
+    </div>
+  );
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
