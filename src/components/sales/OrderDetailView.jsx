@@ -833,7 +833,7 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
               <span className="font-medium">₹{currentOrder.subtotal?.toFixed(2) || '0.00'}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-600">GST ({currentOrder.gst_rate || 5}%):</span>
+              <span className="text-gray-600">GST ({currentOrder.gst_rate ?? 5}%):</span>
               <span className="font-medium">₹{currentOrder.gst_amount?.toFixed(2) || '0.00'}</span>
             </div>
             {currentOrder.discount_amount > 0 && (

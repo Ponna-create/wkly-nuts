@@ -222,7 +222,7 @@ export default function ZohoImport({ onClose, onImportComplete }) {
           const itemName = String(r[columnMapping.itemName] || '');
           const sku = matchSku(itemName);
           const qty = parseInt(r[columnMapping.itemQuantity]) || 1;
-          const price = parseFloat(r[columnMapping.itemRate]) || 0;
+          const price = parseFloat(String(r[columnMapping.itemRate] ?? '').replace(/[₹,\s]/g, '')) || 0;
           return {
             sku_id: sku?.id || null,
             sku_name: sku?.name || itemName,
@@ -233,10 +233,19 @@ export default function ZohoImport({ onClose, onImportComplete }) {
           };
         });
 
-        // Calculate totals from items if available, otherwise use amount column
+        // Goods value from the items if available, otherwise the order total
+        // column (which includes shipping). Prices are GST-inclusive, so GST is
+        // split out of them by each SKU's rate (it was saved as 0, and item
+        // totals were missing the shipping).
         const itemsTotal = items.reduce((s, i) => s + (i.total || 0), 0);
-        const amount = itemsTotal > 0 ? itemsTotal : (parseFloat(String(row[columnMapping.amount] || '0').replace(/[₹,]/g, '')) || 0);
         const shippingCharge = parseFloat(String(row[columnMapping.shippingCharge] || '0').replace(/[₹,]/g, '')) || 0;
+        const columnTotal = parseFloat(String(row[columnMapping.amount] || '0').replace(/[₹,]/g, '')) || 0;
+        const goods = itemsTotal > 0 ? itemsTotal : Math.max(0, columnTotal - shippingCharge);
+        const amount = goods + shippingCharge;
+        const taxable = itemsTotal > 0
+          ? items.reduce((s, i) => s + (i.total || 0) / (1 + (skus.find(k => String(k.id) === String(i.sku_id))?.gstRate ?? 5) / 100), 0)
+          : goods / 1.05;
+        const gstAmount = Math.round((goods - taxable) * 100) / 100;
 
         // Customer linking — find by phone or create
         const phone = String(row[columnMapping.phone] || '').replace(/[^0-9+]/g, '');
@@ -307,9 +316,9 @@ export default function ZohoImport({ onClose, onImportComplete }) {
           customerId: customer?.id || null,
           orderSource: orderSource,
           items: items,
-          subtotal: amount - shippingCharge,
-          gstRate: 0,
-          gstAmount: 0,
+          subtotal: Math.round(taxable * 100) / 100,
+          gstRate: taxable > 0 ? Math.round((gstAmount / taxable) * 10000) / 100 : 0,
+          gstAmount,
           discountPercent: 0,
           discountAmount: 0,
           shippingCharge: shippingCharge,
