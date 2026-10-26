@@ -5,6 +5,7 @@ import { useApp } from '../context/AppContext';
 import { getDbMode, setDbMode, getBusinessInfo, setBusinessInfo, getLabelSettings, setLabelSettings, syncSettingsFromCloud } from '../utils/settings';
 import ShippingLabel, { LABEL_TEMPLATES } from '../components/sales/ShippingLabel';
 import { LABEL_SIZES, labelRenderWidth } from '../utils/labelPrint';
+import A4SheetPreview from '../components/sales/A4SheetPreview';
 
 // Example order for the label preview only — never saved.
 const SAMPLE_ORDER = {
@@ -494,6 +495,29 @@ export default function BackupSettings() {
               </div>
             </div>
 
+            {labelSettings.size === 'a4' && (
+              <div className="space-y-3 p-3 rounded-lg border-2 border-gray-200">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">Labels per A4 sheet</label>
+                  <div className="flex rounded-lg border border-gray-300 overflow-hidden w-fit">
+                    {[[4, '4 (2 × 2, bigger)'], [6, '6 (2 × 3)']].map(([n, name]) => (
+                      <button key={n} type="button" onClick={() => updateLabel({ a4PerSheet: n })} className={`px-3 py-1.5 text-sm font-medium ${labelSettings.a4PerSheet === n ? 'bg-teal-600 text-white' : 'bg-white text-gray-600'}`}>{name}</button>
+                    ))}
+                  </div>
+                </div>
+                <label className="flex items-center gap-2 text-sm text-gray-700">
+                  <input type="checkbox" checked={!!labelSettings.a4Qr} onChange={() => updateLabel({ a4Qr: !labelSettings.a4Qr })} className="w-4 h-4 text-teal-600 rounded" />
+                  Add QR code to A4 labels
+                </label>
+                {!labelSettings.a4Qr && (
+                  <p className="text-xs font-medium text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2">
+                    A4 labels will print without a QR code, so they can't be scanned at hand-over. Tick the box above to add one.
+                  </p>
+                )}
+                <p className="text-xs text-gray-500">A4 uses its own sheet style (cut along the dashed lines). Layout, text size and the list below apply to thermal labels only.</p>
+              </div>
+            )}
+
             <div>
               <label className="block text-sm font-semibold text-gray-900 mb-2">Print on the label</label>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -513,11 +537,24 @@ export default function BackupSettings() {
           </div>
 
           <div>
-            <label className="block text-sm font-semibold text-gray-900 mb-2">Preview (example order)</label>
+            <label className="block text-sm font-semibold text-gray-900 mb-2">
+              {labelSettings.size === 'a4'
+                ? `Preview: ${labelSettings.a4PerSheet} labels per A4 sheet`
+                : 'Preview (example order)'}
+            </label>
             <div className="bg-blue-50 rounded-lg p-4 flex justify-center overflow-x-auto">
-              <div style={{ width: `${labelRenderWidth(labelSettings.size === 'a4' ? '4x6' : labelSettings.size)}px` }}>
-                <ShippingLabel order={SAMPLE_ORDER} settings={labelSettings} paper={labelSettings.size === 'a4' ? '4x6' : labelSettings.size} business={businessInfo} />
-              </div>
+              {labelSettings.size === 'a4' ? (
+                <A4SheetPreview
+                  orders={Array.from({ length: labelSettings.a4PerSheet }, () => SAMPLE_ORDER)}
+                  perSheet={labelSettings.a4PerSheet}
+                  withQr={labelSettings.a4Qr}
+                  business={businessInfo}
+                />
+              ) : (
+                <div style={{ width: `${labelRenderWidth(labelSettings.size)}px` }}>
+                  <ShippingLabel order={SAMPLE_ORDER} settings={labelSettings} paper={labelSettings.size} business={businessInfo} />
+                </div>
+              )}
             </div>
           </div>
         </div>

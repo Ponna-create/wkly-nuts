@@ -72,6 +72,8 @@ export const DEFAULT_LABEL_SETTINGS = {
   template: 'compact',
   size: '4x6',
   fontScale: 1,
+  a4PerSheet: 6,
+  a4Qr: false,
   show: {
     phone: true,
     sender: true,

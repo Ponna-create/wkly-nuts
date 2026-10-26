@@ -5,6 +5,8 @@ import { getBusinessInfo, getLabelSettings, setLabelSettings } from '../../utils
 import { dbService } from '../../services/supabase';
 import { LABEL_SIZES, labelRenderWidth, labelPadding, printLabels } from '../../utils/labelPrint';
 import ShippingLabel, { LABEL_TEMPLATES, labelData } from './ShippingLabel';
+import A4SheetPreview from './A4SheetPreview';
+import { generateA4LabelSheet } from '../../utils/a4LabelSheet';
 
 // Box presets
 const BOX_PRESETS = [
@@ -37,8 +39,12 @@ export default function LabelPrinter({ order, onClose, onPrinted }) {
   const trackingNumber = order.tracking_number || '';
   const dimensions = boxType === 2 ? customDimensions : BOX_PRESETS[boxType].dimensions;
 
+  const isA4 = labelSize === 'a4';
+
   const handlePrint = () => {
-    printLabels({
+    // A4 uses the same cut-out sheet PDF as bulk and Quick Order printing.
+    if (isA4) generateA4LabelSheet([order]);
+    else printLabels({
       title: `Shipping Label - ${order.order_number}`,
       html: `<div class="label-page" style="padding:${labelPadding(labelSize)}">${sanitizeHtml(printRef.current.innerHTML)}</div>`,
       size: labelSize,
@@ -115,16 +121,26 @@ export default function LabelPrinter({ order, onClose, onPrinted }) {
         )}
 
         {/* Label Preview */}
-        <div className="p-6 bg-blue-50 flex justify-center">
-          <div ref={printRef} style={{ width: `${labelRenderWidth(labelSize)}px` }}>
-            <ShippingLabel
-              order={order}
-              settings={settings}
-              paper={labelSize}
-              business={businessInfo}
-              overrides={{ weight, dimensions, courier, shipDate, contents }}
-            />
-          </div>
+        <div className="p-6 bg-blue-50 flex flex-col items-center gap-2">
+          {isA4 ? (
+            <>
+              <A4SheetPreview orders={[order]} perSheet={settings.a4PerSheet} withQr={settings.a4Qr} business={businessInfo} />
+              <p className="text-xs text-gray-600 text-center max-w-sm">
+                Downloads an A4 PDF ({settings.a4PerSheet} labels per sheet, this order in the first spot).
+                {!settings.a4Qr && ' No QR code on A4 labels; turn it on in Settings → Shipping Label.'}
+              </p>
+            </>
+          ) : (
+            <div ref={printRef} style={{ width: `${labelRenderWidth(labelSize)}px` }}>
+              <ShippingLabel
+                order={order}
+                settings={settings}
+                paper={labelSize}
+                business={businessInfo}
+                overrides={{ weight, dimensions, courier, shipDate, contents }}
+              />
+            </div>
+          )}
         </div>
 
         {/* Actions */}
