@@ -43,6 +43,10 @@ const normalizeCity = (city) => {
 // at once. This converts any weekly/monthly quantity into an equivalent box
 // count so both draw from and update the SAME stock number (weeklyPacksAvailable).
 const BOXES_PER_MONTHLY_PACK = 4;
+// Order statuses at which the parcel has left the shelf (boxes out of stock),
+// and the ones that put boxes back. See updateSalesOrder.
+const STOCK_OUT_STATUSES = ['fulfilled', 'collected', 'dispatched', 'transit', 'delivered', 'completed'];
+const STOCK_BACK_STATUSES = ['returned', 'cancelled'];
 // NOTE: for a product sold as "Monthly pack only" one pack is ONE box. Use
 // _boxesForSku (below) wherever the SKU is known; this plain version assumes 4.
 const packQuantityToBoxes = (packType, quantity) => {
@@ -2885,7 +2889,14 @@ const _realDbService = {
 
       if (error) throw error;
 
-      return { data, error: null };
+      // The one place finished-box stock follows an order's status, whichever
+      // screen (or courier tracking) changed it. Both calls are no-ops when
+      // already done, so saving the same status again is harmless.
+      let stock = null;
+      if (payload.status && STOCK_OUT_STATUSES.includes(payload.status)) stock = await this.deductInventoryForOrder(data);
+      else if (payload.status && STOCK_BACK_STATUSES.includes(payload.status)) stock = await this.restockInventoryForOrder(data);
+
+      return { data, error: null, stock };
     } catch (error) {
       console.error('Error updating sales order:', error);
       return { data: null, error };
@@ -4335,9 +4346,22 @@ const _realDbService = {
     return results;
   },
 
-  // P4: Order Dispatched → Deduct finished goods
+  // Order reached fulfilled or later → take its finished boxes out, ONCE.
+  // Claims the order first (stock_deducted_at null → now) so a rescan, a
+  // second status change or a retry can never deduct the same order twice.
+  // Called from updateSalesOrder whenever a status is saved — not directly
+  // by screens.
   async deductInventoryForOrder(order) {
     const results = { deducted: 0, warnings: [] };
+    const { data: claimed, error: claimErr } = await supabase
+      .from('sales_orders')
+      .update({ stock_deducted_at: new Date().toISOString() })
+      .eq('id', order.id)
+      .is('stock_deducted_at', null)
+      .select('id, order_number, items');
+    if (claimErr) { results.warnings.push(`Stock not updated: ${claimErr.message}`); return results; }
+    if (!claimed || claimed.length === 0) { results.alreadyDone = true; return results; }
+    order = claimed[0];
     const items = Array.isArray(order.items) ? order.items : [];
     if (items.length === 0) return results;
 
@@ -4371,9 +4395,19 @@ const _realDbService = {
     return results;
   },
 
-  // Order returned (RTO) → add the finished goods back into stock
+  // Order returned (RTO) or cancelled → put its boxes back, but only if they
+  // were actually taken out (stock_deducted_at set), and only once.
   async restockInventoryForOrder(order) {
     const results = { restocked: 0, warnings: [] };
+    const { data: claimed, error: claimErr } = await supabase
+      .from('sales_orders')
+      .update({ stock_deducted_at: null })
+      .eq('id', order.id)
+      .not('stock_deducted_at', 'is', null)
+      .select('id, order_number, items');
+    if (claimErr) { results.warnings.push(`Stock not updated: ${claimErr.message}`); return results; }
+    if (!claimed || claimed.length === 0) { results.notTaken = true; return results; }
+    order = claimed[0];
     const items = Array.isArray(order.items) ? order.items : [];
     if (items.length === 0) return results;
 
