@@ -82,7 +82,6 @@ export const DEFAULT_LABEL_SETTINGS = {
     weight: true,
     dimensions: false,
     shipDate: true,
-    courier: true,
     price: false,
   },
 };

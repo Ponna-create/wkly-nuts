@@ -130,7 +130,7 @@ export default function BulkLabelPrint({ orders, onClose, onPrinted, showToast }
   const renderLabel = (order) => (
     <div key={order.id} className="label-page" style={{ padding: labelPadding(labelSize) }}>
       <div style={{ width: `${labelRenderWidth(labelSize)}px` }}>
-        <ShippingLabel order={order} settings={settings} paper={labelSize} business={businessInfo} />
+        <ShippingLabel order={order} settings={settings} paper={labelSize} business={businessInfo} skus={state.skus} />
       </div>
     </div>
   );
