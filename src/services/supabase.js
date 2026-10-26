@@ -2403,7 +2403,9 @@ const _realDbService = {
             expiry_date,
             received_date,
             bill_number,
-            status
+            status,
+            expense_id,
+            vendor_id
           )
         `)
         .order('name');
