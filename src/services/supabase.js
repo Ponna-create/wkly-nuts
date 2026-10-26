@@ -2966,6 +2966,7 @@ const _realDbService = {
         ['shipping_weight', 'shippingWeight', 'shipping_weight'],
         ['courier_amount', 'courierAmount', 'courier_amount'],
         ['courier_slip_date', 'courierSlipDate', 'courier_slip_date'],
+        ['courier_confirmed_at', 'courierConfirmedAt', 'courier_confirmed_at'],
         ['qr_code_data', 'qrCodeData', 'qr_code_data'],
         ['invoice_id', 'invoiceId', 'invoice_id'],
         ['feedback_sent', 'feedbackSent', 'feedback_sent'],
