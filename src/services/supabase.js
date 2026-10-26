@@ -2999,15 +2999,17 @@ const _realDbService = {
   _mapStCourierStatusToStage(rawStatus) {
     const s = (rawStatus || '').toLowerCase();
     if (/delivered/.test(s)) return 'delivered';
-    if (/out for delivery|in transit|on the way|reached destination/.test(s)) return 'transit';
-    if (/dispatch|picked up|booked|in transit hub|departed/.test(s)) return 'dispatched';
+    if (/out for delivery|in transit|on the way|reached destination|processed|forwarded/.test(s)) return 'transit';
+    if (/dispatch|picked up|booked|departed/.test(s)) return 'dispatched';
     return null;
   },
 
   // Checks ST Courier's status for ONE order and writes the result back.
-  // Calls the standalone tracker-service (Render, real headless Chrome —
-  // see tracker-service/README.md for why a plain fetch can't do this) via
-  // VITE_ST_COURIER_SERVICE_URL. One order per call (not batched) so the
+  // Calls our own /api/st-courier-status (plain HTTP with ST's session
+  // cookie, see api/_stCourier.js — replaced the Playwright tracker-service
+  // on Render, same request/response shape). A daily cron
+  // (api/st-courier-daily.js) checks every open parcel on its own; this is
+  // the on-demand check. One order per call (not batched) so the
   // caller (TrackingChecker.jsx) can show live "checking N of 5" progress
   // and a result the instant each one finishes, instead of a silent
   // all-or-nothing background call.
@@ -3024,10 +3026,8 @@ const _realDbService = {
     if (!isSupabaseAvailable()) return { error: 'Supabase not configured' };
     const awb = (order.tracking_number || '').replace(/\D/g, '');
     if (!awb) return { error: 'No tracking number' };
-    const serviceUrl = import.meta.env.VITE_ST_COURIER_SERVICE_URL;
-    if (!serviceUrl) return { error: 'Tracker service not configured — set VITE_ST_COURIER_SERVICE_URL (see tracker-service/README.md)' };
     try {
-      const res = await fetch(serviceUrl, {
+      const res = await fetch('/api/st-courier-status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ awbNumbers: [awb] }),
@@ -3040,7 +3040,7 @@ const _realDbService = {
       const update = { id: order.id, stCourierLastCheckedAt: new Date().toISOString() };
       let advanced = null;
       if (r.found && r.status) {
-        update.stCourierStatus = r.status;
+        update.stCourierStatus = r.latestEvent ? `${r.status} · ${r.latestEvent}` : r.status;
         const mappedStage = this._mapStCourierStatusToStage(r.status);
         if (mappedStage) {
           const currentIdx = this._stCourierStageOrder.indexOf(order.status);
