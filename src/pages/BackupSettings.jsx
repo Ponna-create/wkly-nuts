@@ -15,7 +15,6 @@ const SAMPLE_ORDER = {
   shipping_address: '1 Flat 2, Sample Street, Krishnanagar, Kovilpatti, Tamil Nadu 628501',
   phone: '9876543210',
   order_date: '2026-10-22',
-  courier_name: 'ST Courier',
   payment_method: 'upi',
   total_amount: 399,
   items: [{ sku_name: 'Seed Cycle', pack_type: 'weekly', quantity: 1 }],
@@ -26,7 +25,6 @@ const LABEL_FIELDS = [
   ['returnAddress', 'Return address line'],
   ['contents', 'Contents (product list)'],
   ['shipDate', 'Ship date'],
-  ['courier', 'Courier name'],
   ['weight', 'Weight'],
   ['dimensions', 'Box size'],
   ['price', 'Order value (price)'],
@@ -476,7 +474,7 @@ export default function BackupSettings() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-4">
               <div>
                 <label className="block text-sm font-semibold text-gray-900 mb-2">Paper size</label>
                 <div className="flex rounded-lg border border-gray-300 overflow-hidden">

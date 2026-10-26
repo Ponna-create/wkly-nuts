@@ -12,7 +12,7 @@ import { labelQrValue } from '../../utils/labelPrint';
 //   large    — very big delivery address for hand sorting, small QR strip
 //
 // `show` switches individual details on/off; `overrides` carries the values
-// edited in the single-label print window (weight, courier, date, contents).
+// edited in the single-label print window (weight, box, date, contents).
 
 export const LABEL_TEMPLATES = {
   compact: { name: 'Compact', note: 'India Post style. QR and order on top, big address.' },
@@ -22,14 +22,28 @@ export const LABEL_TEMPLATES = {
 
 const pretty = (s) => String(s || '').replace(/^\w/, c => c.toUpperCase());
 
-export function labelData(order, overrides = {}) {
+// Parcel weight = each item's Shipping Weight from SKU Management (weekly or
+// monthly figure) × quantity. A product with no shipping weight set falls
+// back to the old rough guess (1 kg monthly, 0.25 kg otherwise) and is listed
+// in weightMissing so the print window can say which SKU needs one.
+function parcelWeight(items, skus) {
+  const weightMissing = [];
+  const total = items.reduce((s, i) => {
+    const qty = i.quantity || 0;
+    const isMonthly = (i.pack_type || i.packType || '').toLowerCase().includes('month');
+    const sku = (skus || []).find(k => String(k.id) === String(i.sku_id || i.skuId));
+    const perUnit = isMonthly ? (sku?.monthlyShippingWeightKg ?? null) : (sku?.shippingWeightKg ?? null);
+    if (perUnit == null) weightMissing.push(i.sku_name || i.skuName || 'Product');
+    return s + qty * (perUnit ?? (isMonthly ? 1.0 : 0.25));
+  }, 0);
+  return { total, weightMissing: [...new Set(weightMissing)] };
+}
+
+export function labelData(order, overrides = {}, skus = []) {
   const items = order.items || [];
   const hasMonthly = items.some(i => (i.pack_type || i.packType || '').toLowerCase().includes('month'));
-  const weight = overrides.weight ?? items.reduce((s, i) => {
-    const qty = i.quantity || 0;
-    const pt = (i.pack_type || i.packType || '').toLowerCase();
-    return s + (pt.includes('month') ? qty * 1.0 : qty * 0.25);
-  }, 0).toFixed(1);
+  const { total, weightMissing } = parcelWeight(items, skus);
+  const weight = overrides.weight ?? String(Math.round(total * 100) / 100);
   const contents = overrides.contents ?? items.map(i =>
     `${i.sku_name || i.skuName} (${pretty(i.pack_type || i.packType)}) ×${i.quantity}`
   ).join(', ');
@@ -41,22 +55,21 @@ export function labelData(order, overrides = {}) {
     pin: pins ? pins[pins.length - 1] : (order.customers?.pincode || ''),
     phone: order.courier_number || order.phone || '',
     weight,
+    weightMissing,
     dimensions: overrides.dimensions ?? (hasMonthly ? '26.7 x 20.3 x 21.6 cm' : '21.6 x 14.0 x 10.2 cm'),
     shipDate: overrides.shipDate ?? (order.dispatch_date || order.order_date || ''),
-    // Only the courier actually set on the order — never a guessed default.
-    courier: overrides.courier ?? (order.courier_name || ''),
     contents,
     isCod: order.payment_method === 'cod',
     total: Number(order.total_amount || 0),
   };
 }
 
-export default function ShippingLabel({ order, settings, overrides, paper = '4x6', business }) {
+export default function ShippingLabel({ order, settings, overrides, paper = '4x6', business, skus }) {
   const { template, fontScale, show } = settings;
   const isA4 = paper === 'a4';
   const s = (isA4 ? 1.4 : 1) * (fontScale || 1);
   const px = (n) => `${Math.round(n * s * 10) / 10}px`;
-  const d = labelData(order, overrides);
+  const d = labelData(order, overrides, skus);
   const qrSize = isA4 ? 150 : template === 'large' ? 84 : 104;
   const company = business.companyName || 'WKLY Nuts';
   const fromAddress = business.registeredAddress || 'Chennai, Tamil Nadu, India';
@@ -74,7 +87,6 @@ export default function ShippingLabel({ order, settings, overrides, paper = '4x6
   );
   const detailBits = [
     show.shipDate && d.shipDate && ['Date', d.shipDate],
-    show.courier && d.courier && ['Courier', d.courier],
     show.weight && d.weight && ['Weight', `${d.weight} kg`],
     show.dimensions && d.dimensions && ['Box', d.dimensions],
   ].filter(Boolean);
@@ -114,7 +126,6 @@ export default function ShippingLabel({ order, settings, overrides, paper = '4x6
       show.weight && ['WEIGHT:', `${d.weight} KG`],
       show.dimensions && ['DIMENSIONS:', d.dimensions],
       show.shipDate && ['SHIP DATE:', d.shipDate],
-      show.courier && d.courier && ['COURIER:', d.courier],
     ].filter(Boolean);
     return (
       <div style={box}>

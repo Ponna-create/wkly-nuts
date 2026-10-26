@@ -7,6 +7,7 @@ import { LABEL_SIZES, labelRenderWidth, labelPadding, printLabels } from '../../
 import ShippingLabel, { LABEL_TEMPLATES, labelData } from './ShippingLabel';
 import A4SheetPreview from './A4SheetPreview';
 import { generateA4LabelSheet } from '../../utils/a4LabelSheet';
+import { useApp } from '../../context/AppContext';
 
 // Box presets
 const BOX_PRESETS = [
@@ -17,6 +18,8 @@ const BOX_PRESETS = [
 
 export default function LabelPrinter({ order, onClose, onPrinted }) {
   const printRef = useRef(null);
+  const { state } = useApp();
+  const skus = state.skus || [];
   const [settings, setSettingsState] = useState(getLabelSettings);
   const [editing, setEditing] = useState(false);
   const labelSize = settings.size;
@@ -25,14 +28,13 @@ export default function LabelPrinter({ order, onClose, onPrinted }) {
 
   const items = order.items || [];
   const hasMonthly = items.some(i => (i.pack_type || i.packType || '').toLowerCase().includes('month'));
-  const defaults = labelData(order);
+  const defaults = labelData(order, {}, skus);
   const businessInfo = getBusinessInfo();
 
   // Editable state — changes apply to this print only
   const [boxType, setBoxType] = useState(hasMonthly ? 1 : 0);
   const [customDimensions, setCustomDimensions] = useState('');
   const [weight, setWeight] = useState(defaults.weight);
-  const [courier, setCourier] = useState(defaults.courier);
   const [contents, setContents] = useState(defaults.contents);
   const [shipDate, setShipDate] = useState(order.dispatch_date || order.order_date || new Date().toISOString().split('T')[0]);
 
@@ -105,10 +107,6 @@ export default function LabelPrinter({ order, onClose, onPrinted }) {
                 <input type="text" value={weight} onChange={e => setWeight(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
               </div>
               <div>
-                <label className="text-xs font-semibold text-gray-600 mb-1 block">Courier</label>
-                <input type="text" value={courier} onChange={e => setCourier(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-              </div>
-              <div>
                 <label className="text-xs font-semibold text-gray-600 mb-1 block">Shipping Date</label>
                 <input type="date" value={shipDate} onChange={e => setShipDate(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
               </div>
@@ -137,9 +135,15 @@ export default function LabelPrinter({ order, onClose, onPrinted }) {
                 settings={settings}
                 paper={labelSize}
                 business={businessInfo}
-                overrides={{ weight, dimensions, courier, shipDate, contents }}
+                skus={skus}
+                overrides={{ weight, dimensions, shipDate, contents }}
               />
             </div>
+          )}
+          {!isA4 && settings.show.weight && defaults.weightMissing.length > 0 && (
+            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 max-w-sm text-center">
+              Weight is estimated: no shipping weight set for {defaults.weightMissing.join(', ')}. Add it in SKU Management.
+            </p>
           )}
         </div>
 
