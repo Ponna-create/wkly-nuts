@@ -12,5 +12,11 @@
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/st-courier-daily",
+      "schedule": "30 4 * * *"
+    }
   ]
 }

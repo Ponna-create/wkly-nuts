@@ -16,12 +16,18 @@ export default function TrackingChecker({ orders, onOrderUpdate, showToast }) {
   const [autoLastRunDate, setAutoLastRunDate] = useState(null);
   const [autoLastRunAt, setAutoLastRunAt] = useState(null);
 
+  // Outcome of the automatic daily check (api/st-courier-daily.js, Vercel cron).
+  const [daily, setDaily] = useState(null);
+
   useEffect(() => {
     dbService.getAppSetting('st_courier_auto_check').then(({ data }) => {
       if (data?.date) setAutoLastRunDate(data.date);
       if (data?.at) setAutoLastRunAt(data.at);
     });
+    dbService.getAppSetting('stCourierDaily').then(({ data }) => setDaily(data || null));
   }, []);
+  const dailyStale = !daily || (Date.now() - new Date(daily.lastRun).getTime()) > 36 * 3600 * 1000;
+  const dailyProblem = daily && (daily.error || daily.failed > 0);
 
   const autoAlreadyRanToday = autoLastRunDate === todayISO();
 
@@ -129,6 +135,20 @@ export default function TrackingChecker({ orders, onOrderUpdate, showToast }) {
           <Zap className="w-4 h-4 text-indigo-600" />
           <h3 className="font-semibold text-gray-900 text-sm">ST Courier Auto-Check</h3>
           <span className="text-xs text-gray-400">— pulls real status from ST Courier's site, no manual lookup</span>
+        </div>
+
+        <div className={`text-xs rounded-md px-2.5 py-1.5 ${dailyProblem || dailyStale ? 'bg-amber-100 text-amber-900' : 'bg-white text-gray-600'}`}>
+          {!daily ? (
+            'Automatic daily check (10 AM) has not run yet.'
+          ) : (
+            <>
+              Automatic daily check: last ran {new Date(daily.lastRun).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
+              {' · '}{daily.checked} checked · {daily.delivered} delivered · {daily.failed} failed
+              {dailyStale && ' · has not run in over a day'}
+              {daily.error && ` · ${daily.error}`}
+              {daily.failures?.length > 0 && <span className="block mt-0.5">{daily.failures.slice(0, 3).join(' · ')}</span>}
+            </>
+          )}
         </div>
 
         {autoRunning && autoProgress ? (
