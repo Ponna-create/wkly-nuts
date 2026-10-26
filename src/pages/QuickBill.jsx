@@ -4,6 +4,7 @@ import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
 import { parseBillPdf } from '../utils/billPdfParser';
 import { matchBillLine, keyOf } from '../utils/billItemMatch';
+import { readImageText, parseUpiScreenshot, parseBillPhoto } from '../utils/billImageReader';
 
 // One screen for every rupee going out. A bill/expense is saved once and fans
 // out to the place that needs it: raw material -> Inventory lot (with bill
@@ -108,18 +109,53 @@ export default function QuickBill() {
   };
 
 
+  // A UPI screenshot (GPay / PhonePe / Paytm): amount, payee, date and the UPI
+  // reference, which becomes the bill number so the same payment can't be
+  // entered twice.
+  const applyUpi = (upi) => {
+    setCategory(upi.category || 'misc');
+    if (upi.amount) setAmount(String(upi.amount));
+    if (upi.payee) setVendor(upi.payee);
+    setBillNo(upi.upiRef ? `UPI ${upi.upiRef}` : '');
+    if (upi.date) setBillDate(upi.date);
+    setPayMethod('UPI');
+    setGst('');
+    const missing = [!upi.amount && 'amount', !upi.payee && 'who was paid', !upi.upiRef && 'UPI reference', !upi.date && 'date'].filter(Boolean);
+    setReadNote(`Read a UPI payment${upi.amount ? ` of ₹${upi.amount}` : ''}${upi.payee ? ` to ${upi.payee}` : ''}.`
+      + `${upi.category === 'shipping' ? ' Looks like a courier payment, so the heading is Shipping / courier.' : ' Choose the right heading below.'}`
+      + `${missing.length ? ` Could not read: ${missing.join(', ')}, please fill ${missing.length > 1 ? 'them' : 'it'} in.` : ''} Check before saving.`);
+  };
+
   const handleFile = async (e) => {
     const file = e.target.files && e.target.files[0];
     e.target.value = '';
     if (!file) return;
-    if (file.type !== 'application/pdf') {
-      setReadNote('Photo reading is coming next. For now upload the PDF, or type the bill in.');
+    const isPdf = file.type === 'application/pdf';
+    if (!isPdf && !(file.type || '').startsWith('image/')) {
+      setReadNote('Upload a PDF, a photo of the bill, or a payment screenshot.');
       return;
     }
     setReading(true);
-    setReadNote('');
+    setReadNote(isPdf ? '' : 'Reading the photo… (the first one takes a little longer)');
     try {
-      const bill = await parseBillPdf(file);
+      let bill;
+      if (isPdf) {
+        bill = await parseBillPdf(file);
+      } else {
+        const text = await readImageText(file, (p) => setReadNote(`Reading the photo… ${Math.round(p * 100)}%`));
+        const upi = parseUpiScreenshot(text);
+        if (upi) { applyUpi(upi); setReading(false); return; }
+        bill = parseBillPhoto(text);
+        if (!bill.items.length) {
+          if (bill.vendor) setVendor(bill.vendor);
+          if (bill.billNo) setBillNo(bill.billNo);
+          if (bill.date) setBillDate(bill.date);
+          if (bill.total) setPrintedTotal(bill.total);
+          setReadNote(`Read the photo${bill.total ? `: total ₹${bill.total}` : ''}${bill.vendor ? `, from ${bill.vendor}` : ''}. The item lines weren't clear enough, please type them in.`);
+          setReading(false);
+          return;
+        }
+      }
       if (!bill.items.length) {
         setReadNote('Could not find item lines in this PDF. Please type the bill in.');
         setReading(false);
@@ -169,8 +205,8 @@ export default function QuickBill() {
       const gstNote = bill.gstAmount > 0 ? ` GST of ₹${bill.gstAmount} was added to each line.` : '';
       setReadNote(`Read ${bill.items.length} items.${checks ? ` ${checks} item name(s) need a look (marked below).` : ' All item names matched.'}${addsUp}${gstNote}${proforma}`);
     } catch (err) {
-      console.error('Bill PDF read failed:', err);
-      setReadNote('Could not read this PDF. Please type the bill in.');
+      console.error('Bill read failed:', err);
+      setReadNote(isPdf ? 'Could not read this PDF. Please type the bill in.' : 'Could not read this photo. Try a clearer, straight photo, or type the bill in.');
     }
     setReading(false);
   };
@@ -393,8 +429,8 @@ export default function QuickBill() {
 
       <div className="bg-white border border-dashed border-teal-300 rounded-xl p-4 text-center">
         <label className="cursor-pointer block">
-          <span className="block text-sm font-semibold text-teal-700">{reading ? 'Reading bill…' : 'Upload supplier bill (PDF)'}</span>
-          <span className="block text-xs text-gray-500 mt-0.5">Fills the vendor, bill number, date and items. You check it before saving.</span>
+          <span className="block text-sm font-semibold text-teal-700">{reading ? 'Reading bill…' : 'Upload a bill: PDF, photo or payment screenshot'}</span>
+          <span className="block text-xs text-gray-500 mt-0.5">Fills the vendor, bill number, date and items (GPay / PhonePe: amount, payee and UPI ref). You check it before saving.</span>
           <input type="file" accept="application/pdf,image/*" onChange={handleFile} className="hidden" />
         </label>
         {readNote && <p className="text-xs text-teal-800 mt-2">{readNote}</p>}
