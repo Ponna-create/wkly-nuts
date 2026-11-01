@@ -5,7 +5,7 @@ import { useApp } from '../context/AppContext';
 import { getChannelFees, setChannelFee as saveChannelFee } from '../utils/settings';
 import { itemCost } from '../utils/skuCost';
 import { formatDate } from '../utils/dateFormat';
-import { costPerBoxMap, productsSentTo } from '../utils/productCost';
+import { makeBoxCoster, productsSentTo } from '../utils/productCost';
 
 const SOURCE_LABELS = {
   whatsapp: 'WhatsApp', website: 'Website', instagram: 'Instagram', inst: 'Instagram',
@@ -22,6 +22,7 @@ export default function Marketing() {
   const [contacts, setContacts] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
   const [runs, setRuns] = useState([]);
+  const [stockItems, setStockItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
@@ -50,13 +51,14 @@ export default function Marketing() {
       dbService.getMarketingCampaigns(),
       dbService.getProductionRuns(),
     ]);
+    dbService.getIngredients().then(({ data }) => setStockItems(data || []));
     setRuns(runRes.data || []);
     setContacts(cRes.data || []);
     setCampaigns(campRes.data || []);
     setLoading(false);
   };
 
-  const costMap = useMemo(() => costPerBoxMap(runs, state.skus), [runs, state.skus]);
+  const costAt = useMemo(() => makeBoxCoster({ runs, skus: state.skus, ingredients: stockItems }), [runs, state.skus, stockItems]);
 
   // Summary metrics
   const totalInfluencerSpend = contacts.reduce((s, c) => s + (c.fee || 0), 0);
@@ -373,7 +375,7 @@ export default function Marketing() {
                   <div><span className="text-gray-500">Revenue:</span> <span className="font-medium text-green-600">₹{(contact.revenueGenerated || 0).toLocaleString()}</span></div>
                 </div>
                 {(() => {
-                  const sent = productsSentTo(contact.id, state.salesOrders, state.skus, costMap);
+                  const sent = productsSentTo(contact.id, state.salesOrders, state.skus, costAt);
                   if (sent.orders === 0) return null;
                   const cash = contact.fee || 0;
                   return (

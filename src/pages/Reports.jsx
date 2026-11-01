@@ -40,6 +40,7 @@ export default function Reports() {
   const [expenses, setExpenses] = useState([]);
   const [productions, setProductions] = useState([]);
   const [workLog, setWorkLog] = useState([]);
+  const [ingredients, setIngredients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dateRange, setDateRange] = useState('this_month');
   const [customFrom, setCustomFrom] = useState('');
@@ -49,13 +50,15 @@ export default function Reports() {
 
   const loadData = async () => {
     setLoading(true);
-    const [ordersRes, expensesRes, prodRes, workRes] = await Promise.all([
+    const [ordersRes, expensesRes, prodRes, workRes, ingRes] = await Promise.all([
       dbService.getSalesOrders(),
       dbService.getExpenses(),
       dbService.getProductionRuns(),
       dbService.getWorkLog(),
+      dbService.getIngredients(),
     ]);
     if (workRes.data) setWorkLog(workRes.data);
+    if (ingRes.data) setIngredients(ingRes.data);
     if (ordersRes.data) setOrders(ordersRes.data);
     if (expensesRes.data) setExpenses(expensesRes.data);
     if (prodRes.data) setProductions(prodRes.data);
@@ -210,8 +213,8 @@ export default function Reports() {
   }, [filteredProductions]);
 
   // === PROFIT/LOSS === the one profit rule shared with Profit & Cost (utils/profit.js)
-  const P = useMemo(() => computeProfit({ orders, expenses, runs: productions, workLog, skus: state.skus || [], from: rangeFrom, to: rangeTo }),
-    [orders, expenses, productions, workLog, state.skus, rangeFrom, rangeTo]);
+  const P = useMemo(() => computeProfit({ orders, expenses, runs: productions, workLog, skus: state.skus || [], ingredients, from: rangeFrom, to: rangeTo }),
+    [orders, expenses, productions, workLog, ingredients, state.skus, rangeFrom, rangeTo]);
   const netProfit = P.profit;
 
   // === MONTHLY TREND (last 6 months, uses all orders not filtered) ===
@@ -231,11 +234,11 @@ export default function Reports() {
         return ed && ed.startsWith(key);
       });
       const last = new Date(d.getFullYear(), d.getMonth() + 1, 0);
-      const mp = computeProfit({ orders, expenses, runs: productions, workLog, skus: state.skus || [], from: `${key}-01`, to: `${key}-${String(last.getDate()).padStart(2, '0')}` });
+      const mp = computeProfit({ orders, expenses, runs: productions, workLog, skus: state.skus || [], ingredients, from: `${key}-01`, to: `${key}-${String(last.getDate()).padStart(2, '0')}` });
       months.push({ key, label, revenue: mp.salesEx, expense: mp.salesEx - mp.profit, profit: mp.profit, orderCount: mp.orders });
     }
     return months;
-  }, [orders, expenses, productions, workLog, state.skus]);
+  }, [orders, expenses, productions, workLog, ingredients, state.skus]);
 
   // === CUSTOMER RETENTION ===
   const customerRetention = useMemo(() => {
@@ -375,7 +378,7 @@ export default function Reports() {
             <p className="text-sm text-gray-600">Cost of boxes sold</p>
           </div>
           <p className="text-2xl font-bold text-blue-700">{P.cogs.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
-          <p className="text-xs text-gray-500">{P.noCost.length ? `No cost yet: ${P.noCost.join(', ')}` : P.estimated.length ? `Estimated from SKU costing: ${P.estimated.join(', ')}` : 'From each product\'s latest batch cost'}</p>
+          <p className="text-xs text-gray-500">{P.noCost.length ? `No cost yet: ${P.noCost.join(', ')}` : P.estimated.length ? `Typed cost used: ${P.estimated.join(', ')}` : P.billPriced.length ? 'From bill prices on each order date' : 'From each product\'s batch cost'}</p>
         </div>
         <div className="bg-white p-4 rounded-lg border border-gray-200">
           <div className="flex items-center gap-2 mb-1">

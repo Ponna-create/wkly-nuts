@@ -6,7 +6,7 @@ import { isPromotionalOrder } from '../utils/invoiceFromOrder';
 import { boxesForPacks, boxesPerMonthly } from '../utils/packSize';
 import { formatDate } from '../utils/dateFormat';
 import { computeProfit } from '../utils/profit';
-import { costPerBoxInfo } from '../utils/productCost';
+import { makeBoxCoster } from '../utils/productCost';
 
 // One page that answers: what did we sell, what did it cost to make, what did
 // we spend on ads, what did we waste, and what is each product earning.
@@ -76,6 +76,9 @@ export default function ProfitReport() {
   const skus = state.skus || [];
   const contacts = state.marketingContacts || [];
 
+  const costAt = useMemo(() => makeBoxCoster({ runs, skus, ingredients }), [runs, skus, ingredients]);
+  const monthEnd = (m) => { const [y, mo] = m.split('-').map(Number); return `${m}-${String(new Date(y, mo, 0).getDate()).padStart(2, '0')}`; };
+
   const r = useMemo(() => {
     // ---- sales ----
     const monthOrders = (state.salesOrders || []).filter(o => monthOf(o.order_date) === month && o.status !== 'cancelled');
@@ -104,20 +107,17 @@ export default function ProfitReport() {
     });
     const labourHours = labourBy.production + labourBy.fulfilment + labourBy.general;
 
-    // ---- cost per box: same rule as the profit figure (utils/productCost.js):
-    // latest batch that recorded ingredients and packaging, else the SKU costing estimate ----
-    const info = costPerBoxInfo(runs, skus);
+    // ---- cost per box at the end of this month (utils/productCost.js) ----
     const costBySku = {};
-    Object.entries(info.map).forEach(([id, perBox]) => {
-      if (info.source[id] !== 'batch') { costBySku[id] = { perBox, estimate: true }; return; }
-      const x = runs.filter(rr => String(rr.sku_id) === String(id) && rr.status === 'completed' && num(rr.ingredient_cost) > 0 && num(rr.packaging_cost) > 0)
-        .sort((a, b) => new Date(b.completed_at || b.batch_date) - new Date(a.completed_at || a.batch_date))[0];
-      const runSku = skus.find(sk => String(sk.id) === String(id));
-      const mult = x?.pack_type === 'monthly' ? boxesPerMonthly(runSku) : 1;
-      const boxes = Math.max(1, num(x?.actual_quantity) * mult);
-      costBySku[id] = {
-        perBox, batch: x?.batch_number || x?.run_number, date: x?.completed_at || x?.batch_date,
-        ing: num(x?.ingredient_cost) / boxes, pkg: num(x?.packaging_cost) / boxes, lab: num(x?.labor_cost) / boxes,
+    skus.forEach(sk => {
+      const c = costAt(sk.id, monthEnd(month));
+      if (!c) return;
+      if (c.source !== 'batch') { costBySku[sk.id] = { perBox: c.cost, source: c.source }; return; }
+      const x = c.run;
+      const boxes = Math.max(1, num(x.actual_quantity) * (x.pack_type === 'monthly' ? boxesPerMonthly(sk) : 1));
+      costBySku[sk.id] = {
+        perBox: c.cost, source: 'batch', batch: x.batch_number || x.run_number, date: x.completed_at || x.batch_date,
+        ing: num(x.ingredient_cost) / boxes, pkg: num(x.packaging_cost) / boxes, lab: num(x.labor_cost) / boxes,
       };
     });
     const monthBatches = runs.filter(x => x.status === 'completed' && monthOf(x.completed_at || x.batch_date) === month);
@@ -133,15 +133,16 @@ export default function ProfitReport() {
         const gst = num(sku?.gstRate ?? 5);
         const rev = num(it.total) / (1 + gst / 100);
         const units = boxesForPacks(sku, it.pack_type || it.packType, it.quantity);
-        if (!prod[key]) prod[key] = { id, name, units: 0, rev: 0 };
+        if (!prod[key]) prod[key] = { id, name, units: 0, rev: 0, cogs: 0, costed: true, estimate: false };
         prod[key].units += units;
         prod[key].rev += rev;
+        const c = id ? costAt(id, String(o.order_date || o.created_at).slice(0, 10)) : null;
+        if (c) { prod[key].cogs += c.cost * units; if (c.source === 'estimate') prod[key].estimate = true; } else prod[key].costed = false;
       });
     });
     const products = Object.values(prod).map(p => {
-      const c = p.id ? costBySku[p.id] : null;
-      const cogs = c ? c.perBox * p.units : null;
-      return { ...p, perBox: c ? c.perBox : null, estimate: !!c?.estimate, cogs, margin: cogs != null ? p.rev - cogs : null };
+      const cogs = p.costed ? p.cogs : null;
+      return { ...p, perBox: cogs != null && p.units > 0 ? cogs / p.units : null, cogs, margin: cogs != null ? p.rev - cogs : null };
     }).sort((a, b) => b.rev - a.rev);
 
     // ---- sources / marketing ----
@@ -171,7 +172,8 @@ export default function ProfitReport() {
         const id = it.sku_id || it.skuId;
         const u = boxesForPacks(skus.find(sk => String(sk.id) === String(id)), it.pack_type || it.packType, it.quantity);
         units += u;
-        if (costBySku[id]) cost += costBySku[id].perBox * u; else costKnown = false;
+        const bc = id ? costAt(id, String(o.order_date || o.created_at).slice(0, 10)) : null;
+        if (bc) cost += bc.cost * u; else costKnown = false;
       }));
       return { c, cash, barter, orders: sent.length, units, cost, costKnown };
     }).filter(x => x.cash > 0 || x.barter > 0 || x.orders > 0);
@@ -197,14 +199,26 @@ export default function ProfitReport() {
       costBySku, monthBatches, products, bySource, metaSpend, googleSpend, influencerCash, otherMkt: Math.max(0, otherMkt),
       barterValue, mktCash, metaRev, influencers, shelfValue, wasteRows, wasteTotal, rejectedBoxes, rejectedValue, promoCount: promoOrders.length,
     };
-  }, [state.salesOrders, state.expenses, workLog, runs, ingredients, month, skus, contacts]);
+  }, [state.salesOrders, state.expenses, workLog, runs, ingredients, month, skus, contacts, costAt]);
 
   // The one profit rule, shared with Reports (utils/profit.js)
   const P = useMemo(() => {
     const [y, m] = month.split('-').map(Number);
     const last = new Date(y, m, 0).getDate();
-    return computeProfit({ orders: state.salesOrders, expenses: state.expenses, runs, workLog, skus, from: `${month}-01`, to: `${month}-${String(last).padStart(2, '0')}` });
-  }, [state.salesOrders, state.expenses, runs, workLog, skus, month]);
+    return computeProfit({ orders: state.salesOrders, expenses: state.expenses, runs, workLog, skus, ingredients, from: `${month}-01`, to: `${month}-${String(last).padStart(2, '0')}` });
+  }, [state.salesOrders, state.expenses, runs, workLog, skus, ingredients, month]);
+
+  // Box cost over the last 4 months up to the chosen one, for products with a cost
+  const costMonths = useMemo(() => {
+    const [y, m] = month.split('-').map(Number);
+    return [3, 2, 1, 0].map(back => {
+      const d = new Date(y, m - 1 - back, 1);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    });
+  }, [month]);
+  const costTrend = useMemo(() => skus
+    .map(sk => ({ sk, cells: costMonths.map(mm => costAt(sk.id, monthEnd(mm))?.cost ?? null) }))
+    .filter(row => row.cells.some(c => c != null)), [skus, costMonths, costAt]);
 
   const noCost = r.products.filter(p => p.perBox == null).length;
   const catRows = Object.entries(r.byCat).sort((a, b) => b[1] - a[1]);
@@ -226,7 +240,7 @@ export default function ProfitReport() {
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Tile label="Sales (without GST)" value={inr(P.salesEx)} sub={`${P.orders} orders · ${inr(P.salesIncl)} with GST`} />
-        <Tile label="Cost of boxes sold" value={inr(P.cogs)} sub={P.noCost.length ? `No cost yet: ${P.noCost.join(', ')}` : P.estimated.length ? `Estimated from SKU costing: ${P.estimated.join(', ')}` : 'Latest batch cost per box'} />
+        <Tile label="Cost of boxes sold" value={inr(P.cogs)} sub={P.noCost.length ? `No cost yet: ${P.noCost.join(', ')}` : P.estimated.length ? `Typed cost used: ${P.estimated.join(', ')}` : P.billPriced.length ? 'From bill prices on each order date' : 'Batch cost per box'} />
         <Tile label="Other costs" value={inr(P.runningExpenses + P.courier + P.freeSends + P.labourOther)}
           sub={`Expenses ${inr(P.runningExpenses)} · courier ${inr(P.courier)} · free sends ${inr(P.freeSends)} · packing ${inr(P.labourOther)}`} />
         <Tile label="Profit" value={inr(P.profit)} tone={P.profit >= 0 ? 'good' : 'bad'} sub={`${P.margin.toFixed(1)}% of sales · same figure as Reports`} />
@@ -239,7 +253,7 @@ export default function ProfitReport() {
         {P.slipsSkipped > 0 && ` ${P.slipsSkipped} courier slip amount(s) over ₹500 were skipped as misreads.`}
       </p>
 
-      <Section title="Cost per box" hint="From the most recent finished batch that recorded ingredients and packaging. Products without one use an estimate from their costing in SKU Management.">
+      <Section title="Cost per box" hint="As at the end of this month. From a finished batch that recorded ingredients and packaging; otherwise the recipe at the bill prices of that time, plus packaging and process costs from SKU Management.">
         {Object.keys(r.costBySku).length === 0 ? (
           <p className="text-sm text-gray-400">No finished batch with a cost yet. Save a batch, log its hours, then finish it in Quick → Batch.</p>
         ) : (
@@ -261,11 +275,11 @@ export default function ProfitReport() {
                     <tr key={id}>
                       <td className="py-2 pr-2">
                         <span className="font-medium text-gray-900">{(sku?.name || 'Product').trim()}</span>
-                        <span className="block text-[11px] text-gray-400">{c.estimate ? 'Estimate from SKU costing' : `${c.batch} · ${formatDate(c.date)}`}</span>
+                        <span className="block text-[11px] text-gray-400">{c.source === 'bills' ? 'From bill prices' : c.source === 'estimate' ? 'Typed cost in SKU Management' : `${c.batch} · ${formatDate(c.date)}`}</span>
                       </td>
-                      <td className="py-2 px-2 text-right">{c.estimate ? '—' : inr2(c.ing)}</td>
-                      <td className="py-2 px-2 text-right">{c.estimate ? '—' : inr2(c.pkg)}</td>
-                      <td className="py-2 px-2 text-right">{c.estimate ? '—' : inr2(c.lab)}</td>
+                      <td className="py-2 px-2 text-right">{c.source !== 'batch' ? '—' : inr2(c.ing)}</td>
+                      <td className="py-2 px-2 text-right">{c.source !== 'batch' ? '—' : inr2(c.pkg)}</td>
+                      <td className="py-2 px-2 text-right">{c.source !== 'batch' ? '—' : inr2(c.lab)}</td>
                       <td className="py-2 pl-2 text-right font-semibold">{inr2(c.perBox)}</td>
                     </tr>
                   );
@@ -276,7 +290,38 @@ export default function ProfitReport() {
         )}
       </Section>
 
-      <Section title="Profit per product" hint="Sales without GST minus boxes sold × cost per box.">
+      {costTrend.length > 0 && (
+        <Section title="Box cost by month" hint="What one box cost at the end of each month. A rise here is a price rise on your bills.">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs text-gray-500 border-b">
+                  <th className="text-left py-2 pr-2 font-medium">Product</th>
+                  {costMonths.map(mm => (
+                    <th key={mm} className="text-right py-2 px-2 font-medium">
+                      {new Date(`${mm}-01`).toLocaleDateString('en-IN', { month: 'short', year: '2-digit' })}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {costTrend.map(({ sk, cells }) => (
+                  <tr key={sk.id}>
+                    <td className="py-2 pr-2 font-medium text-gray-900">{(sk.name || 'Product').trim()}</td>
+                    {cells.map((c, i) => {
+                      const prev = i > 0 ? cells[i - 1] : null;
+                      const tone = c == null || prev == null || Math.abs(c - prev) < 0.5 ? 'text-gray-700' : c > prev ? 'text-red-600 font-semibold' : 'text-green-700 font-semibold';
+                      return <td key={costMonths[i]} className={`py-2 px-2 text-right ${tone}`}>{c != null ? inr2(c) : '—'}</td>;
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Section>
+      )}
+
+      <Section title="Profit per product" hint="Sales without GST minus each order's boxes × the box cost on its date.">
         {r.products.length === 0 ? (
           <p className="text-sm text-gray-400">No sales in this month.</p>
         ) : (
