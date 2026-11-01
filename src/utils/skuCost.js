@@ -4,6 +4,8 @@
 // Approximate on purpose: combo/gift items with no clean SKU match cost ₹0 rather
 // than a guess.
 
+import { recipeCostAt } from './productCost';
+
 // Weighted-average ₹/kg across a set of ingredient_batches (whichever ingredient(s)
 // they belong to) — the locked costing decision (see ProductionRuns.jsx). Blends
 // whatever's actually still in stock, weighted by remaining quantity, rather than
@@ -53,25 +55,10 @@ export function getIngredientRatePerKg(ingredientName, ingredients) {
 // Returns { cost, unmatched } — `unmatched` lists ingredient names that resolved to
 // neither a real ingredient nor an alias, so a stale ₹0 never passes as "accurate".
 export function liveRawMaterialCost(sku, ingredients, aliases, packType = 'weekly') {
-  const unmatched = new Set();
-  const rateOf = (name) => {
-    const { rate, matched } = resolveIngredientRate(name, ingredients, aliases);
-    if (!matched && name) unmatched.add(name);
-    return rate;
-  };
-
-  if (sku.skuType === 'single') {
-    const cost = (sku.singleUnitIngredients || []).reduce((s, i) =>
-      s + ((parseFloat(i.gramsPerUnit) || 0) / 1000) * rateOf(i.ingredientName), 0);
-    return { cost, unmatched: [...unmatched] };
-  }
-  // Recipe Pack: sum every day's grams-per-sachet at today's rate, weekly = 7 days,
-  // monthly = 4x weekly (established box model, see docs/ARCHITECTURE.md §8.3).
-  const days = Object.values(sku.recipes || {});
-  const weekly = days.reduce((sum, dayItems) =>
-    sum + (dayItems || []).reduce((s, item) =>
-      s + ((parseFloat(item.gramsPerSachet) || 0) / 1000) * rateOf(item.ingredientName), 0), 0);
-  return { cost: packType === 'monthly' ? weekly * (sku.soldAs === 'monthly' ? 1 : 4) : weekly, unmatched: [...unmatched] };
+  // today's bill prices, same rule as the profit figure (productCost.js)
+  const { cost, notFromBills } = recipeCostAt(sku, ingredients);
+  if (sku.skuType === 'single') return { cost, unmatched: notFromBills };
+  return { cost: packType === 'monthly' ? cost * (sku.soldAs === 'monthly' ? 1 : 4) : cost, unmatched: notFromBills };
 }
 
 export const packagingCostOf = (materials) => (materials || []).reduce((sum, pkg) =>

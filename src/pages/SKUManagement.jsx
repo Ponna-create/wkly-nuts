@@ -6,6 +6,7 @@ import StockLinkSelect, { PackagingLinkSelect, stockLinkValue, stockLinkFields, 
 import logo from '../assets/wkly-nuts-logo.png';
 import { formatDate } from '../utils/dateFormat';
 import { liveRawMaterialCost } from '../utils/skuCost';
+import { recipeCostAt } from '../utils/productCost';
 
 const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 const DAY_COLORS = {
@@ -2146,16 +2147,15 @@ export default function SKUManagement() {
 
               {/* Live Cost Preview */}
               {(() => {
-                let materialCost = 0;
                 let totalGrams = 0;
                 DAYS.forEach(day => {
                   (formData.recipes[day] || []).forEach(item => {
-                    const grams = parseFloat(item.gramsPerSachet) || 0;
-                    const rate = parseFloat(item.pricePerGram) || 0;
-                    totalGrams += grams;
-                    materialCost += grams * rate;
+                    totalGrams += parseFloat(item.gramsPerSachet) || 0;
                   });
                 });
+                // today's bill prices; a line with no bill yet keeps its saved price
+                const billCost = recipeCostAt({ skuType: 'weekly', recipes: formData.recipes }, stockItems);
+                const materialCost = billCost.cost;
                 const packagingCost = getPackagingCost(formData.packagingMaterials);
                 const totalCost = materialCost + packagingCost;
                 // The preview follows "Sold as": a Weekly box is 1 box; a Monthly pack is 4 boxes
@@ -2185,7 +2185,7 @@ export default function SKUManagement() {
                       <div className="bg-white rounded-lg p-2 text-center">
                         <p className="text-[10px] text-gray-500">Raw Material / Pack</p>
                         <p className="text-lg font-bold text-gray-700">₹{materialCost.toFixed(2)}</p>
-                        <p className="text-[10px] text-gray-400">{(totalGrams / 1000).toFixed(3)} kg</p>
+                        <p className="text-[10px] text-gray-400">{(totalGrams / 1000).toFixed(3)} kg · latest bills</p>
                       </div>
                       <div className="bg-white rounded-lg p-2 text-center">
                         <p className="text-[10px] text-gray-500">+ Packaging / Pack</p>
@@ -2205,6 +2205,9 @@ export default function SKUManagement() {
                         <p className="text-[10px] text-gray-400">{sp > 0 ? `₹${(sp - viewCost).toFixed(2)} profit` : (soldAs === 'monthly' ? 'set monthly price' : 'set selling price')}</p>
                       </div>
                     </div>
+                    {billCost.notFromBills.length > 0 && (
+                      <p className="text-xs mt-2 text-amber-700">No bill yet, saved price used: {billCost.notFromBills.join(', ')}</p>
+                    )}
                     {soldAs === 'both' && monthlyPrice > 0 && (
                       <p className={`text-xs mt-2 ${monthlyMargin > 0 ? 'text-gray-600' : 'text-red-700 font-medium'}`}>
                         Monthly pack (4 boxes): cost ₹{monthlyCost.toFixed(2)}, selling ₹{monthlyPrice.toFixed(2)}, margin {monthlyMargin.toFixed(1)}%

@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import BillCSVImport from '../components/BillCSVImport';
 import { isPromotionalOrder } from '../utils/invoiceFromOrder';
-import { costPerBoxMap, productCostOfOrders } from '../utils/productCost';
+import { makeBoxCoster, productCostOfOrders } from '../utils/productCost';
 
 const CATEGORIES = [
   { value: 'raw_materials', label: 'Raw Materials' },
@@ -29,6 +29,7 @@ const PAYMENT_METHODS = ['Cash', 'UPI', 'Bank Transfer', 'Credit Card', 'Cheque'
 export default function Expenses() {
   const { state, showToast } = useApp();
   const [expenses, setExpenses] = useState([]);
+  const [stockItems, setStockItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingExpense, setEditingExpense] = useState(null);
@@ -77,7 +78,8 @@ export default function Expenses() {
     .reduce((sum, e) => sum + (parseFloat(e.total_amount) || 0), 0);
   const promoOrders = (state.salesOrders || []).filter(o =>
     isPromotionalOrder(o) && !['cancelled', 'returned'].includes(o.status) && inThisMonth(o.order_date));
-  const productSent = productCostOfOrders(promoOrders, state.skus, costPerBoxMap(state.productionRuns, state.skus));
+  useEffect(() => { dbService.getIngredients().then(({ data }) => setStockItems(data || [])); }, []);
+  const productSent = productCostOfOrders(promoOrders, state.skus, makeBoxCoster({ runs: state.productionRuns, skus: state.skus, ingredients: stockItems }));
 
   const handleDelete = async (id) => {
     if (!confirm('Delete this expense?')) return;
