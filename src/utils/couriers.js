@@ -49,7 +49,7 @@ const daysSince = (ms) => Math.floor((Date.now() - ms) / 86400000);
 // can't find isn't in here; it shows on its own row, where the number can be fixed.
 export function parcelAttention(order) {
   if (!isOnTheWay(order) || checkFailed(order)) return null;
-  if (/undeliver|not delivered|non[- ]?deliver|\brto\b|return/i.test(order.st_courier_status || '')) {
+  if (/un\s*deliver|not delivered|non[- ]?deliver|\brto\b|return/i.test(order.st_courier_status || '')) {
     return { kind: 'problem', text: 'Not delivered' };
   }
   const lastEvent = (order.st_courier_status || '').match(/\(([A-Z][a-z]{2} \d{1,2}, \d{4})/);
