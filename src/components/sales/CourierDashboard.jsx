@@ -4,6 +4,7 @@ import { dbService } from '../../services/supabase';
 import { fillTemplate, loadTemplates } from './WhatsAppSender';
 import CustomerDetailModal from '../CustomerDetailModal';
 import { formatDateTime, formatDate } from '../../utils/dateFormat';
+import { MAX_COURIER_COST } from '../../utils/courierSuggest';
 import { cleanTracking } from '../../utils/slipNumbers';
 import { getCouriers, setCustomCouriers, isBuiltInCourier, patternFromExample, courierForNumber, courierOf, isStOrder, isOnTheWay, checkFailed, parcelAttention, STUCK_DAYS } from '../../utils/couriers';
 
@@ -15,6 +16,14 @@ const openTrackingPage = (awb, link) => {
   window.open(link, '_blank');
 };
 const CHECKS_PER_CLICK = 5;
+const RECENT_DAYS = 7;
+const dayStr = (daysAgo = 0) => {
+  const d = new Date();
+  d.setDate(d.getDate() - daysAgo);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+// The day a parcel left; older orders may only have an order date.
+const parcelDay = (o) => String(o.dispatch_date || o.order_date || '').slice(0, 10);
 
 // One row per courier-tracked order, for every courier. ST Courier updates by
 // itself each morning (api/st-courier-daily.js); any other courier has a Track
@@ -30,6 +39,8 @@ export default function CourierDashboard({ orders, onClose, onUpdate, showToast 
   const [editValue, setEditValue] = useState('');
   const [couriers, setCouriers] = useState(() => getCouriers());
   const [courierFilter, setCourierFilter] = useState('all');
+  const [fromDate, setFromDate] = useState(() => dayStr(RECENT_DAYS - 1));
+  const [toDate, setToDate] = useState(() => dayStr());
   const [showCourierForm, setShowCourierForm] = useState(false);
   const [newCourier, setNewCourier] = useState({ name: '', link: '', example: '' });
   const [checking, setChecking] = useState(null); // { current, total } while Check now runs
@@ -56,14 +67,18 @@ export default function CourierDashboard({ orders, onClose, onUpdate, showToast 
   const trackedOrders = useMemo(() => {
     const list = shown;
     const q = searchTerm.trim().toLowerCase();
-    if (!q) return list;
+    // A customer calling could be about any date, so a search looks through all of them.
+    if (!q) {
+      return list.filter(o => (!fromDate || parcelDay(o) >= fromDate) && (!toDate || parcelDay(o) <= toDate))
+        .sort((a, b) => parcelDay(b).localeCompare(parcelDay(a)));
+    }
     return list.filter(o =>
       (o.customer_name || '').toLowerCase().includes(q) ||
       (o.order_number || '').toLowerCase().includes(q) ||
       (o.tracking_number || '').toLowerCase().includes(q) ||
       (o.phone || '').includes(q)
     );
-  }, [shown, searchTerm]);
+  }, [shown, searchTerm, fromDate, toDate]);
 
   // Builds the same profile shape CustomerDetailModal expects, from whatever
   // orders this customer has (any status, not just courier-tracked ones) —
@@ -192,11 +207,23 @@ export default function CourierDashboard({ orders, onClose, onUpdate, showToast 
       return;
     }
     const original = field === 'shippingWeight' ? order.shipping_weight : order.courier_amount;
-    if ((original ?? null) === num) {
+    if ((parseFloat(original) ?? null) === num || (original == null && num == null)) {
       cancelEdit();
       return; // nothing actually changed — skip the write
     }
-    const { error } = await dbService.updateSalesOrder({ id: order.id, [field]: num });
+    if (field === 'courierAmount' && num > MAX_COURIER_COST && !window.confirm(`₹${num} for one parcel is unusually high. Save it anyway?`)) {
+      cancelEdit();
+      return;
+    }
+    // With both filled in, this is her checked figure, the same as OK on Scan
+    // Slips, so it counts towards the courier cost suggestions.
+    const weight = field === 'shippingWeight' ? num : parseFloat(order.shipping_weight);
+    const cost = field === 'courierAmount' ? num : parseFloat(order.courier_amount);
+    const { error } = await dbService.updateSalesOrder({
+      id: order.id,
+      [field]: num,
+      ...(weight > 0 && cost > 0 && { courierConfirmedAt: new Date().toISOString() }),
+    });
     cancelEdit();
     if (error) {
       showToast('Error saving — try again', 'error');
@@ -223,7 +250,7 @@ export default function CourierDashboard({ orders, onClose, onUpdate, showToast 
         <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
           <div>
             <h2 className="text-xl font-bold text-gray-900">Courier Dashboard</h2>
-            <p className="text-sm text-gray-500 mt-1">{trackedOrders.length} tracked order{trackedOrders.length !== 1 ? 's' : ''}</p>
+            <p className="text-sm text-gray-500 mt-1">Showing {trackedOrders.length} of {shown.length} tracked order{shown.length !== 1 ? 's' : ''}</p>
           </div>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700"><X className="w-6 h-6" /></button>
         </div>
@@ -325,7 +352,8 @@ export default function CourierDashboard({ orders, onClose, onUpdate, showToast 
             </div>
           )}
 
-          <div className="relative max-w-sm">
+          <div className="flex flex-wrap items-end gap-3">
+          <div className="relative flex-1 min-w-[16rem] max-w-sm">
             <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               value={searchTerm}
@@ -334,13 +362,40 @@ export default function CourierDashboard({ orders, onClose, onUpdate, showToast 
               className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm"
             />
           </div>
+            <label className="text-xs font-medium text-gray-600">From
+              <input type="date" value={fromDate} max={toDate || undefined} onChange={(e) => setFromDate(e.target.value)}
+                className="block mt-0.5 px-2 py-1.5 border border-gray-300 rounded-lg text-sm" />
+            </label>
+            <label className="text-xs font-medium text-gray-600">To
+              <input type="date" value={toDate} min={fromDate || undefined} onChange={(e) => setToDate(e.target.value)}
+                className="block mt-0.5 px-2 py-1.5 border border-gray-300 rounded-lg text-sm" />
+            </label>
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                { label: 'Today', from: dayStr(), to: dayStr() },
+                { label: `Last ${RECENT_DAYS} days`, from: dayStr(RECENT_DAYS - 1), to: dayStr() },
+                { label: 'Last 30 days', from: dayStr(29), to: dayStr() },
+                { label: 'All', from: '', to: '' },
+              ].map(r => (
+                <button
+                  key={r.label}
+                  onClick={() => { setFromDate(r.from); setToDate(r.to); }}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border ${fromDate === r.from && toDate === r.to ? 'bg-teal-50 text-teal-700 border-teal-300' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
+          </div>
 
           {trackedOrders.length === 0 ? (
-            <p className="text-sm text-gray-500 text-center py-8">No courier-tracked orders yet — scan slips first.</p>
+            <p className="text-sm text-gray-500 text-center py-8">{shown.length === 0 ? 'No courier-tracked orders yet — scan slips first.' : 'No parcels in these dates. Change the dates above or press All.'}</p>
           ) : (
-            <div className="overflow-x-auto border border-gray-200 rounded-lg">
+            // Scrolls inside its own box, so the side scroll bar is always on screen
+            // instead of at the very bottom of a long list.
+            <div className="overflow-auto max-h-[55vh] border border-gray-200 rounded-lg">
               <table className="min-w-full text-sm">
-                <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+                <thead className="sticky top-0 z-10 bg-gray-50 text-xs text-gray-500 uppercase">
                   <tr>
                     <th className="px-3 py-2 text-left">Order ID</th>
                     <th className="px-3 py-2 text-left">Customer</th>
@@ -387,10 +442,10 @@ export default function CourierDashboard({ orders, onClose, onUpdate, showToast 
                         ) : (
                           <button
                             onClick={() => startEdit(o, 'shippingWeight', o.shipping_weight)}
-                            className="text-left hover:bg-teal-50 hover:text-teal-700 px-1 py-0.5 -mx-1 rounded"
+                            className="inline-block min-w-[3.5rem] text-left bg-white border border-gray-300 hover:border-teal-500 hover:bg-teal-50 px-1.5 py-1 rounded"
                             title="Click to edit weight"
                           >
-                            {o.shipping_weight != null ? `${o.shipping_weight} kg` : '—'}
+                            {o.shipping_weight != null ? `${o.shipping_weight} kg` : <span className="text-gray-400">Add</span>}
                           </button>
                         )}
                       </td>
@@ -413,10 +468,10 @@ export default function CourierDashboard({ orders, onClose, onUpdate, showToast 
                         ) : (
                           <button
                             onClick={() => startEdit(o, 'courierAmount', o.courier_amount)}
-                            className="text-left hover:bg-teal-50 hover:text-teal-700 px-1 py-0.5 -mx-1 rounded"
+                            className="inline-block min-w-[3.5rem] text-left bg-white border border-gray-300 hover:border-teal-500 hover:bg-teal-50 px-1.5 py-1 rounded"
                             title="Click to edit shipping amount"
                           >
-                            {o.courier_amount != null ? `₹${o.courier_amount}` : '—'}
+                            {o.courier_amount != null ? `₹${o.courier_amount}` : <span className="text-gray-400">Add</span>}
                           </button>
                         )}
                       </td>
@@ -438,7 +493,7 @@ export default function CourierDashboard({ orders, onClose, onUpdate, showToast 
                         ) : (
                           <button
                             onClick={() => startEdit(o, 'trackingNumber', o.tracking_number)}
-                            className="text-left hover:bg-teal-50 hover:text-teal-700 px-1 py-0.5 -mx-1 rounded"
+                            className="inline-block min-w-[3.5rem] text-left bg-white border border-gray-300 hover:border-teal-500 hover:bg-teal-50 px-1.5 py-1 rounded"
                             title="Click to fix the tracking number"
                           >
                             {o.tracking_number}
