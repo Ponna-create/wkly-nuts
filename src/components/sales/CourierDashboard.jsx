@@ -508,7 +508,7 @@ export default function CourierDashboard({ orders, onClose, onUpdate, showToast 
                           <span className="text-red-700">ST can't find this number — click it to fix</span>
                         ) : o.st_courier_status ? (
                           <>
-                            <div className={/\bdelivered/i.test(o.st_courier_status) && !/undeliver|not delivered/i.test(o.st_courier_status) ? 'text-green-700 font-medium' : 'text-gray-700'}>{o.st_courier_status}</div>
+                            <div className={/\bdelivered/i.test(o.st_courier_status) && !/un\s*deliver|not delivered/i.test(o.st_courier_status) ? 'text-green-700 font-medium' : 'text-gray-700'}>{o.st_courier_status}</div>
                             {o.st_courier_last_checked_at && <div className="text-gray-400">checked {formatDateTime(o.st_courier_last_checked_at)}</div>}
                           </>
                         ) : (

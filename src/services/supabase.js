@@ -3095,8 +3095,8 @@ const _realDbService = {
   // loosely match more than one pattern.
   _mapStCourierStatusToStage(rawStatus) {
     const s = (rawStatus || '').toLowerCase();
-    // "Undelivered" / "not delivered" are failed attempts, not deliveries.
-    if (/undeliver|not delivered|non[- ]?deliver|rto|return/.test(s)) return null;
+    // "Undelivered" / "not delivered" are failed attempts, not deliveries. ST writes "Un Delivered".
+    if (/un\s*deliver|not delivered|non[- ]?deliver|rto|return/.test(s)) return null;
     if (/\bdelivered\b/.test(s)) return 'delivered';
     if (/out for delivery|in transit|on the way|reached destination|processed|forwarded/.test(s)) return 'transit';
     if (/dispatch|picked up|booked|departed/.test(s)) return 'dispatched';
