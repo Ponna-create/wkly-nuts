@@ -3148,7 +3148,9 @@ const _realDbService = {
             update.status = mappedStage;
             advanced = mappedStage;
             if (mappedStage === 'delivered') {
-              update.actualDeliveryDate = new Date().toISOString().split('T')[0];
+              // The day the courier delivered it, the same as the daily check.
+              const d = (r.deliveredAt || '').match(/^(\d{2})-(\d{2})-(\d{4})/);
+              update.actualDeliveryDate = d ? `${d[3]}-${d[2]}-${d[1]}` : new Date().toISOString().split('T')[0];
             }
           }
         }
