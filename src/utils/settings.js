@@ -103,6 +103,12 @@ export const syncSettingsFromCloud = async () => {
   } catch (err) {
     console.warn('Could not sync label settings from cloud:', err);
   }
+  try {
+    const { data } = await dbService.getAppSetting('customCouriers');
+    if (data) setSetting('customCouriers', data);
+  } catch (err) {
+    console.warn('Could not sync couriers from cloud:', err);
+  }
 };
 
 // Channels manually added on the Omni Channels page that don't have any real

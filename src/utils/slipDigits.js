@@ -6,7 +6,7 @@
 // still passes the number check. So a number is only accepted when two separate
 // reads agree. A number read just once comes back as a candidate for her to compare.
 import { digitStrips } from './findBarcode';
-import { isValidTracking } from './slipNumbers';
+import { isValidTracking } from './slipNumbers.js';
 
 const LOOK_ALIKES = { O: '0', Q: '0', D: '0', I: '1', L: '1', Z: '2', S: '5', B: '8', G: '6' };
 export function numberFromText(raw) {

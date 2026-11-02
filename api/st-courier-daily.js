@@ -37,7 +37,7 @@ export default async function handler(req, res) {
     const ordersRes = await rest(q);
     if (!ordersRes.ok) throw new Error(`Could not read orders (${ordersRes.status})`);
     const orders = (await ordersRes.json())
-      .filter(o => isStAwb(o.tracking_number) && !/india\s*post|speed\s*post/i.test(o.courier_name || ''))
+      .filter(o => isStAwb(o.tracking_number) && (!(o.courier_name || '').trim() || /^\s*st\b/i.test(o.courier_name)))
       .slice(0, MAX_PER_RUN);
 
     for (const [i, o] of orders.entries()) {
