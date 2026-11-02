@@ -46,19 +46,36 @@ function getCorsOrigin(req) {
   return ALLOWED_ORIGINS[0];
 }
 
-const PROMPT = `You are reading a courier consignment slip (ST Courier, India) from a photo, exactly the way you'd read it if someone pasted this photo directly into a chat with you. Some fields are handwritten and messy — read them carefully and use context (this is a shipping slip) to work out what they say, the way a person would, rather than transcribing stray marks literally.
+// `candidates` are recent open orders (name and place only). Choosing from a
+// short list is far more reliable than reading messy handwriting cold; the
+// app treats the choice as a hint and she confirms it.
+function buildPrompt(candidates) {
+  const year = new Date().getFullYear();
+  const list = Array.isArray(candidates) && candidates.length
+    ? `\n\nThese are the orders waiting to be shipped. Decide which one this slip most likely belongs to:\n${candidates.slice(0, 40).map((c, i) => `${i + 1}. ${String(c.name || '').slice(0, 40)}${c.place ? ` (${String(c.place).slice(0, 30)})` : ''}`).join('\n')}`
+    : '';
+  return `You are reading a courier slip from a photo. The photo is often sideways or upside down, so work out which way up it is before reading. It is usually an ST Courier consignment slip with handwriting by counter staff, or a printed India Post receipt. Read handwriting using context, the way a person would, rather than transcribing stray marks. A messy name does NOT mean the other fields are unreadable: judge each field on its own.
 
-Look at the whole photo first, then report these fields, one per line, in exactly this format (use "null" with no quotes for anything truly illegible or blank — but judge each field independently, a messy name does NOT mean the tracking number is also unreadable):
+On ST Courier slips:
+- The consignment number is printed under the barcode: exactly 11 digits. Copy each printed digit one at a time, and never add or drop one.
+- "From" is always the sender, Wkly. Never report that as the name. The customer is the handwriting beside "To".
+- The "Mobile" box under "To" usually does NOT hold a phone number. It usually has a short place name and the last digits of the pincode, for example "Ch 116" for Chennai 600116 or "Mahara 86" for Maharashtra 400086.
+- KG and Cash are handwritten numbers, for example 1.40 and 60.
 
-TRACKING: the printed CONSIGNMENT NUMBER, 11-12 digits, printed under the barcode (machine-printed, not handwritten — should almost always be readable even when the rest of the slip is messy)
-NAME: the handwritten name in the "To:" / "Receiver's Full Name" box — give your best reading even if not fully certain of every letter, a human confirms this afterward
-PHONE: the handwritten mobile number in the "To: Mobile:" box, digits only
+Report these fields, one per line, in exactly this format (write null with no quotes for anything truly blank or illegible):
+
+TRACKING: the consignment number. On an India Post receipt this looks like CX078669098IN
+NAME: the customer's name, your best reading even if unsure of some letters
+PHONE: the customer's mobile number, only if a full 10-digit number is really there, digits only
+DESTINATION: what is written in the "To" Mobile box, or the customer's city and pincode on a printed receipt, exactly as written
 WEIGHT: the weight in KG as a plain number
-AMOUNT: the number written in the Cash or Credit box (the shipping amount collected)
-DATE: the DATE field as YYYY-MM-DD (assume 2026 if no year shown)
-RAWTEXT: every other word/number you can make out on the slip, space-separated, for fallback matching
+AMOUNT: the number in the Cash or Credit box (on India Post, the amount paid)
+DATE: the slip's date as YYYY-MM-DD (assume ${year} if no year is shown)
+MATCH: the list number of the order this slip most likely belongs to, or null if none fits or no list is given
+RAWTEXT: every other word or number you can make out, space-separated
 
-A low-confidence best guess is far more useful to us than "null" — someone reviews and confirms every result afterward, so don't hold back a reasonable reading just because you're not 100% sure. Only write null when there's truly nothing to go on for that field. Respond with ONLY those 7 lines, nothing else before or after.`;
+A low-confidence best guess is far more useful than null, because someone confirms every result afterward. Respond with ONLY those 9 lines.${list}`;
+}
 
 // Same parsing for whichever provider actually answered — both are asked
 // for identical plain-text output, so this is provider-agnostic.
@@ -66,7 +83,7 @@ function parseFields(text) {
   const field = (label) => {
     const m = text.match(new RegExp(`${label}:\\s*(.*)`, 'i'));
     if (!m) return null;
-    const val = m[1].trim();
+    const val = m[1].replace(/\*/g, '').trim();
     return (!val || /^null$/i.test(val)) ? null : val;
   };
   const weightRaw = field('WEIGHT');
@@ -75,6 +92,8 @@ function parseFields(text) {
     trackingNumber: field('TRACKING'),
     customerName: field('NAME'),
     phone: field('PHONE'),
+    destination: field('DESTINATION'),
+    matchIndex: parseInt(field('MATCH'), 10) || null,
     weight: weightRaw ? parseFloat(weightRaw.replace(/[^\d.]/g, '')) || null : null,
     amount: amountRaw ? parseFloat(amountRaw.replace(/[^\d.]/g, '')) || null : null,
     date: field('DATE'),
@@ -99,7 +118,7 @@ function parseFields(text) {
 // silently break this fallback again.
 const GEMINI_MODELS = ['gemini-flash-latest', 'gemini-3.6-flash'];
 
-async function tryGemini(apiKey, base64, mimeType) {
+async function tryGemini(apiKey, base64, mimeType, prompt) {
   let geminiRes, errText, usedModel;
   for (let i = 0; i < GEMINI_MODELS.length; i++) {
     usedModel = GEMINI_MODELS[i];
@@ -111,7 +130,7 @@ async function tryGemini(apiKey, base64, mimeType) {
         body: JSON.stringify({
           contents: [{
             parts: [
-              { text: PROMPT },
+              { text: prompt },
               { inline_data: { mime_type: mimeType, data: base64 } },
             ],
           }],
@@ -148,13 +167,13 @@ const GROQ_MODELS = [
   'meta-llama/llama-4-scout-17b-16e-instruct',
 ];
 
-async function tryGroqModel(apiKey, base64, mimeType, model) {
+async function tryGroqModel(apiKey, base64, mimeType, model, prompt) {
   const body = {
     model,
     messages: [{
       role: 'user',
       content: [
-        { type: 'text', text: PROMPT },
+        { type: 'text', text: prompt },
         { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64}` } },
       ],
     }],
@@ -178,10 +197,10 @@ async function tryGroqModel(apiKey, base64, mimeType, model) {
   return { ok: true, text, finishReason: data?.choices?.[0]?.finish_reason, model };
 }
 
-async function tryGroq(apiKey, base64, mimeType) {
+async function tryGroq(apiKey, base64, mimeType, prompt) {
   let last;
   for (const model of GROQ_MODELS) {
-    last = await tryGroqModel(apiKey, base64, mimeType, model);
+    last = await tryGroqModel(apiKey, base64, mimeType, model, prompt);
     if (last.ok) return last;
     const missing = last.status === 404 || /model_not_found|not found|decommission|does not exist/i.test(last.detail || '');
     if (!missing) break; // rate limit / bad request — another model won't help
@@ -205,7 +224,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Slip reading not configured — no API key set' });
   }
 
-  const { image } = req.body || {};
+  const { image, candidates } = req.body || {};
   if (!image || typeof image !== 'string') {
     return res.status(400).json({ error: 'Missing image (base64)' });
   }
@@ -213,6 +232,7 @@ export default async function handler(req, res) {
   const base64 = commaIdx !== -1 ? image.slice(commaIdx + 1) : image;
   const mimeMatch = image.match(/^data:(image\/\w+);base64,/);
   const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+  const prompt = buildPrompt(candidates);
 
   try {
     // Groq first: its free tier has 50x Gemini's daily cap (1,000 vs 20
@@ -221,11 +241,11 @@ export default async function handler(req, res) {
     // still useful for the rare photo Groq's model can't make out, since a
     // second independent read is better than none.
     let result = groqKey
-      ? await tryGroq(groqKey, base64, mimeType)
+      ? await tryGroq(groqKey, base64, mimeType, prompt)
       : { ok: false, status: null, detail: 'GROQ_API_KEY not set' };
 
     if (!result.ok && geminiKey) {
-      const geminiResult = await tryGemini(geminiKey, base64, mimeType);
+      const geminiResult = await tryGemini(geminiKey, base64, mimeType, prompt);
       if (geminiResult.ok) {
         result = geminiResult;
       } else {
