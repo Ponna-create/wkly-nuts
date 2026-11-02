@@ -155,10 +155,12 @@ const orderPincode = (order) => {
   return (String(order.shipping_address || '').match(/\b\d{6}\b/) || [''])[0];
 };
 
+// The handwritten date is often misread (24/10 came back as April and June),
+// so a date in the future or months back counts as not read at all.
 const validDay = (d) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(d || ''))) return null;
   const t = Date.parse(d);
-  return Number.isNaN(t) || t > Date.now() + 86400000 ? null : t;
+  return Number.isNaN(t) || t > Date.now() + 86400000 || t < Date.now() - 45 * 86400000 ? null : t;
 };
 
 // Open orders worth showing the slip reader: its choice is only a hint, and a
@@ -184,7 +186,7 @@ export function rankOrdersForSlip(slip, candidateOrders, skus = []) {
   const destination = String(slip.destination || '');
   const destDigits = (destination.match(/\d+/g) || []).pop() || '';
   const destWord = (destination.toLowerCase().match(/[a-z]{2,}/) || [''])[0];
-  const slipDay = validDay(slip.date || extractSlipDateFromText(text));
+  const slipDay = validDay(slip.date) ?? validDay(extractSlipDateFromText(text));
   const refDay = slipDay ?? Date.now();
   const lowerText = text.toLowerCase();
 
@@ -207,6 +209,9 @@ export function rankOrdersForSlip(slip, candidateOrders, skus = []) {
     else if (pin && destDigits.length >= 2 && pin.endsWith(destDigits)) {
       score += destDigits.length >= 3 ? 0.3 : 0.15;
       why.push(`pincode ends ${destDigits}`);
+    } else if (pin && destDigits.length === 3 && [...destDigits].filter((c, i) => c !== pin.slice(-3)[i]).length === 1) {
+      score += 0.1; // one handwritten digit off: "Ch 115" for 600116
+      why.push(`pincode ends near ${destDigits}`);
     }
     if (destWord) {
       const place = `${order.shipping_city || ''} ${order.shipping_state || ''} ${order.shipping_address || ''}`.toLowerCase();
@@ -248,7 +253,8 @@ export function findBestOrderMatch(slip, candidateOrders, skus = []) {
   const fromText = extractTrackingFromText(text);
   const trackingNumber = isValidTracking(readNumber) || !isValidTracking(fromText) ? (readNumber || fromText || null) : fromText;
   const trackingValid = isValidTracking(trackingNumber);
-  const slipDate = validDay(slip.date) != null ? slip.date : extractSlipDateFromText(text);
+  const textDate = extractSlipDateFromText(text);
+  const slipDate = validDay(slip.date) != null ? slip.date : (validDay(textDate) != null ? textDate : null);
   const weight = slip.weight ?? extractWeightFromText(text);
   const amount = slip.amount ?? extractAmountFromText(text);
   const guessedName = slip.customerName || extractLikelyNameLine(text);
