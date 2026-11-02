@@ -42,6 +42,26 @@ export function suggestTrackingFixes(raw, knownNumbers = [], max = 3) {
     .map(x => x.c);
 }
 
+// Numbers right next to ones we know. Slips run in sequence through a book, so a
+// slip that can't be read is often one of these. The check digit moves with the
+// number, so these are real numbers, not guesses at digits.
+export function nearbyNumbers(seeds, used = [], max = 6) {
+  const taken = new Set(used.map(cleanTracking));
+  const found = [];
+  for (let gap = 1; gap <= 3; gap++) {
+    for (const seed of seeds) {
+      const n = cleanTracking(seed);
+      if (!isStNumber(n)) continue;
+      for (const step of [gap, -gap]) {
+        const base = Number(n.slice(0, 10)) + step;
+        const c = `${base}${base % 7}`;
+        if (isStNumber(c) && !taken.has(c) && !found.includes(c)) found.push(c);
+      }
+    }
+  }
+  return found.slice(0, max);
+}
+
 // What the courier's scale should read for this order — sum of each item's
 // SKU shipping weight (set in SKU Management; distinct from the product's
 // own content weight) × quantity, using the weekly or monthly figure
