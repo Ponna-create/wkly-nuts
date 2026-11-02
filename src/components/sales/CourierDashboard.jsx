@@ -15,7 +15,7 @@ const openTrackingPage = (awb, link) => {
   navigator.clipboard?.writeText(awb).catch(() => {});
   window.open(link, '_blank');
 };
-const CHECKS_PER_CLICK = 5;
+const MAX_CHECKS_PER_CLICK = 30;
 const RECENT_DAYS = 7;
 const dayStr = (daysAgo = 0) => {
   const d = new Date();
@@ -57,9 +57,11 @@ export default function CourierDashboard({ orders, onClose, onUpdate, showToast 
   const attention = useMemo(() => shown.map(o => ({ order: o, issue: parcelAttention(o) })).filter(x => x.issue), [shown]);
   const onTheWayCount = shown.filter(isOnTheWay).length;
   const deliveredThisWeek = shown.filter(o => o.status === 'delivered' && Date.now() - Date.parse(o.actual_delivery_date) <= 7 * 86400000).length;
-  const stCheckable = useMemo(() => allTracked.filter(o => isOnTheWay(o) && isStOrder(o))
+  // Numbers ST can't find are left to the daily check: they took up the turns of
+  // parcels it can read, so a corrected number could wait several clicks.
+  const stCheckable = useMemo(() => allTracked.filter(o => isOnTheWay(o) && isStOrder(o) && !checkFailed(o))
     .sort((a, b) => new Date(a.st_courier_last_checked_at || 0) - new Date(b.st_courier_last_checked_at || 0))
-    .slice(0, CHECKS_PER_CLICK), [allTracked]);
+    .slice(0, MAX_CHECKS_PER_CLICK), [allTracked]);
 
   // Same "trackedOrders" list, but customer service needs to find someone by
   // phone number too — e.g. a customer calls about a delivery issue and all
@@ -133,14 +135,27 @@ export default function CourierDashboard({ orders, onClose, onUpdate, showToast 
   const handleCheckNow = async () => {
     if (checking || stCheckable.length === 0) return;
     let delivered = 0;
+    let failed = 0;
     for (let i = 0; i < stCheckable.length; i++) {
       setChecking({ current: i + 1, total: stCheckable.length });
       const outcome = await dbService.checkOneStCourierAwb(stCheckable[i]);
       if (outcome.delivered) delivered++;
+      if (outcome.error || !outcome.result?.found) failed++;
       if (i < stCheckable.length - 1) await new Promise(r => setTimeout(r, 1500));
     }
     setChecking(null);
-    showToast(`Checked ${stCheckable.length}${delivered ? `, ${delivered} delivered` : ''}`, 'success');
+    const notes = [`Checked ${stCheckable.length}`, delivered && `${delivered} delivered`, failed && `${failed} couldn't be found`].filter(Boolean);
+    showToast(notes.join(', '), failed ? 'info' : 'success');
+    onUpdate();
+  };
+
+  const handleCheckOne = async (order) => {
+    if (checking) return;
+    setChecking({ orderId: order.id });
+    const outcome = await dbService.checkOneStCourierAwb(order);
+    setChecking(null);
+    if (outcome.error) { showToast(`Could not check ${order.order_number}: ${outcome.error}`, 'error'); return; }
+    showToast(`${order.order_number}: ${outcome.result?.found ? outcome.result.status : "ST can't find this number"}`, outcome.result?.found ? 'success' : 'info');
     onUpdate();
   };
 
@@ -194,7 +209,8 @@ export default function CourierDashboard({ orders, onClose, onUpdate, showToast 
       if (duplicate) { showToast(`${code} is already on ${duplicate.order_number} (${duplicate.customer_name})`, 'error'); return; }
       const courier = courierForNumber(code, couriers);
       if (!courier && !window.confirm(`${code} doesn't match any courier's numbers. Save it anyway?`)) return;
-      const { error } = await dbService.updateSalesOrder({ id: order.id, trackingNumber: code, stCourierStatus: null, ...(courier && { courierName: courier }) });
+      // Cleared so the new number is first in line for the next check.
+      const { error } = await dbService.updateSalesOrder({ id: order.id, trackingNumber: code, stCourierStatus: null, stCourierLastCheckedAt: null, ...(courier && { courierName: courier }) });
       cancelEdit();
       if (error) { showToast('Error saving — try again', 'error'); return; }
       showToast(`${order.order_number} updated`, 'success');
@@ -291,11 +307,11 @@ export default function CourierDashboard({ orders, onClose, onUpdate, showToast 
               <button
                 onClick={handleCheckNow}
                 disabled={Boolean(checking) || stCheckable.length === 0}
-                title={`Checks the ${CHECKS_PER_CLICK} ST Courier parcels not checked for the longest`}
+                title="Checks every ST Courier parcel on the way, except numbers ST can't find"
                 className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${checking ? 'animate-spin' : ''}`} />
-                {checking ? `Checking ${checking.current} of ${checking.total}...` : 'Check now'}
+                {checking?.total ? `Checking ${checking.current} of ${checking.total}...` : 'Check now'}
               </button>
             </div>
           </div>
@@ -339,6 +355,12 @@ export default function CourierDashboard({ orders, onClose, onUpdate, showToast 
                   <span className="text-xs text-gray-500">{o.order_number} · {courierOf(o)} · <span className="font-mono">{o.tracking_number}</span></span>
                   <span className={`text-xs font-medium ${issue.kind === 'problem' ? 'text-red-700' : 'text-amber-800'}`}>{issue.text}</span>
                   <span className="ml-auto flex items-center gap-1.5">
+                    {isStOrder(o) && (
+                      <button onClick={() => handleCheckOne(o)} disabled={Boolean(checking)} title="Check this parcel with ST Courier now"
+                        className="flex items-center gap-1 px-2 py-1 text-xs bg-white text-gray-700 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50">
+                        <RefreshCw className={`w-3.5 h-3.5 ${checking?.orderId === o.id ? 'animate-spin' : ''}`} /> Check
+                      </button>
+                    )}
                     <button onClick={() => handleSendWhatsApp(o)} title="Message the customer on WhatsApp"
                       className="p-1.5 bg-green-50 text-green-700 border border-green-200 rounded hover:bg-green-100"><MessageCircle className="w-3.5 h-3.5" /></button>
                     {linkFor(o) && (
