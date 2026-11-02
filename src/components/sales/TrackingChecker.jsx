@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Truck, RefreshCw, CheckCircle, MessageCircle, Zap } from 'lucide-react';
 import { dbService } from '../../services/supabase';
 import { formatDate } from '../../utils/dateFormat';
+import { isStOrder } from '../../utils/couriers';
 
 const todayISO = () => new Date().toISOString().split('T')[0];
 
@@ -35,7 +36,7 @@ export default function TrackingChecker({ orders, onOrderUpdate, showToast }) {
   // 'transit' is the actual pipeline status (OrderDetailView.jsx), not
   // 'in_transit' — that mismatch meant transit orders never showed up here.
   const trackableOrders = (orders || []).filter(o =>
-    ['collected', 'dispatched', 'transit'].includes(o.status) && o.tracking_number
+    ['collected', 'dispatched', 'transit'].includes(o.status) && o.tracking_number && isStOrder(o)
   );
 
   // Orders that were delivered recently (within last 5 days) - for WhatsApp feedback

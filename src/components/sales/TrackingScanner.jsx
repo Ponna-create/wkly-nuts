@@ -3,7 +3,8 @@ import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { X, Camera, Image as ImageIcon, CheckCircle, AlertCircle, Package, Search, RotateCw, Pencil, Undo2, Keyboard, ImagePlus } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { dbService } from '../../services/supabase';
-import { expectedWeightForOrder, cleanTracking, isValidTracking, isIndiaPostNumber, suggestTrackingFixes, nearbyNumbers } from '../../utils/slipNumbers';
+import { expectedWeightForOrder, cleanTracking, isValidTracking, suggestTrackingFixes, nearbyNumbers } from '../../utils/slipNumbers';
+import { getCouriers, courierForNumber } from '../../utils/couriers';
 import { findBarcodeAreas, readBarcode } from '../../utils/findBarcode';
 import { readPrintedNumber } from '../../utils/slipDigits';
 import { courierHistory, suggestCourier, CONFIRMED_NEEDED, MAX_COURIER_COST } from '../../utils/courierSuggest';
@@ -123,6 +124,10 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
   const clearerPhotoInputRef = useRef(null);
   const clearerPhotoForRef = useRef(null); // the slip a replacement photo is for
   const linkedCodesRef = useRef({}); // tracking number -> order, for slips repeated within this sitting
+  const couriers = useMemo(() => getCouriers(), []);
+  const numberFits = (code) => Boolean(courierForNumber(code, couriers));
+  // A barcode that fits an added courier's number pattern counts as read.
+  const trustBarcode = (read) => (!read.readBy && read.code && numberFits(read.code) ? { ...read, readBy: 'barcode' } : read);
 
   const unlinkedOrders = useMemo(() => orders.filter(o => !linkedOrders[o.id]), [orders, linkedOrders]);
   // Only dates that still have an order waiting for a number, newest first.
@@ -255,7 +260,7 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
     const updatedOrder = {
       id: order.id,
       trackingNumber: code,
-      courierName: isIndiaPostNumber(code) ? 'India Post' : (order.courier_name || 'ST Courier'),
+      courierName: courierForNumber(code, couriers) || order.courier_name || 'ST Courier',
       status: 'dispatched',
       dispatchDate: order.dispatch_date || new Date().toISOString().split('T')[0],
     };
@@ -323,7 +328,7 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
     if (!okToSaveNumber(code)) return;
     const duplicate = findDuplicateTrackingOrder(code, id);
     if (duplicate) { showToast(`Tracking ${code} is already on ${duplicate.order_number} (${duplicate.customer_name})`, 'error'); return; }
-    const courierName = isIndiaPostNumber(code) ? 'India Post' : d.courierName;
+    const courierName = courierForNumber(code, couriers) || d.courierName;
     setSaving(true);
     const { error: err } = await dbService.updateSalesOrder({ id, trackingNumber: code, dispatchDate: date, courierName });
     setSaving(false);
@@ -344,8 +349,8 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
     showToast('Saved', 'success');
   };
 
-  const okToSaveNumber = (code) => isValidTracking(code)
-    || window.confirm(`${code} doesn't look like a real ST Courier or India Post number. It will fail the daily courier check. Save it anyway?`);
+  const okToSaveNumber = (code) => numberFits(code)
+    || window.confirm(`${code} doesn't match any courier's numbers. If it's ST Courier, it will fail the daily check. Save it anyway?`);
 
   // Single live-camera scan: she's holding the slip under the camera, so she picks straight away.
   const handlePickOrder = async (order) => {
@@ -375,7 +380,7 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
       setBatchProgress({ current: i + 1, total: files.length });
       if (!html5QrCodeRef.current) html5QrCodeRef.current = makeSlipReader('tracking-scan-reader');
       const previewUrl = URL.createObjectURL(files[i]);
-      const { code, readBy, candidates } = await readSlipNumber(html5QrCodeRef.current, files[i]);
+      const { code, readBy, candidates } = trustBarcode(await readSlipNumber(html5QrCodeRef.current, files[i]));
       tally[readBy || 'none']++;
       const owner = code && findDuplicateTrackingOrder(code);
       let reason = null;
@@ -414,7 +419,7 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
     setBatchProgress({ current: 1, total: 1 });
     if (scanning) await stopScanner();
     if (!html5QrCodeRef.current) html5QrCodeRef.current = makeSlipReader('tracking-scan-reader');
-    const { code, readBy, candidates } = await readSlipNumber(html5QrCodeRef.current, file);
+    const { code, readBy, candidates } = trustBarcode(await readSlipNumber(html5QrCodeRef.current, file));
     const owner = code && findDuplicateTrackingOrder(code);
     const previewUrl = URL.createObjectURL(file);
     setReviewQueue(prev => prev.map(r => {
@@ -592,7 +597,7 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
               </h3>
               {reviewQueue.map(item => {
                 const open = item.id === activeId;
-                const numberLooksWrong = item.trackingNumber && !isValidTracking(item.trackingNumber);
+                const numberLooksWrong = item.trackingNumber && !numberFits(item.trackingNumber);
                 const fixes = numberLooksWrong ? suggestTrackingFixes(item.trackingNumber, knownNumbers) : [];
                 const unread = !item.trackingNumber || (numberLooksWrong && item.readBy !== 'typed');
                 const choices = unread ? [...new Set([...(item.candidates || []), ...fixes, ...nearbyForUnread])].slice(0, 8) : [];
