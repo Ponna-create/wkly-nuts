@@ -1,10 +1,11 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
-import { X, Camera, Image as ImageIcon, CheckCircle, AlertCircle, Package, Search, RotateCw, Pencil, Undo2 } from 'lucide-react';
+import { X, Camera, Image as ImageIcon, CheckCircle, AlertCircle, Package, Search, RotateCw, Pencil, Undo2, Keyboard, ImagePlus } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { dbService } from '../../services/supabase';
-import { expectedWeightForOrder, cleanTracking, isValidTracking, isIndiaPostNumber, suggestTrackingFixes } from '../../utils/slipNumbers';
-import { findBarcodeAreas, padArea } from '../../utils/findBarcode';
+import { expectedWeightForOrder, cleanTracking, isValidTracking, isIndiaPostNumber, suggestTrackingFixes, nearbyNumbers } from '../../utils/slipNumbers';
+import { findBarcodeAreas, readBarcode } from '../../utils/findBarcode';
+import { readPrintedNumber } from '../../utils/slipDigits';
 import { courierHistory, suggestCourier, CONFIRMED_NEEDED, MAX_COURIER_COST } from '../../utils/courierSuggest';
 
 // Courier slips carry the consignment number as a 1-D barcode. QR codes are
@@ -30,7 +31,7 @@ const loadImage = (file) => new Promise((resolve, reject) => {
 const canvasToFile = (canvas, name) => new Promise((resolve, reject) => {
   canvas.toBlob(b => (b ? resolve(new File([b], name, { type: 'image/png' })) : reject(new Error('could not copy photo'))), 'image/png');
 });
-// The photo turned by a quarter, used by the turn button and the last barcode attempt.
+// The photo turned by a quarter, used by the turn button and the whole-photo attempt.
 const rotateFile = async (file) => {
   const img = await loadImage(file);
   const c = document.createElement('canvas');
@@ -42,32 +43,8 @@ const rotateFile = async (file) => {
   ctx.drawImage(img, -img.width / 2, -img.height / 2);
   return canvasToFile(c, file.name);
 };
-// One area of the photo as its own image, with the bars standing upright.
-const cropArea = (source, area, name) => {
-  const c = document.createElement('canvas');
-  c.width = area.barsUpright ? area.w : area.h;
-  c.height = area.barsUpright ? area.h : area.w;
-  const ctx = c.getContext('2d');
-  ctx.translate(c.width / 2, c.height / 2);
-  if (!area.barsUpright) ctx.rotate(Math.PI / 2);
-  ctx.drawImage(source, area.x, area.y, area.w, area.h, -area.w / 2, -area.h / 2, area.w, area.h);
-  return canvasToFile(c, name);
-};
 const WORKING_SIZE = 1600; // big phone photos are shrunk first: more pixels don't help, and slow it all down
-// Exact consignment number from a slip photo, or throws. The decoder can't read
-// our slips from the whole photo, so it's given the barcode cropped out first.
-// A code that fails the number check is only used if nothing better turns up.
-const decodeSlipBarcode = async (reader, file) => {
-  let odd = null;
-  const attempt = async (f) => {
-    try {
-      const text = cleanTracking(await reader.scanFile(f, false));
-      if (isValidTracking(text)) return text;
-      if (text.length >= 8) odd = odd || text;
-    } catch { /* try the next one */ }
-    return null;
-  };
-
+const prepareSlip = async (file) => {
   const img = await loadImage(file);
   const scale = Math.min(1, WORKING_SIZE / Math.max(img.width, img.height));
   const source = document.createElement('canvas');
@@ -78,18 +55,34 @@ const decodeSlipBarcode = async (reader, file) => {
   const { data } = ctx.getImageData(0, 0, source.width, source.height);
   const gray = new Uint8ClampedArray(source.width * source.height);
   for (let i = 0; i < gray.length; i++) gray[i] = (data[4 * i] * 299 + data[4 * i + 1] * 587 + data[4 * i + 2] * 114) / 1000;
-
-  const areas = findBarcodeAreas(gray, source.width, source.height);
-  for (const pad of [0.12, 0.3, 0.03]) {
-    for (const area of areas) {
-      const found = await attempt(await cropArea(source, padArea(area, source.width, source.height, pad), file.name));
-      if (found) return found;
-    }
+  return { source, gray };
+};
+// The number on a slip photo. readBy says how far to trust it:
+// 'barcode' is exact, 'digits' is for her to compare with the photo, and null
+// means not read, with any numbers seen once offered as candidates.
+const readSlipNumber = async (reader, file) => {
+  let odd = null;
+  let prep = null;
+  let areas = [];
+  try {
+    prep = await prepareSlip(file);
+    areas = findBarcodeAreas(prep.gray, prep.source.width, prep.source.height);
+    const text = readBarcode(prep.gray, prep.source.width, prep.source.height, areas);
+    if (isValidTracking(text)) return { code: text, readBy: 'barcode', candidates: [] };
+    odd = text;
+  } catch { /* a format the browser can't draw: try its own barcode reader below */ }
+  // The whole photo: this is where a phone's built-in barcode reader helps.
+  for (const turn of [false, true]) {
+    try {
+      const text = cleanTracking(await reader.scanFile(turn ? await rotateFile(file) : file, false));
+      if (isValidTracking(text)) return { code: text, readBy: 'barcode', candidates: [] };
+      if (text.length >= 8) odd = odd || text;
+    } catch { /* try the next one */ }
   }
-  const found = await attempt(file) || await attempt(await rotateFile(file));
-  if (found) return found;
-  if (odd) return odd;
-  throw new Error('No barcode found');
+  if (!prep) return { code: odd, readBy: null, candidates: [] };
+  const { agreed, candidates } = await readPrintedNumber(prep.source, areas);
+  if (agreed) return { code: agreed, readBy: 'digits', candidates };
+  return { code: odd, readBy: null, candidates };
 };
 
 // Slips are handed over in the order packing finished, so anything the courier
@@ -127,6 +120,8 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
   const lastScanTimeRef = useRef(0);
   const processingRef = useRef(false);
   const fileInputRef = useRef(null);
+  const clearerPhotoInputRef = useRef(null);
+  const clearerPhotoForRef = useRef(null); // the slip a replacement photo is for
   const linkedCodesRef = useRef({}); // tracking number -> order, for slips repeated within this sitting
 
   const unlinkedOrders = useMemo(() => orders.filter(o => !linkedOrders[o.id]), [orders, linkedOrders]);
@@ -313,7 +308,7 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
     setCourierEdits(without);
     setCourierSaved(without);
     if (editingLink?.id === id) setEditingLink(null);
-    setReviewQueue(prev => [{ id: nextReviewId(), trackingNumber: code, done: false, reason: null, file: d.file, previewUrl: d.previewUrl }, ...prev]);
+    setReviewQueue(prev => [{ id: nextReviewId(), trackingNumber: code, readBy: d.readBy ?? 'picked', candidates: [], done: false, reason: null, file: d.file, previewUrl: d.previewUrl }, ...prev]);
     setActiveSlipId(null);
     setOrderSearch('');
     showToast(`Undone — ${before.order_number} is back in the list`, 'success');
@@ -375,32 +370,30 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
     setBatchProgress({ current: 0, total: files.length });
     const newReview = [];
     const seen = new Set(reviewQueue.map(r => r.trackingNumber).filter(Boolean));
-    let unread = 0;
+    const tally = { barcode: 0, digits: 0, none: 0 };
     for (let i = 0; i < files.length; i++) {
       setBatchProgress({ current: i + 1, total: files.length });
       if (!html5QrCodeRef.current) html5QrCodeRef.current = makeSlipReader('tracking-scan-reader');
       const previewUrl = URL.createObjectURL(files[i]);
-      let code = null;
-      try {
-        code = await decodeSlipBarcode(html5QrCodeRef.current, files[i]);
-      } catch { unread++; }
+      const { code, readBy, candidates } = await readSlipNumber(html5QrCodeRef.current, files[i]);
+      tally[readBy || 'none']++;
       const owner = code && findDuplicateTrackingOrder(code);
       let reason = null;
-      if (!code) reason = "Couldn't read the barcode — type the number from the photo";
-      else if (owner) reason = `Already linked to ${owner.order_number} (${owner.customer_name}) — nothing to do, press Skip`;
+      if (owner) reason = `Already linked to ${owner.order_number} (${owner.customer_name}) — nothing to do, press Skip`;
       else if (seen.has(code)) reason = 'Same slip as another photo in this stack — press Skip';
       if (code) seen.add(code);
-      newReview.push({ id: nextReviewId(), trackingNumber: code, done: Boolean(owner), reason, file: files[i], previewUrl });
+      newReview.push({ id: nextReviewId(), trackingNumber: code, readBy, candidates, done: Boolean(owner), reason, file: files[i], previewUrl });
     }
     setBatchProgress(null);
     setReviewQueue(prev => [...prev, ...newReview]);
-    showToast(`${files.length - unread} of ${files.length} barcodes read${unread ? ` — type the other ${unread} from the photo` : ''}`, unread ? 'info' : 'success');
+    const notes = [`${tally.barcode} read from the barcode`, tally.digits && `${tally.digits} to compare`, tally.none && `${tally.none} not read`].filter(Boolean);
+    showToast(notes.join(', '), tally.none ? 'info' : 'success');
   };
 
   const assignReviewItem = async (item, order) => {
     if (!item.trackingNumber || saving || !okToSaveNumber(item.trackingNumber)) return;
     setSaving(true);
-    const ok = await doLink(order, item.trackingNumber, { file: item.file, previewUrl: item.previewUrl });
+    const ok = await doLink(order, item.trackingNumber, { file: item.file, previewUrl: item.previewUrl, readBy: item.readBy });
     setSaving(false);
     if (!ok) return;
     showToast(`${order.order_number} → ${item.trackingNumber}`, 'success');
@@ -409,7 +402,32 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
     setOrderSearch('');
   };
 
-  const updateItemTracking = (id, value) => setReviewQueue(prev => prev.map(r => r.id === id ? { ...r, trackingNumber: cleanTracking(value) } : r));
+  const updateItemTracking = (id, value, readBy = 'typed') => setReviewQueue(prev => prev.map(r => r.id === id ? { ...r, trackingNumber: cleanTracking(value), readBy } : r));
+  const startTyping = (id) => setReviewQueue(prev => prev.map(r => r.id === id ? { ...r, typing: true } : r));
+
+  // WhatsApp shrinks photos, so a slip that won't read may read from a clearer copy.
+  const handleClearerPhoto = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    const id = clearerPhotoForRef.current;
+    if (!file || !id) return;
+    setBatchProgress({ current: 1, total: 1 });
+    if (scanning) await stopScanner();
+    if (!html5QrCodeRef.current) html5QrCodeRef.current = makeSlipReader('tracking-scan-reader');
+    const { code, readBy, candidates } = await readSlipNumber(html5QrCodeRef.current, file);
+    const owner = code && findDuplicateTrackingOrder(code);
+    const previewUrl = URL.createObjectURL(file);
+    setReviewQueue(prev => prev.map(r => {
+      if (r.id !== id) return r;
+      if (r.previewUrl) URL.revokeObjectURL(r.previewUrl);
+      return {
+        ...r, file, previewUrl, trackingNumber: code, readBy, candidates, done: Boolean(owner), typing: false,
+        reason: owner ? `Already linked to ${owner.order_number} (${owner.customer_name}) — nothing to do, press Skip` : null,
+      };
+    }));
+    setBatchProgress(null);
+    showToast(code && readBy ? 'Number read from the clearer photo' : "This photo couldn't be read either", code && readBy ? 'success' : 'info');
+  };
 
   // Slip photos are often sideways, which makes the handwriting hard to read.
   const turnItemPhoto = async (item) => {
@@ -439,6 +457,11 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
     if (linkedCount > 0) onUpdate();
     onClose();
   };
+
+  // Numbers beside the ones in this stack, or failing that, the latest saved.
+  const usedNumbers = [...knownNumbers, ...Object.values(linkedOrders), ...reviewQueue.map(r => r.trackingNumber).filter(Boolean)];
+  const stackNumbers = [...reviewQueue.map(r => r.trackingNumber), ...Object.values(linkedOrders)].filter(isValidTracking);
+  const nearbyForUnread = nearbyNumbers(stackNumbers.length ? stackNumbers : knownNumbers.slice(0, 3), usedNumbers);
 
   const activeId = reviewQueue.some(r => r.id === activeSlipId) ? activeSlipId : reviewQueue[0]?.id;
 
@@ -560,6 +583,8 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
             </div>
           )}
 
+          <input ref={clearerPhotoInputRef} type="file" accept="image/*" onChange={handleClearerPhoto} className="hidden" />
+
           {reviewQueue.length > 0 && (
             <div className="space-y-2">
               <h3 className="font-bold text-gray-900 text-sm flex items-center gap-2">
@@ -569,6 +594,17 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
                 const open = item.id === activeId;
                 const numberLooksWrong = item.trackingNumber && !isValidTracking(item.trackingNumber);
                 const fixes = numberLooksWrong ? suggestTrackingFixes(item.trackingNumber, knownNumbers) : [];
+                const unread = !item.trackingNumber || (numberLooksWrong && item.readBy !== 'typed');
+                const choices = unread ? [...new Set([...(item.candidates || []), ...fixes, ...nearbyForUnread])].slice(0, 8) : [];
+                const label = unread
+                  ? { text: "Couldn't read this slip", tone: 'bg-red-100 text-red-800' }
+                  : item.readBy === 'barcode'
+                    ? { text: 'Barcode read', tone: 'bg-green-100 text-green-800' }
+                    : item.readBy === 'digits'
+                      ? { text: 'Read from printed digits — compare with the photo', tone: 'bg-amber-200 text-amber-900' }
+                      : item.readBy === 'picked'
+                        ? { text: 'Chosen by you — compare with the photo', tone: 'bg-amber-200 text-amber-900' }
+                        : { text: 'Typed by you', tone: 'bg-gray-200 text-gray-800' };
                 return (
                   <div key={item.id} className="p-3 bg-amber-50 border border-amber-200 rounded-lg space-y-2">
                     {open && item.previewUrl && (
@@ -593,25 +629,31 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
                         <img src={item.previewUrl} alt="Slip" className="flex-shrink-0 w-14 h-14 rounded border border-amber-300 object-cover bg-gray-100" />
                       )}
                       <div className="flex-1 min-w-0 space-y-1">
-                        <label className="flex items-center gap-1.5 text-xs text-gray-600">Tracking
+                        <p className="flex flex-wrap items-center gap-1.5">
+                          <span className={`px-1.5 py-0.5 rounded text-[11px] font-semibold ${label.tone}`}>{label.text}</span>
+                          {item.trackingNumber && !item.typing && <span className="font-mono text-sm font-semibold text-gray-900">{item.trackingNumber}</span>}
+                        </p>
+                        {item.typing && (
                           <input
+                            autoFocus
                             value={item.trackingNumber || ''}
                             onChange={(e) => updateItemTracking(item.id, e.target.value)}
-                            placeholder="Type it from the slip"
-                            className={`flex-1 min-w-0 px-1.5 py-1 border rounded font-mono text-xs bg-white ${numberLooksWrong ? 'border-red-400' : 'border-gray-300'}`}
+                            placeholder="Type the number from the slip"
+                            className={`w-full px-1.5 py-1 border rounded font-mono text-xs bg-white ${numberLooksWrong ? 'border-red-400' : 'border-gray-300'}`}
                           />
-                        </label>
-                        {numberLooksWrong && (
-                          <div className="text-xs text-red-700 space-y-1">
-                            <p>This number doesn't look right. Check it against the photo.</p>
-                            {fixes.length > 0 && (
-                              <p className="flex flex-wrap items-center gap-1">Could be
-                                {fixes.map(fix => (
-                                  <button key={fix} onClick={() => updateItemTracking(item.id, fix)}
-                                    className="px-1.5 py-0.5 bg-white border border-red-300 rounded font-mono hover:bg-red-50">{fix}</button>
-                                ))}
-                              </p>
-                            )}
+                        )}
+                        {item.typing && numberLooksWrong && (
+                          <p className="text-xs text-red-700">This number doesn't look right. Check it against the photo.</p>
+                        )}
+                        {open && (choices.length > 0 || (item.typing && fixes.length > 0)) && (
+                          <div className="text-xs text-gray-700 space-y-1">
+                            <p>Tap the number that matches the photo:</p>
+                            <p className="flex flex-wrap gap-1">
+                              {(choices.length > 0 ? choices : fixes).map(c => (
+                                <button key={c} onClick={() => updateItemTracking(item.id, c, 'picked')}
+                                  className="px-1.5 py-0.5 bg-white border border-gray-300 rounded font-mono hover:border-teal-400 hover:bg-teal-50">{c}</button>
+                              ))}
+                            </p>
                           </div>
                         )}
                         {item.reason && <p className="text-xs text-amber-800">{item.reason}</p>}
@@ -619,6 +661,23 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
                     </div>
 
                     <div className="flex flex-wrap gap-1.5">
+                      {open && unread && item.file && (
+                        <button
+                          onClick={() => { clearerPhotoForRef.current = item.id; clearerPhotoInputRef.current?.click(); }}
+                          disabled={busy}
+                          className="flex items-center gap-1 px-2.5 py-1.5 bg-white border border-gray-300 rounded text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          <ImagePlus className="w-3.5 h-3.5" /> Use a clearer photo
+                        </button>
+                      )}
+                      {open && !item.done && !item.typing && (
+                        <button
+                          onClick={() => startTyping(item.id)}
+                          className="flex items-center gap-1 px-2.5 py-1.5 bg-white border border-gray-300 rounded text-xs font-medium text-gray-700 hover:bg-gray-50"
+                        >
+                          <Keyboard className="w-3.5 h-3.5" /> Type number
+                        </button>
+                      )}
                       {!open && !item.done && (
                         <button
                           onClick={() => { setActiveSlipId(item.id); setOrderSearch(''); }}
@@ -635,7 +694,7 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
                       </button>
                     </div>
 
-                    {open && !item.done && item.trackingNumber && renderOrderList((o) => assignReviewItem(item, o), saving)}
+                    {open && !item.done && item.trackingNumber && !unread && renderOrderList((o) => assignReviewItem(item, o), saving)}
                   </div>
                 );
               })}
