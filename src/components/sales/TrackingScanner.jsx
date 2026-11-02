@@ -1,6 +1,6 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
-import { X, Camera, Image as ImageIcon, CheckCircle, AlertCircle, Package, Search, RotateCw } from 'lucide-react';
+import { X, Camera, Image as ImageIcon, CheckCircle, AlertCircle, Package, Search, RotateCw, Pencil, Undo2 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { dbService } from '../../services/supabase';
 import { expectedWeightForOrder, cleanTracking, isValidTracking, isIndiaPostNumber, suggestTrackingFixes } from '../../utils/slipNumbers';
@@ -112,6 +112,8 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
   const [error, setError] = useState(null);
   const [scannedCode, setScannedCode] = useState(null); // live camera single-scan only
   const [linkedOrders, setLinkedOrders] = useState({}); // orderId -> tracking number
+  const [linkedDetails, setLinkedDetails] = useState({}); // orderId -> { before, dispatchDate, courierName, file, previewUrl }
+  const [editingLink, setEditingLink] = useState(null); // { id, code, date } while a linked slip is being edited
   const [saving, setSaving] = useState(false);
   const [batchProgress, setBatchProgress] = useState(null); // { current, total } while a photo batch runs
   const [reviewQueue, setReviewQueue] = useState([]); // slips waiting for her to pick the order
@@ -173,9 +175,9 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
   const history = useMemo(() => courierHistory(state.salesOrders), [state.salesOrders]);
   const suggestions = useMemo(() => {
     const out = {};
-    orders.filter(o => linkedOrders[o.id]).forEach(o => { out[o.id] = suggestCourier(o, history, skus); });
+    Object.values(linkedDetails).forEach(({ before }) => { out[before.id] = suggestCourier(before, history, skus); });
     return out;
-  }, [orders, linkedOrders, history, skus]);
+  }, [linkedDetails, history, skus]);
   const courierValue = (id, field) => {
     const e = courierEdits[id];
     if (e && e[field] !== undefined) return e[field];
@@ -193,7 +195,8 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
     const confirmedAt = new Date().toISOString();
     const { error: err } = await dbService.updateSalesOrder({ id: order.id, shippingWeight: weight, courierAmount: cost, courierConfirmedAt: confirmedAt });
     if (err) { showToast('Could not save the courier cost', 'error'); return; }
-    dispatch({ type: 'UPDATE_SALES_ORDER', payload: { ...order, tracking_number: linkedOrders[order.id], status: 'dispatched', shipping_weight: weight, courier_amount: cost, courier_confirmed_at: confirmedAt } });
+    const d = linkedDetails[order.id];
+    dispatch({ type: 'UPDATE_SALES_ORDER', payload: { ...order, tracking_number: linkedOrders[order.id], courier_name: d?.courierName, dispatch_date: d?.dispatchDate, status: 'dispatched', shipping_weight: weight, courier_amount: cost, courier_confirmed_at: confirmedAt } });
     setCourierSaved(prev => ({ ...prev, [order.id]: { weight, cost } }));
   };
   const busy = batchProgress != null;
@@ -248,7 +251,7 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
   };
 
   // Saves the tracking number onto an order. Returns true/false.
-  const doLink = async (order, code) => {
+  const doLink = async (order, code, photo = {}) => {
     const duplicate = findDuplicateTrackingOrder(code, order.id);
     if (duplicate) {
       showToast(`Tracking ${code} is already on ${duplicate.order_number} (${duplicate.customer_name}) — not linking it to a second order`, 'error');
@@ -276,7 +279,74 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
     });
     linkedCodesRef.current[cleanTracking(code)] = order;
     setLinkedOrders(prev => ({ ...prev, [order.id]: code }));
+    setLinkedDetails(prev => ({ ...prev, [order.id]: { before: order, dispatchDate: updatedOrder.dispatchDate, courierName: updatedOrder.courierName, ...photo } }));
     return true;
+  };
+
+  // Puts the order back exactly as it was, and the slip back at the top of the
+  // list to pick again. Saving as dispatched takes the boxes out of stock, so
+  // they go back too, unless they had already gone out before this slip.
+  const undoLink = async (id) => {
+    const d = linkedDetails[id];
+    if (!d || saving) return;
+    const { before } = d;
+    setSaving(true);
+    const { error: err } = await dbService.updateSalesOrder({
+      id,
+      trackingNumber: before.tracking_number ?? null,
+      courierName: before.courier_name ?? null,
+      status: before.status,
+      dispatchDate: before.dispatch_date ?? null,
+      shippingWeight: before.shipping_weight ?? null,
+      courierAmount: before.courier_amount ?? null,
+      courierConfirmedAt: before.courier_confirmed_at ?? null,
+    });
+    if (err) { setSaving(false); showToast('Could not undo this slip', 'error'); return; }
+    if (!before.stock_deducted_at) await dbService.restockInventoryForOrder(before, 'Slip link undone');
+    setSaving(false);
+    dispatch({ type: 'UPDATE_SALES_ORDER', payload: before });
+    const code = linkedOrders[id];
+    delete linkedCodesRef.current[cleanTracking(code)];
+    const without = (prev) => { const n = { ...prev }; delete n[id]; return n; };
+    setLinkedOrders(without);
+    setLinkedDetails(without);
+    setCourierEdits(without);
+    setCourierSaved(without);
+    if (editingLink?.id === id) setEditingLink(null);
+    setReviewQueue(prev => [{ id: nextReviewId(), trackingNumber: code, done: false, reason: null, file: d.file, previewUrl: d.previewUrl }, ...prev]);
+    setActiveSlipId(null);
+    setOrderSearch('');
+    showToast(`Undone — ${before.order_number} is back in the list`, 'success');
+  };
+
+  const saveLinkEdit = async () => {
+    if (!editingLink || saving) return;
+    const { id, date } = editingLink;
+    const code = cleanTracking(editingLink.code);
+    const d = linkedDetails[id];
+    if (!code || !date) { showToast('Enter the tracking number and dispatch date', 'error'); return; }
+    if (!okToSaveNumber(code)) return;
+    const duplicate = findDuplicateTrackingOrder(code, id);
+    if (duplicate) { showToast(`Tracking ${code} is already on ${duplicate.order_number} (${duplicate.customer_name})`, 'error'); return; }
+    const courierName = isIndiaPostNumber(code) ? 'India Post' : d.courierName;
+    setSaving(true);
+    const { error: err } = await dbService.updateSalesOrder({ id, trackingNumber: code, dispatchDate: date, courierName });
+    setSaving(false);
+    if (err) { showToast('Could not save the change', 'error'); return; }
+    const saved = courierSaved[id];
+    dispatch({
+      type: 'UPDATE_SALES_ORDER',
+      payload: {
+        ...d.before, tracking_number: code, dispatch_date: date, courier_name: courierName, status: 'dispatched',
+        ...(saved && { shipping_weight: saved.weight, courier_amount: saved.cost }),
+      },
+    });
+    delete linkedCodesRef.current[cleanTracking(linkedOrders[id])];
+    linkedCodesRef.current[code] = d.before;
+    setLinkedOrders(prev => ({ ...prev, [id]: code }));
+    setLinkedDetails(prev => ({ ...prev, [id]: { ...prev[id], dispatchDate: date, courierName } }));
+    setEditingLink(null);
+    showToast('Saved', 'success');
   };
 
   const okToSaveNumber = (code) => isValidTracking(code)
@@ -330,11 +400,10 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
   const assignReviewItem = async (item, order) => {
     if (!item.trackingNumber || saving || !okToSaveNumber(item.trackingNumber)) return;
     setSaving(true);
-    const ok = await doLink(order, item.trackingNumber);
+    const ok = await doLink(order, item.trackingNumber, { file: item.file, previewUrl: item.previewUrl });
     setSaving(false);
     if (!ok) return;
     showToast(`${order.order_number} → ${item.trackingNumber}`, 'success');
-    if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
     setReviewQueue(prev => prev.filter(r => r.id !== item.id));
     setActiveSlipId(null);
     setOrderSearch('');
@@ -588,9 +657,10 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
                   ? ` Cost suggestions start after ${CONFIRMED_NEEDED} confirmed slips (${history.length} so far).`
                   : ` Suggestions come from ${history.length} confirmed slips.`}
               </p>
-              {orders.filter(o => linkedOrders[o.id]).map(o => {
+              {Object.values(linkedDetails).map(({ before: o, dispatchDate }) => {
                 const saved = courierSaved[o.id];
                 const sug = suggestions[o.id] || {};
+                const editing = editingLink?.id === o.id;
                 return (
                   <div key={o.id} className="p-2 bg-green-50 rounded text-sm space-y-1.5">
                     <div className="flex items-center justify-between">
@@ -599,6 +669,33 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
                         <CheckCircle className="w-3.5 h-3.5" /> {linkedOrders[o.id]}
                       </span>
                     </div>
+                    {editing ? (
+                      <div className="flex flex-wrap items-center gap-2 p-1.5 bg-white border border-green-200 rounded">
+                        <label className="flex items-center gap-1 text-xs text-gray-600">Tracking
+                          <input value={editingLink.code} onChange={e => setEditingLink(prev => ({ ...prev, code: e.target.value }))}
+                            className="w-32 px-1.5 py-1 border border-gray-300 rounded font-mono text-xs" />
+                        </label>
+                        <label className="flex items-center gap-1 text-xs text-gray-600">Dispatch date
+                          <input type="date" value={editingLink.date} onChange={e => setEditingLink(prev => ({ ...prev, date: e.target.value }))}
+                            className="px-1.5 py-1 border border-gray-300 rounded text-xs" />
+                        </label>
+                        <button onClick={saveLinkEdit} disabled={saving}
+                          className="px-2.5 py-1 bg-teal-600 text-white rounded text-xs font-medium hover:bg-teal-700 disabled:opacity-50">Save</button>
+                        <button onClick={() => setEditingLink(null)} className="px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 rounded">Cancel</button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 text-xs text-gray-600">
+                        <span>Dispatched {showDay(String(dispatchDate || '').slice(0, 10))}</span>
+                        <button onClick={() => setEditingLink({ id: o.id, code: linkedOrders[o.id], date: String(dispatchDate || '').slice(0, 10) })}
+                          className="ml-auto flex items-center gap-1 px-2 py-0.5 bg-white border border-gray-300 rounded font-medium text-gray-700 hover:bg-gray-50">
+                          <Pencil className="w-3 h-3" /> Edit
+                        </button>
+                        <button onClick={() => undoLink(o.id)} disabled={saving}
+                          className="flex items-center gap-1 px-2 py-0.5 bg-white border border-gray-300 rounded font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+                          <Undo2 className="w-3 h-3" /> Undo
+                        </button>
+                      </div>
+                    )}
                     {saved ? (
                       <p className="text-xs text-green-700 flex items-center gap-1">
                         <CheckCircle className="w-3.5 h-3.5" /> {saved.weight} kg · ₹{saved.cost}
