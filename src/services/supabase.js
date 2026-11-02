@@ -4534,7 +4534,7 @@ const _realDbService = {
 
   // Order returned (RTO) or cancelled → put its boxes back, but only if they
   // were actually taken out (stock_deducted_at set), and only once.
-  async restockInventoryForOrder(order) {
+  async restockInventoryForOrder(order, label = 'RTO return') {
     const results = { restocked: 0, warnings: [] };
     const { data: claimed, error: claimErr } = await supabase
       .from('sales_orders')
@@ -4556,7 +4556,7 @@ const _realDbService = {
         if (!skuId) continue;
         const isSingleUnit = packType === 'single' || packType === '0.5kg' || packType === '1kg';
         const boxQty = isSingleUnit ? quantity : await this._boxesForSku(skuId, packType, quantity);
-        const reason = `RTO return — Order ${order.order_number || order.id}`;
+        const reason = `${label} — Order ${order.order_number || order.id}`;
         await this.updateInventoryStock(skuId, packType, boxQty, 'add', reason);
         results.restocked++;
       } catch (err) {
