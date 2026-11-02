@@ -1,11 +1,10 @@
 // Courier cost and parcel weight for a slip that has just been scanned.
 //
-// The slip reader misreads amounts (₹60,620 was saved once), so nothing it
-// reads is saved without her checking it. Each confirmed slip
+// She confirms both on every slip. Each confirmed slip
 // (courier_confirmed_at) teaches the suggestions: once CONFIRMED_NEEDED slips
 // are confirmed, cost comes from past slips of the same weight (same state
 // first) and weight from past parcels with the same items.
-import { expectedWeightForOrder } from './ocrMatch';
+import { expectedWeightForOrder } from './slipNumbers';
 
 export const CONFIRMED_NEEDED = 20;
 export const MAX_COURIER_COST = 500; // more than this on one slip is a misread
@@ -30,8 +29,7 @@ export function courierHistory(orders) {
 }
 
 // { weight, weightFrom, cost, costFrom } — any of them may be null.
-// slipRead: { weight, amount } as the slip reader saw them (may be wrong).
-export function suggestCourier(order, history, skus, slipRead = {}) {
+export function suggestCourier(order, history, skus) {
   const learnt = history.length >= CONFIRMED_NEEDED;
   let weight = null; let weightFrom = null;
   if (learnt) {
@@ -42,8 +40,6 @@ export function suggestCourier(order, history, skus, slipRead = {}) {
     const w = expectedWeightForOrder(order, skus);
     if (w) { weight = Math.round(w * 100) / 100; weightFrom = 'product shipping weights'; }
   }
-  const readW = num(slipRead.weight);
-  if (weight == null && readW > 0 && readW <= 30) { weight = readW; weightFrom = 'read from the slip'; }
 
   let cost = null; let costFrom = null;
   if (learnt && weight) {
@@ -56,7 +52,5 @@ export function suggestCourier(order, history, skus, slipRead = {}) {
       costFrom = `${pool.length} past slips up to ${b} kg${pool === sameState ? ` to ${order.shipping_state}` : ''}`;
     }
   }
-  const readA = num(slipRead.amount);
-  if (cost == null && readA > 0 && readA <= MAX_COURIER_COST) { cost = readA; costFrom = 'read from the slip, please check'; }
   return { weight, weightFrom, cost, costFrom };
 }

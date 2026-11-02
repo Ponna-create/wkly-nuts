@@ -33,7 +33,7 @@ It replaces what would otherwise be a tangle of WhatsApp chats + Excel sheets fo
 | Charts | `recharts` |
 | State management | React Context + `useReducer` (no Redux/Zustand) — see §4 |
 | Backend | **Supabase** (Postgres + RLS + auto-generated REST via `supabase-js`) — no custom backend server for CRUD |
-| Serverless functions | 2 Vercel API routes (`/api/scan-slip`, `/api/settings`) for things that need a server (LLM API keys, a KV store) |
+| Serverless functions | Vercel API routes such as `/api/settings` for things that need a server |
 | KV store | Upstash Redis (via `@upstash/redis`), used only by `/api/settings` for WhatsApp template storage |
 | PDF generation | `jspdf` + `jspdf-autotable` (invoices, purchase orders, A4 label sheets) |
 | PDF *reading* | `pdfjs-dist` (parsing uploaded Amazon invoice PDFs to auto-fill order data) |
@@ -87,10 +87,10 @@ src/
     a4LabelSheet.js             — jsPDF label sheet generation
     amazonInvoicePdf.js         — parses uploaded Amazon invoice PDFs
     purchaseOrderPdf.js         — generates PO PDFs
-    ocrMatch.js                  — matches an AI-read courier slip name/phone back to an order
+    slipNumbers.js               — ST Courier / India Post number checks, expected parcel weight
+    findBarcode.js               — finds the barcode in a slip photo so the decoder can read it (no AI)
     dateFormat.js, sanitize.js
 api/
-  scan-slip.js              — server-side multimodal LLM call (Gemini → Groq fallback chain) for courier slip OCR
   settings.js                — Upstash Redis-backed KV endpoint for WhatsApp templates etc.
 docs/
   ARCHITECTURE.md           — this file
@@ -357,8 +357,6 @@ Per an explicit business decision: the 5 core flows (Orders, Customers, Inventor
 | `VITE_SUPABASE_ANON_KEY` | client | Supabase anon/public key (RLS is permissive — see §5) |
 | `VITE_APP_USERNAME` | client | Login username (default `admin`) |
 | `VITE_APP_PASSWORD` | client | Login password — **app is non-functional without this set** |
-| `GEMINI_API_KEY` | `/api/scan-slip.js` server-side only | Primary courier-slip OCR provider |
-| `GROQ_API_KEY` | `/api/scan-slip.js` server-side only | Fallback OCR provider once Gemini's free-tier daily quota (20 req/day/model) is exhausted |
 | `KV_REST_API_URL` / `KV_REST_API_TOKEN` | `/api/settings.js` | Upstash Redis connection, for WhatsApp template storage (keys prefixed `whatsapp_`/`settings_`/`template_`) |
 
 Deployed on **Vercel** (`vercel.json`: Vite framework preset, SPA rewrite so all non-`/api` paths serve `index.html`).
@@ -414,7 +412,7 @@ If rebuilding from scratch, this is the dependency order that makes sense:
 5. **`services/supabase.js`** (`dbService`) — build out get/create/update/delete for each table (§6.1), matching the camelCase↔snake_case convention exactly.
 6. **`Layout.jsx`** — sidebar nav groups (Sales/Products/Inventory/Growth/Finance), header, test-mode toggle.
 7. Build pages **in this priority order** (matches the business's real priority, §1/§9): SKU Management → Vendors/Ingredients/Purchase Orders (inventory chain) → Production Runs → Customers → Sales Orders + Quick Order (get the paste-parser and courier-number logic right, §8.6/§8.10) → Invoice Management (get the invoice numbering exactly right, §8.1) → Pricing Strategy (as planning-only, §8.2) → Reports (phone-keyed retention, §8.6) → everything else.
-8. Wire in the two Vercel API routes only once courier-slip scanning is actually needed (§6.2's `ocrMatch.js` counterpart, `api/scan-slip.js`) — this is a nice-to-have, not core.
+8. Wire in `/api/settings` once a server-side store is needed — a nice-to-have, not core.
 9. Read §8 in full before writing any order/invoice/customer logic — nearly every rule there exists because the naive first implementation got it wrong once already.
 
 ---

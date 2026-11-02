@@ -1,22 +1,16 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
-import { X, Camera, Image as ImageIcon, CheckCircle, AlertCircle, Package, Search, RefreshCw } from 'lucide-react';
+import { X, Camera, Image as ImageIcon, CheckCircle, AlertCircle, Package, Search, RotateCw } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { dbService } from '../../services/supabase';
-import { findBestOrderMatch, rankOrdersForSlip, recentOrdersForSlips, expectedWeightForOrder, cleanTracking, isValidTracking, isIndiaPostNumber, suggestTrackingFixes } from '../../utils/ocrMatch';
+import { expectedWeightForOrder, cleanTracking, isValidTracking, isIndiaPostNumber, suggestTrackingFixes } from '../../utils/slipNumbers';
+import { findBarcodeAreas, padArea } from '../../utils/findBarcode';
 import { courierHistory, suggestCourier, CONFIRMED_NEEDED, MAX_COURIER_COST } from '../../utils/courierSuggest';
 
-// Only resize/recompress when the file is actually large enough to risk
-// Vercel's ~4.5MB request-body limit (base64 inflates size ~33% on top of
-// the original). A photo already under that just gets sent as-is — every
-// canvas round-trip is a fresh generation of JPEG compression loss on top
-// of whatever the phone's camera already applied, and re-encoding a file
-// that didn't need it at all was hurting real, already-fine photos for no
-// reason. Only touch it when there's an actual size problem to solve.
 // Courier slips carry the consignment number as a 1-D barcode. QR codes are
 // left out on purpose: the slip's "TRACK HERE" QR is a website link, not the
 // number. The phone's own barcode reader is used where the browser has one
-// (more robust than the JS decoder), and a sideways photo is retried rotated.
+// (more robust than the JS decoder).
 const SLIP_FORMATS = [
   Html5QrcodeSupportedFormats.CODE_128, Html5QrcodeSupportedFormats.CODE_39, Html5QrcodeSupportedFormats.CODE_93,
   Html5QrcodeSupportedFormats.CODABAR, Html5QrcodeSupportedFormats.ITF, Html5QrcodeSupportedFormats.EAN_13,
@@ -27,187 +21,90 @@ const makeSlipReader = (elementId) => new Html5Qrcode(elementId, {
   useBarCodeDetectorIfSupported: true,
   verbose: false,
 });
-// Turned and/or shrunk copy of a photo. The barcode decoder misses bars in a
-// full-size phone photo that it reads fine in a smaller copy.
-const transformFile = (file, deg, maxDim) => new Promise((resolve, reject) => {
+const loadImage = (file) => new Promise((resolve, reject) => {
   const img = new Image();
-  img.onload = () => {
-    URL.revokeObjectURL(img.src);
-    const scale = maxDim ? Math.min(1, maxDim / Math.max(img.width, img.height)) : 1;
-    if (maxDim && scale === 1) { reject(new Error('already small')); return; }
-    const w = Math.round(img.width * scale);
-    const h = Math.round(img.height * scale);
-    const c = document.createElement('canvas');
-    const swap = deg % 180 !== 0;
-    c.width = swap ? h : w;
-    c.height = swap ? w : h;
-    const ctx = c.getContext('2d');
-    ctx.translate(c.width / 2, c.height / 2);
-    ctx.rotate((deg * Math.PI) / 180);
-    ctx.drawImage(img, -w / 2, -h / 2, w, h);
-    c.toBlob(b => (b ? resolve(new File([b], file.name, { type: 'image/jpeg' })) : reject(new Error('rotate failed'))), 'image/jpeg', 0.92);
-  };
+  img.onload = () => { URL.revokeObjectURL(img.src); resolve(img); };
   img.onerror = reject;
   img.src = URL.createObjectURL(file);
 });
-// Exact consignment number from a slip photo, or throws. A code that fails the
-// number check is only used if nothing better turns up in the other attempts.
+const canvasToFile = (canvas, name) => new Promise((resolve, reject) => {
+  canvas.toBlob(b => (b ? resolve(new File([b], name, { type: 'image/png' })) : reject(new Error('could not copy photo'))), 'image/png');
+});
+// The photo turned by a quarter, used by the turn button and the last barcode attempt.
+const rotateFile = async (file) => {
+  const img = await loadImage(file);
+  const c = document.createElement('canvas');
+  c.width = img.height;
+  c.height = img.width;
+  const ctx = c.getContext('2d');
+  ctx.translate(c.width / 2, c.height / 2);
+  ctx.rotate(Math.PI / 2);
+  ctx.drawImage(img, -img.width / 2, -img.height / 2);
+  return canvasToFile(c, file.name);
+};
+// One area of the photo as its own image, with the bars standing upright.
+const cropArea = (source, area, name) => {
+  const c = document.createElement('canvas');
+  c.width = area.barsUpright ? area.w : area.h;
+  c.height = area.barsUpright ? area.h : area.w;
+  const ctx = c.getContext('2d');
+  ctx.translate(c.width / 2, c.height / 2);
+  if (!area.barsUpright) ctx.rotate(Math.PI / 2);
+  ctx.drawImage(source, area.x, area.y, area.w, area.h, -area.w / 2, -area.h / 2, area.w, area.h);
+  return canvasToFile(c, name);
+};
+const WORKING_SIZE = 1600; // big phone photos are shrunk first: more pixels don't help, and slow it all down
+// Exact consignment number from a slip photo, or throws. The decoder can't read
+// our slips from the whole photo, so it's given the barcode cropped out first.
+// A code that fails the number check is only used if nothing better turns up.
 const decodeSlipBarcode = async (reader, file) => {
   let odd = null;
-  for (const maxDim of [null, 1600, 1000]) {
-    for (const deg of [0, 90, 270]) {
-      try {
-        const f = deg || maxDim ? await transformFile(file, deg, maxDim) : file;
-        const text = cleanTracking(await reader.scanFile(f, false));
-        if (isValidTracking(text)) return text;
-        if (text.length >= 8) odd = odd || text;
-      } catch { /* try the next one */ }
+  const attempt = async (f) => {
+    try {
+      const text = cleanTracking(await reader.scanFile(f, false));
+      if (isValidTracking(text)) return text;
+      if (text.length >= 8) odd = odd || text;
+    } catch { /* try the next one */ }
+    return null;
+  };
+
+  const img = await loadImage(file);
+  const scale = Math.min(1, WORKING_SIZE / Math.max(img.width, img.height));
+  const source = document.createElement('canvas');
+  source.width = Math.round(img.width * scale);
+  source.height = Math.round(img.height * scale);
+  const ctx = source.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0, source.width, source.height);
+  const { data } = ctx.getImageData(0, 0, source.width, source.height);
+  const gray = new Uint8ClampedArray(source.width * source.height);
+  for (let i = 0; i < gray.length; i++) gray[i] = (data[4 * i] * 299 + data[4 * i + 1] * 587 + data[4 * i + 2] * 114) / 1000;
+
+  const areas = findBarcodeAreas(gray, source.width, source.height);
+  for (const pad of [0.12, 0.3, 0.03]) {
+    for (const area of areas) {
+      const found = await attempt(await cropArea(source, padArea(area, source.width, source.height, pad), file.name));
+      if (found) return found;
     }
   }
+  const found = await attempt(file) || await attempt(await rotateFile(file));
+  if (found) return found;
   if (odd) return odd;
   throw new Error('No barcode found');
 };
-// Orders already handed to the courier are the ones a slip belongs to, so
-// they come first in the pick list, then newest first: old orders left open
-// (some from June) used to fill the list and hide the order she wanted.
+
+// Slips are handed over in the order packing finished, so anything the courier
+// has already collected comes first within a date.
 const HANDED_OVER = ['fulfilled', 'collected'];
 const handoverRank = (o) => (HANDED_OVER.includes(o.status) ? 0 : 1);
-const shortDate = (d) => (d ? String(d).slice(8, 10) + '/' + String(d).slice(5, 7) : '');
-
-const SIZE_THRESHOLD_BYTES = 3 * 1024 * 1024; // 3MB — leaves headroom under the ~4.5MB body limit even after base64 inflation
-const MAX_DIMENSION = 2400;
-const readRaw = (file) => new Promise((resolve, reject) => {
-  const reader = new FileReader();
-  reader.onload = () => resolve(reader.result);
-  reader.onerror = reject;
-  reader.readAsDataURL(file);
-});
-const fileToBase64 = (file) => new Promise((resolve, reject) => {
-  if (file.size <= SIZE_THRESHOLD_BYTES) {
-    readRaw(file).then(resolve).catch(reject);
-    return;
-  }
-  const img = new Image();
-  const objectUrl = URL.createObjectURL(file);
-  img.onload = () => {
-    URL.revokeObjectURL(objectUrl);
-    let { width, height } = img;
-    if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
-      const scale = MAX_DIMENSION / Math.max(width, height);
-      width = Math.round(width * scale);
-      height = Math.round(height * scale);
-    }
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-    resolve(canvas.toDataURL('image/jpeg', 0.92));
-  };
-  img.onerror = () => {
-    URL.revokeObjectURL(objectUrl);
-    // Fall back to the raw file rather than failing outright — some formats
-    // (e.g. HEIC) can't be drawn to a canvas in every browser.
-    readRaw(file).then(resolve).catch(reject);
-  };
-  img.src = objectUrl;
-});
+const orderDay = (o) => String(o.order_date || '').slice(0, 10);
+const showDay = (d) => (d ? d.split('-').reverse().join('-') : '');
+const orderPin = (o) => String(o.shipping_pincode || '').trim() || (String(o.shipping_address || '').match(/\b\d{6}\b/) || [''])[0];
 
 let reviewIdCounter = 0;
 const nextReviewId = () => `rv-${Date.now()}-${reviewIdCounter++}`;
 
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-
-// Reads one slip photo — server tries Groq first, then falls back to
-// Gemini — retrying up to 3x with backoff (3s, 6s) if every provider fails.
-// Long enough for a per-minute quota to recover, but not for a sustained
-// "model overloaded"/quota-exhausted stretch. Shared by the batch pass and
-// the per-photo Retry button, so a single failed photo can be re-read
-// later without re-uploading the whole stack.
-const readSlipWithRetry = async (file, candidates = []) => {
-  let lastResult;
-  for (let attempt = 0; attempt < 5; attempt++) {
-    try {
-      const base64 = await fileToBase64(file);
-      const res = await fetch('/api/scan-slip', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          image: base64,
-          candidates: candidates.map(o => ({ name: o.customer_name, place: o.shipping_city || o.shipping_pincode || '' })),
-        }),
-      });
-      const data = await res.json();
-      lastResult = { ok: res.ok, status: res.status, data };
-    } catch (err) {
-      lastResult = { ok: false, networkError: err?.message || 'Network error' };
-    }
-    // Our own /api/scan-slip route always answers with HTTP 502 on any
-    // provider failure (so lastResult.status is never actually 429/400/404
-    // here) — the REAL upstream status is nested inside the body as
-    // groqStatus/geminiStatus (whichever provider was last tried). Checking
-    // the wrong one meant we were retrying 3 times even for a quota-exceeded
-    // or "model no longer exists" error that could never succeed no matter
-    // how many times we asked — wasted time and burned through the free
-    // quota even faster.
-    const status = lastResult.data?.geminiStatus ?? lastResult.data?.groqStatus;
-    if (lastResult.ok) break;
-    // Groq allows about two photos a minute and says how long to wait, so a
-    // stack of slips waits its turn here instead of failing from the third
-    // photo on. A daily limit won't clear by waiting, so that still stops.
-    const groqSays = String(lastResult.data?.groqDetail || '');
-    if (lastResult.data?.groqStatus === 429 && /per minute|ITPM|TPM|RPM/i.test(groqSays)) {
-      const wait = parseFloat((groqSays.match(/try again in ([\d.]+)s/i) || [])[1]) || 20;
-      if (attempt < 4) await sleep(Math.min(wait + 1, 40) * 1000);
-      continue;
-    }
-    if (status === 429 || status === 400 || status === 404) break;
-    if (attempt < 2) await sleep(3000 * (attempt + 1));
-    else break;
-  }
-  // The reader answers with a list number; turn it back into the order.
-  if (lastResult.ok && lastResult.data?.matchIndex) {
-    const picked = candidates[lastResult.data.matchIndex - 1];
-    if (picked) lastResult.data.aiPickId = picked.id;
-  }
-  return lastResult;
-};
-
-// One place for turning a failed read into a message she can actually act
-// on, instead of a generic "server error" — used by both the batch pass
-// and the single-photo Retry button.
-//
-// When both providers failed, show EACH one's real status/detail
-// separately instead of collapsing them into one vague "quota used up"
-// line — a Groq failure isn't necessarily a quota problem just because
-// Gemini's was, and hiding that made it impossible to tell what actually
-// went wrong on Groq's side specifically.
-const describeOne = (label, status, detail) => {
-  if (status == null) return null;
-  if (status === 429) return `${label}: quota/rate limit hit`;
-  if (status === 404) return `${label}: model not found (app needs updating)`;
-  return `${label}: error ${status}${detail ? ` — ${detail.slice(0, 150)}` : ''}`;
-};
-
-const describeFailure = (result) => {
-  if (result?.networkError) return `Upload failed (${result.networkError}) — try again, or a smaller photo`;
-  const groqStatus = result?.data?.groqStatus;
-  const geminiStatus = result?.data?.geminiStatus;
-  const parts = [
-    describeOne('Groq', groqStatus, result?.data?.groqDetail),
-    describeOne('Gemini', geminiStatus, result?.data?.geminiDetail),
-  ].filter(Boolean);
-  if (parts.length) return `${parts.join(' · ')} — retried, still failing`;
-  if (result?.status) return `Server error (${result.status}) — retried, still failing`;
-  return "Couldn't read anything in this photo";
-};
-
-// Upload a whole stack of courier slip photos and it should feel like
-// dropping a pile of paper on the desk and having it sort itself — every
-// photo gets OCR'd and matched in the background with no pausing per
-// photo, confident matches (phone number, or a name backed by the order's
-// own pincode showing up on the slip) link themselves straight away, and
-// only the genuinely unclear ones (bad handwriting, no match found) land
-// in a "Needs Your Check" list at the end for a quick manual pick.
+// Upload a stack of slip photos: the app reads each barcode, with no AI, and she
+// reads the name on the photo and taps the order from the date she has chosen.
 export default function TrackingScanner({ orders, onClose, onUpdate }) {
   const { state, showToast, dispatch } = useApp();
   const skus = state.skus || [];
@@ -217,46 +114,68 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
   const [linkedOrders, setLinkedOrders] = useState({}); // orderId -> tracking number
   const [saving, setSaving] = useState(false);
   const [batchProgress, setBatchProgress] = useState(null); // { current, total } while a photo batch runs
-  const [reviewQueue, setReviewQueue] = useState([]); // items that need a manual pick after the batch
-  const [pickerOpenFor, setPickerOpenFor] = useState(null); // review item id whose "assign manually" search is open
-  const [pickerSearch, setPickerSearch] = useState('');
-  const [retryingId, setRetryingId] = useState(null); // review item currently being re-read
+  const [reviewQueue, setReviewQueue] = useState([]); // slips waiting for her to pick the order
+  const [activeSlipId, setActiveSlipId] = useState(null); // slip whose order list is open; the first one if none chosen
+  const [pickDate, setPickDate] = useState(null); // order date she's choosing from; the newest if none chosen
+  const [orderSearch, setOrderSearch] = useState('');
   const [zoomedUrl, setZoomedUrl] = useState(null); // full-size photo preview overlay
-  const [slipReads, setSlipReads] = useState({}); // orderId -> { weight, amount } as the slip reader saw them
   const [courierEdits, setCourierEdits] = useState({}); // orderId -> { weight, cost } typed in
   const [courierSaved, setCourierSaved] = useState({}); // orderId -> { weight, cost } confirmed
   const html5QrCodeRef = useRef(null);
   const lastScanTimeRef = useRef(0);
   const processingRef = useRef(false);
   const fileInputRef = useRef(null);
-  const aiFileInputRef = useRef(null);
   const linkedCodesRef = useRef({}); // tracking number -> order, for slips repeated within this sitting
 
   const unlinkedOrders = useMemo(() => orders.filter(o => !linkedOrders[o.id]), [orders, linkedOrders]);
-  const sortedUnlinked = useMemo(() => [...unlinkedOrders].sort((a, b) =>
-    handoverRank(a) - handoverRank(b) || String(b.order_date || '').localeCompare(String(a.order_date || ''))
-  ), [unlinkedOrders]);
-  // One line under each order in the pick lists: handed over or not, where
-  // it's going, what's in it and what it should weigh on the courier's scale.
+  // Only dates that still have an order waiting for a number, newest first.
+  const dateOptions = useMemo(() => {
+    const counts = {};
+    unlinkedOrders.forEach(o => { counts[orderDay(o)] = (counts[orderDay(o)] || 0) + 1; });
+    return Object.keys(counts).sort().reverse().map(day => ({ day, count: counts[day] }));
+  }, [unlinkedOrders]);
+  const shownDate = dateOptions.some(d => d.day === pickDate) ? pickDate : dateOptions[0]?.day;
+  // That date's orders, or while she's searching, matches from every date.
+  const orderList = useMemo(() => {
+    const q = orderSearch.trim().toLowerCase();
+    const list = !q
+      ? unlinkedOrders.filter(o => orderDay(o) === shownDate)
+      : unlinkedOrders.filter(o =>
+        (o.customer_name || '').toLowerCase().includes(q) ||
+        (o.order_number || '').toLowerCase().includes(q) ||
+        (o.phone || '').includes(q) ||
+        (o.shipping_address || '').toLowerCase().includes(q) ||
+        (o.shipping_city || '').toLowerCase().includes(q) ||
+        orderPin(o).includes(q));
+    return [...list].sort((a, b) => handoverRank(a) - handoverRank(b) || orderDay(b).localeCompare(orderDay(a)) || String(a.order_number).localeCompare(String(b.order_number)));
+  }, [unlinkedOrders, shownDate, orderSearch]);
+  // Two customers of the same name get a tag, so the place and pincode get a second look.
+  const nameCounts = useMemo(() => {
+    const counts = {};
+    orderList.forEach(o => { const n = (o.customer_name || '').trim().toLowerCase(); counts[n] = (counts[n] || 0) + 1; });
+    return counts;
+  }, [orderList]);
+  // One line under each order in the pick lists: the things that tell two
+  // orders apart against a slip, which carries the place and the end of the pincode.
   const orderHint = (o) => [
-    shortDate(o.order_date),
-    HANDED_OVER.includes(o.status) ? 'Handed over' : o.status === 'packing' ? 'Packing' : 'Not packed yet',
+    showDay(orderDay(o)),
     o.shipping_city || (o.shipping_address || '').split(',').slice(-2).join(',').trim(),
+    orderPin(o) && `PIN ${orderPin(o)}`,
     (o.items || []).map(i => `${i.sku_name || i.skuName} ${i.pack_type || i.packType || ''} ×${i.quantity}`).join(', '),
     (() => { const w = expectedWeightForOrder(o, skus); return w != null ? `~${Math.round(w * 100) / 100} kg` : ''; })(),
   ].filter(Boolean).join(' · ');
   const linkedCount = Object.keys(linkedOrders).length;
-  // Real numbers already saved, used to rank fixes for a misread number.
+  // Real numbers already saved, used to rank fixes for a mistyped number.
   const knownNumbers = useMemo(() => (state.salesOrders || []).map(o => cleanTracking(o.tracking_number)).filter(isValidTracking), [state.salesOrders]);
 
-  // Courier cost + weight: nothing the slip reader sees is saved until she
-  // confirms it here. Suggestions learn from confirmed slips (utils/courierSuggest.js).
+  // Courier cost + weight: confirmed by her on each slip. Suggestions learn
+  // from confirmed slips (utils/courierSuggest.js).
   const history = useMemo(() => courierHistory(state.salesOrders), [state.salesOrders]);
   const suggestions = useMemo(() => {
     const out = {};
-    orders.filter(o => linkedOrders[o.id]).forEach(o => { out[o.id] = suggestCourier(o, history, skus, slipReads[o.id]); });
+    orders.filter(o => linkedOrders[o.id]).forEach(o => { out[o.id] = suggestCourier(o, history, skus); });
     return out;
-  }, [orders, linkedOrders, history, skus, slipReads]);
+  }, [orders, linkedOrders, history, skus]);
   const courierValue = (id, field) => {
     const e = courierEdits[id];
     if (e && e[field] !== undefined) return e[field];
@@ -314,7 +233,7 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
     if (now - lastScanTimeRef.current < 2000) return;
     if (processingRef.current) return;
     lastScanTimeRef.current = now;
-    setScannedCode(decodedText.trim());
+    setScannedCode(cleanTracking(decodedText));
   };
 
   // One physical consignment slip = one shipment, so the same tracking
@@ -328,10 +247,8 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
     return (state.salesOrders || []).find(o => cleanTracking(o.tracking_number) === clean && String(o.id) !== String(excludeOrderId));
   };
 
-  // Saves the tracking number onto an order. Returns true/false so batch
-  // processing can decide whether to move on or fall back to the review
-  // list. Pure side-effect function — no queue/UI logic in here.
-  const doLink = async (order, code, extracted = {}) => {
+  // Saves the tracking number onto an order. Returns true/false.
+  const doLink = async (order, code) => {
     const duplicate = findDuplicateTrackingOrder(code, order.id);
     if (duplicate) {
       showToast(`Tracking ${code} is already on ${duplicate.order_number} (${duplicate.customer_name}) — not linking it to a second order`, 'error');
@@ -343,12 +260,9 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
       courierName: isIndiaPostNumber(code) ? 'India Post' : (order.courier_name || 'ST Courier'),
       status: 'dispatched',
       dispatchDate: order.dispatch_date || new Date().toISOString().split('T')[0],
-      // weight and courier cost are not saved from the slip reading: she
-      // confirms them in the Linked list (the reader once saved ₹60,620)
-      ...(extracted.slipDate && { courierSlipDate: extracted.slipDate }),
     };
     const { error } = await dbService.updateSalesOrder(updatedOrder);
-    if (error) return false;
+    if (error) { showToast('Error saving tracking number', 'error'); return false; }
 
     dispatch({
       type: 'UPDATE_SALES_ORDER',
@@ -358,81 +272,30 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
         courier_name: updatedOrder.courierName,
         status: 'dispatched',
         dispatch_date: updatedOrder.dispatchDate,
-        ...(updatedOrder.courierSlipDate && { courier_slip_date: updatedOrder.courierSlipDate }),
       },
     });
     linkedCodesRef.current[cleanTracking(code)] = order;
     setLinkedOrders(prev => ({ ...prev, [order.id]: code }));
-    setSlipReads(prev => ({ ...prev, [order.id]: { weight: extracted.weight, amount: extracted.amount } }));
     return true;
   };
 
   const okToSaveNumber = (code) => isValidTracking(code)
     || window.confirm(`${code} doesn't look like a real ST Courier or India Post number. It will fail the daily courier check. Save it anyway?`);
 
-  // Single live-camera scan — still a one-at-a-time interactive flow (she's
-  // holding the slip under the camera), so it keeps the old scan → pick UI.
+  // Single live-camera scan: she's holding the slip under the camera, so she picks straight away.
   const handlePickOrder = async (order) => {
     if (!scannedCode || saving || !okToSaveNumber(scannedCode)) return;
     setSaving(true);
     const ok = await doLink(order, scannedCode);
     setSaving(false);
-    if (!ok) { showToast('Error saving tracking number', 'error'); return; }
+    if (!ok) return;
     showToast(`${order.order_number} → ${scannedCode}`, 'success');
     setScannedCode(null);
+    setOrderSearch('');
   };
 
-  // Barcode-only upload: decodes the consignment number but there's no name
-  // on it to match against, so every file here always needs a manual pick —
-  // it still runs the whole batch without pausing, then queues them all up.
+  // Reads the barcode on every photo, then queues them all for her to pick the order.
   const handleFileSelected = async (e) => {
-    const files = Array.from(e.target.files || []);
-    e.target.value = '';
-    if (files.length === 0) return;
-    if (scanning) await stopScanner();
-
-    setBatchProgress({ current: 0, total: files.length });
-    const newReview = [];
-    for (let i = 0; i < files.length; i++) {
-      setBatchProgress({ current: i + 1, total: files.length });
-      if (!html5QrCodeRef.current) html5QrCodeRef.current = makeSlipReader('tracking-scan-reader');
-      const previewUrl = URL.createObjectURL(files[i]);
-      try {
-        const code = await decodeSlipBarcode(html5QrCodeRef.current, files[i]);
-        const { data: logRow } = await dbService.logAiScan({ trackingNumber: code, outcome: 'pending_review' });
-        newReview.push({ id: nextReviewId(), logId: logRow?.id, trackingNumber: code, order: null, reason: 'Barcode only — no name on it, pick the order', file: files[i], previewUrl });
-      } catch {
-        dbService.logAiScan({ outcome: 'failed' });
-        newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, reason: "Couldn't find a barcode in this photo", file: files[i], previewUrl });
-      }
-    }
-    setBatchProgress(null);
-    setReviewQueue(prev => [...prev, ...newReview]);
-    showToast(`${newReview.length} photo${newReview.length !== 1 ? 's' : ''} added to Needs Your Check`, 'success');
-  };
-
-  // The printed barcode is exact; use it over the AI's reading of the digits when it decodes.
-  const withBarcode = async (data, file) => {
-    try {
-      if (!html5QrCodeRef.current) html5QrCodeRef.current = makeSlipReader('tracking-scan-reader');
-      return { ...data, trackingNumber: await decodeSlipBarcode(html5QrCodeRef.current, file) };
-    } catch {
-      return data; // no readable barcode: keep what the AI read
-    }
-  };
-
-  const reviewReason = (match) => (match.order
-    ? `Best guess (${(match.why || []).join(', ') || 'closest name'}) — please confirm`
-    : match.guessedName
-      ? `Slip seems to say "${match.guessedName}" — pick the order, closest first`
-      : "Couldn't read a name on this slip — pick the order");
-
-  // The magic path: reads the whole slip (Google Cloud Vision OCR,
-  // server-side), matches by phone or a pincode-boosted name match, and
-  // auto-links anything confident without stopping. Runs the entire batch
-  // straight through — only what's left over after all photos are read
-  // shows up for her to check.
-  const handleAiFileSelected = async (e) => {
     const files = Array.from(e.target.files || []);
     e.target.value = '';
     if (files.length === 0) return;
@@ -440,219 +303,66 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
 
     setError(null);
     setBatchProgress({ current: 0, total: files.length });
-
-    // Phase 1: read every photo with Gemini, 2 at a time. This is the slow
-    // part (a few seconds of actual model "thinking" per photo, plus the
-    // free tier's own 10-requests/minute cap) — running them one at a time
-    // wasted that budget. 2 concurrent stays safely under the cap without
-    // tripping 429s on a normal-sized batch. Kept as a separate pass from
-    // matching/linking below so two photos in flight at once can never both
-    // grab the same order — that part stays strictly sequential.
-    const ocrResults = new Array(files.length);
-    let completed = 0;
-    // Sequential, not concurrent — the free Gemini tier's own per-minute cap
-    // is easy to trip with 2 requests in flight plus retries stacked on top,
-    // and that self-inflicted overload was showing up as opaque 502s rather
-    // than a clean 429. One at a time is slower but far more reliable, and
-    // batches here are small enough that it doesn't meaningfully cost time.
-    const candidates = recentOrdersForSlips(orders);
-    for (let i = 0; i < files.length; i++) {
-      ocrResults[i] = await readSlipWithRetry(files[i], candidates);
-      completed++;
-      setBatchProgress({ current: completed, total: files.length });
-    }
-
-    // Phase 2: match + link in original order, sequentially and fast (no
-    // more waiting on Gemini here).
-    const linkedIds = new Set(Object.keys(linkedOrders));
     const newReview = [];
-    let autoLinked = 0;
-
+    const seen = new Set(reviewQueue.map(r => r.trackingNumber).filter(Boolean));
+    let unread = 0;
     for (let i = 0; i < files.length; i++) {
-      const result = ocrResults[i];
-      // Kept for every review item, not just failures — the whole point is
-      // to let her read the actual handwriting herself when the AI's name
-      // guess is wrong, rather than trust text that turned out unreliable.
+      setBatchProgress({ current: i + 1, total: files.length });
+      if (!html5QrCodeRef.current) html5QrCodeRef.current = makeSlipReader('tracking-scan-reader');
       const previewUrl = URL.createObjectURL(files[i]);
-      if (!result || !result.ok) {
-        dbService.logAiScan({ outcome: 'failed' });
-        newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, reason: describeFailure(result), file: files[i], previewUrl });
-        continue;
-      }
-      const data = await withBarcode(result.data, files[i]);
-      if (!data.trackingNumber && !data.customerName && !data.rawText) {
-        dbService.logAiScan({ outcome: 'failed' });
-        const reason = data.emptyReason ? `Nothing readable (${data.emptyReason})` : "Couldn't read anything in this photo";
-        newReview.push({ id: nextReviewId(), trackingNumber: null, order: null, reason, file: files[i], previewUrl });
-        continue;
-      }
-
-      const pool = orders.filter(o => !linkedIds.has(String(o.id)));
-      const match = findBestOrderMatch(data, pool, skus);
-
-      if (!match.trackingNumber) {
-        dbService.logAiScan({ outcome: 'failed', guessedName: match.guessedName });
-        newReview.push({ id: nextReviewId(), trackingNumber: null, order: match.order, slip: data, guessedName: match.guessedName, reason: "Couldn't read the tracking number — type it from the photo", file: files[i], previewUrl });
-        continue;
-      }
-
-      // Same slip uploaded again: say whose it is rather than offering it to another order.
-      const owner = findDuplicateTrackingOrder(match.trackingNumber);
-      if (owner) {
-        dbService.logAiScan({ outcome: 'failed', orderId: owner.id, orderNumber: owner.order_number, trackingNumber: match.trackingNumber, guessedName: match.guessedName });
-        newReview.push({ id: nextReviewId(), trackingNumber: match.trackingNumber, order: null, slip: data, reason: `Already linked to ${owner.order_number} (${owner.customer_name}) — nothing to do, press Skip`, file: files[i], previewUrl });
-        continue;
-      }
-
-      if (match.order && match.autoLink) {
-        linkedIds.add(String(match.order.id)); // reserve before the await so nothing else in this batch can grab the same order
-        const ok = await doLink(match.order, match.trackingNumber, match);
-        if (ok) {
-          autoLinked++;
-          dbService.logAiScan({ outcome: 'auto_linked', orderId: match.order.id, orderNumber: match.order.order_number, trackingNumber: match.trackingNumber, matchedVia: match.matchedVia, confidence: match.confidence, guessedName: match.guessedName });
-          URL.revokeObjectURL(previewUrl); // linked straight away — nothing will ever show this preview
-        } else {
-          linkedIds.delete(String(match.order.id));
-          const { data: logRow } = await dbService.logAiScan({ orderId: match.order.id, orderNumber: match.order.order_number, trackingNumber: match.trackingNumber, matchedVia: match.matchedVia, confidence: match.confidence, guessedName: match.guessedName, outcome: 'pending_review' });
-          newReview.push({ id: nextReviewId(), logId: logRow?.id, ...match, slip: data, reason: 'Matched but saving failed — try confirming again', file: files[i], previewUrl });
-        }
-        continue;
-      }
-
-      // Medium/low confidence — surface exactly what it read so she can
-      // tell at a glance whether it's bad handwriting or a genuine no-match.
-      const reason = reviewReason(match);
-      const { data: logRow } = await dbService.logAiScan({ orderId: match.order?.id, orderNumber: match.order?.order_number, trackingNumber: match.trackingNumber, matchedVia: match.matchedVia, confidence: match.confidence, guessedName: match.guessedName, outcome: 'pending_review' });
-      newReview.push({ id: nextReviewId(), logId: logRow?.id, trackingNumber: match.trackingNumber, order: match.order, confidence: match.confidence, matchedVia: match.matchedVia, guessedName: match.guessedName, weight: match.weight, amount: match.amount, slipDate: match.slipDate, slip: data, reason, file: files[i], previewUrl });
+      let code = null;
+      try {
+        code = await decodeSlipBarcode(html5QrCodeRef.current, files[i]);
+      } catch { unread++; }
+      const owner = code && findDuplicateTrackingOrder(code);
+      let reason = null;
+      if (!code) reason = "Couldn't read the barcode — type the number from the photo";
+      else if (owner) reason = `Already linked to ${owner.order_number} (${owner.customer_name}) — nothing to do, press Skip`;
+      else if (seen.has(code)) reason = 'Same slip as another photo in this stack — press Skip';
+      if (code) seen.add(code);
+      newReview.push({ id: nextReviewId(), trackingNumber: code, done: Boolean(owner), reason, file: files[i], previewUrl });
     }
-
     setBatchProgress(null);
     setReviewQueue(prev => [...prev, ...newReview]);
-    showToast(
-      `${autoLinked} linked automatically${newReview.length ? `, ${newReview.length} need a quick check` : ''}`,
-      'success'
-    );
-  };
-
-  const confirmReviewItem = async (item) => {
-    if (!item.order || !item.trackingNumber || saving || !okToSaveNumber(item.trackingNumber)) return;
-    setSaving(true);
-    const ok = await doLink(item.order, item.trackingNumber, item);
-    setSaving(false);
-    if (!ok) { showToast('Error saving tracking number', 'error'); return; }
-    if (item.logId) dbService.resolveAiScan(item.logId, { outcome: 'user_confirmed', orderId: item.order.id, orderNumber: item.order.order_number });
-    showToast(`${item.order.order_number} → ${item.trackingNumber}`, 'success');
-    if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
-    setReviewQueue(prev => prev.filter(r => r.id !== item.id));
+    showToast(`${files.length - unread} of ${files.length} barcodes read${unread ? ` — type the other ${unread} from the photo` : ''}`, unread ? 'info' : 'success');
   };
 
   const assignReviewItem = async (item, order) => {
     if (!item.trackingNumber || saving || !okToSaveNumber(item.trackingNumber)) return;
     setSaving(true);
-    const ok = await doLink(order, item.trackingNumber, item);
+    const ok = await doLink(order, item.trackingNumber);
     setSaving(false);
-    if (!ok) { showToast('Error saving tracking number', 'error'); return; }
-    // If it already had a suggested order and she picked someone else,
-    // that's the AI guessing wrong — distinct from picking from scratch
-    // (barcode-only, or no name match at all) for accuracy tracking.
-    if (item.logId) dbService.resolveAiScan(item.logId, { outcome: item.order ? 'user_reassigned' : 'user_assigned', orderId: order.id, orderNumber: order.order_number });
+    if (!ok) return;
     showToast(`${order.order_number} → ${item.trackingNumber}`, 'success');
     if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
     setReviewQueue(prev => prev.filter(r => r.id !== item.id));
-    setPickerOpenFor(null);
-    setPickerSearch('');
-  };
-
-  // Re-reads one failed photo without re-uploading the whole batch — useful
-  // when the earlier failure was Gemini's free tier being overloaded (the
-  // server now also falls back to a second model internally, so this often
-  // succeeds even if the first pass hit a sustained overload).
-  const retryReviewItem = async (item) => {
-    if (!item.file || retryingId) return;
-    setRetryingId(item.id);
-    const result = await readSlipWithRetry(item.file, recentOrdersForSlips(unlinkedOrders));
-    if (!result.ok) {
-      setReviewQueue(prev => prev.map(r => r.id === item.id ? { ...r, reason: describeFailure(result) } : r));
-      setRetryingId(null);
-      return;
-    }
-
-    const data = await withBarcode(result.data, item.file);
-    if (!data.trackingNumber && !data.customerName && !data.rawText) {
-      const reason = data.emptyReason ? `Nothing readable (${data.emptyReason})` : "Couldn't read anything in this photo";
-      setReviewQueue(prev => prev.map(r => r.id === item.id ? { ...r, reason } : r));
-      setRetryingId(null);
-      return;
-    }
-
-    const match = findBestOrderMatch(data, unlinkedOrders, skus);
-    if (!match.trackingNumber) {
-      setReviewQueue(prev => prev.map(r => r.id === item.id
-        ? { ...r, order: match.order, slip: data, guessedName: match.guessedName, reason: "Couldn't read the tracking number — type it from the photo" }
-        : r));
-      setRetryingId(null);
-      return;
-    }
-
-    const owner = findDuplicateTrackingOrder(match.trackingNumber);
-    if (owner) {
-      setReviewQueue(prev => prev.map(r => r.id === item.id
-        ? { ...r, trackingNumber: match.trackingNumber, order: null, slip: data, reason: `Already linked to ${owner.order_number} (${owner.customer_name}) — nothing to do, press Skip` }
-        : r));
-      setRetryingId(null);
-      return;
-    }
-
-    if (match.order && match.autoLink) {
-      const ok = await doLink(match.order, match.trackingNumber, match);
-      if (ok) {
-        dbService.logAiScan({ outcome: 'auto_linked', orderId: match.order.id, orderNumber: match.order.order_number, trackingNumber: match.trackingNumber, matchedVia: match.matchedVia, confidence: match.confidence, guessedName: match.guessedName });
-        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
-        setReviewQueue(prev => prev.filter(r => r.id !== item.id));
-        showToast(`${match.order.order_number} → ${match.trackingNumber}`, 'success');
-        setRetryingId(null);
-        return;
-      }
-    }
-
-    // Read succeeded this time but still needs a human pick/confirm —
-    // update in place with whatever it found now.
-    const reason = reviewReason(match);
-    setReviewQueue(prev => prev.map(r => r.id === item.id
-      ? { ...r, trackingNumber: match.trackingNumber, order: match.order, confidence: match.confidence, matchedVia: match.matchedVia, guessedName: match.guessedName, weight: match.weight, amount: match.amount, slipDate: match.slipDate, slip: data, reason }
-      : r));
-    setRetryingId(null);
+    setActiveSlipId(null);
+    setOrderSearch('');
   };
 
   const updateItemTracking = (id, value) => setReviewQueue(prev => prev.map(r => r.id === id ? { ...r, trackingNumber: cleanTracking(value) } : r));
 
+  // Slip photos are often sideways, which makes the handwriting hard to read.
+  const turnItemPhoto = async (item) => {
+    try {
+      const file = await rotateFile(item.file);
+      const previewUrl = URL.createObjectURL(file);
+      if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      setReviewQueue(prev => prev.map(r => r.id === item.id ? { ...r, file, previewUrl } : r));
+    } catch {
+      showToast('Could not turn this photo', 'error');
+    }
+  };
+
   const dismissReviewItem = (id) => {
     setReviewQueue(prev => {
       const item = prev.find(r => r.id === id);
-      if (item?.logId) dbService.resolveAiScan(item.logId, { outcome: 'skipped' });
       if (item?.previewUrl) URL.revokeObjectURL(item.previewUrl);
       return prev.filter(r => r.id !== id);
     });
+    setActiveSlipId(null);
+    setOrderSearch('');
   };
-
-  const pickerResults = useMemo(() => {
-    if (!pickerOpenFor) return [];
-    const q = pickerSearch.trim().toLowerCase();
-    const pool = sortedUnlinked;
-    if (!q) {
-      const slip = reviewQueue.find(r => r.id === pickerOpenFor)?.slip;
-      if (!slip) return pool.slice(0, 30);
-      return rankOrdersForSlip(slip, pool, skus).slice(0, 30).map(r => ({ ...r.order, matchWhy: r.why.join(', ') }));
-    }
-    return pool.filter(o =>
-      (o.customer_name || '').toLowerCase().includes(q) ||
-      (o.order_number || '').toLowerCase().includes(q) ||
-      (o.phone || '').includes(q) ||
-      (o.shipping_address || '').toLowerCase().includes(q) ||
-      (o.shipping_city || '').toLowerCase().includes(q) ||
-      (o.shipping_pincode || '').includes(q)
-    ).slice(0, 30);
-  }, [pickerOpenFor, pickerSearch, sortedUnlinked, reviewQueue, skus]);
 
   const handleFinish = async () => {
     if (unconfirmedCount > 0 && !window.confirm(`${unconfirmedCount} linked slip(s) have no courier cost and weight confirmed yet. Close anyway?`)) return;
@@ -661,14 +371,47 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
     onClose();
   };
 
+  const activeId = reviewQueue.some(r => r.id === activeSlipId) ? activeSlipId : reviewQueue[0]?.id;
+
+  const renderOrderList = (onPick, disabled) => (
+    <div className="space-y-1.5">
+      <input
+        value={orderSearch}
+        onChange={(e) => setOrderSearch(e.target.value)}
+        placeholder="Order from another date? Search name, order #, phone, city..."
+        className="w-full px-2.5 py-1.5 border border-gray-300 rounded text-sm"
+      />
+      <div className="space-y-1 max-h-56 overflow-y-auto">
+        {orderList.map(o => (
+          <button
+            key={o.id}
+            onClick={() => onPick(o)}
+            disabled={disabled}
+            className="w-full text-left px-2 py-1.5 border border-gray-200 bg-white rounded hover:border-teal-400 hover:bg-teal-50 text-sm disabled:opacity-50"
+          >
+            <span className="font-semibold text-gray-900">{o.customer_name}</span>
+            <span className="text-xs text-gray-500 ml-1.5">{o.order_number}</span>
+            {nameCounts[(o.customer_name || '').trim().toLowerCase()] > 1 && (
+              <span className="ml-1.5 px-1.5 py-0.5 bg-amber-100 text-amber-800 rounded text-[10px] font-semibold">Same name — check PIN</span>
+            )}
+            <span className="block text-[11px] text-gray-500">{orderHint(o)}</span>
+          </button>
+        ))}
+        {orderList.length === 0 && (
+          <p className="text-xs text-gray-400 text-center py-2">No matching orders</p>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-lg max-w-lg w-full max-h-[90vh] overflow-y-auto">
-        <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
+        <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between z-10">
           <div>
             <h2 className="text-xl font-bold text-gray-900">Scan Tracking Slips</h2>
             <p className="text-sm text-gray-500 mt-1">
-              {linkedCount} linked{reviewQueue.length > 0 ? ` · ${reviewQueue.length} need a check` : ''} · {unlinkedOrders.length} order{unlinkedOrders.length !== 1 ? 's' : ''} left
+              {linkedCount} linked{reviewQueue.length > 0 ? ` · ${reviewQueue.length} to pick` : ''} · {unlinkedOrders.length} order{unlinkedOrders.length !== 1 ? 's' : ''} left
             </p>
           </div>
           <button onClick={handleFinish} className="text-gray-500 hover:text-gray-700">
@@ -677,6 +420,19 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
         </div>
 
         <div className="p-4 space-y-4">
+          <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+            Order date
+            <select
+              value={shownDate || ''}
+              onChange={(e) => { setPickDate(e.target.value); setOrderSearch(''); }}
+              className="flex-1 px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm bg-white"
+            >
+              {dateOptions.map(d => (
+                <option key={d.day} value={d.day}>{showDay(d.day) || 'No date'} — {d.count} order{d.count !== 1 ? 's' : ''}</option>
+              ))}
+            </select>
+          </label>
+
           {batchProgress && (
             <div className="p-2 bg-blue-50 border border-blue-200 rounded-lg space-y-1.5">
               <p className="text-center text-sm text-blue-700 font-medium">
@@ -692,25 +448,20 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
           )}
 
           {!scannedCode && (
-            <div className="relative bg-black rounded-lg overflow-hidden" style={{ minHeight: '220px' }}>
+            <div className="relative bg-black rounded-lg overflow-hidden" style={{ minHeight: '180px' }}>
               <div id="tracking-scan-reader" className="w-full" />
               {!scanning && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-gray-900">
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-gray-900 p-2">
                   <button onClick={startScanner} disabled={busy}
                     className="flex items-center gap-3 px-6 py-3 bg-teal-600 text-white rounded-lg hover:bg-teal-700 font-medium text-lg disabled:opacity-50">
                     <Camera className="w-6 h-6" /> Start Camera
                   </button>
-                  <button onClick={() => aiFileInputRef.current?.click()} disabled={busy}
-                    className="flex items-center gap-2 px-4 py-2 bg-fuchsia-600 text-white rounded-lg hover:bg-fuchsia-700 font-medium text-sm disabled:opacity-50">
-                    <ImageIcon className="w-4 h-4" /> {busy ? 'Reading photos...' : 'Upload Photos (full slip — auto-matches)'}
-                  </button>
                   <button onClick={() => fileInputRef.current?.click()} disabled={busy}
-                    className="flex items-center gap-2 px-4 py-2 bg-white text-gray-700 rounded-lg hover:bg-gray-100 font-medium text-sm disabled:opacity-50">
-                    <ImageIcon className="w-4 h-4" /> {busy ? 'Reading photos...' : 'Upload Photos (barcode only)'}
+                    className="flex items-center gap-2 px-4 py-2 bg-fuchsia-600 text-white rounded-lg hover:bg-fuchsia-700 font-medium text-sm disabled:opacity-50">
+                    <ImageIcon className="w-4 h-4" /> {busy ? 'Reading photos...' : 'Upload Slip Photos'}
                   </button>
-                  <p className="text-xs text-gray-400">Select the whole stack at once — it reads all of them, then only asks about the ones it's unsure of</p>
+                  <p className="text-xs text-gray-400 text-center">Select the whole stack at once — it reads each barcode, then you pick the order for each slip</p>
                   <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleFileSelected} className="hidden" />
-                  <input ref={aiFileInputRef} type="file" accept="image/*" multiple onChange={handleAiFileSelected} className="hidden" />
                 </div>
               )}
             </div>
@@ -730,23 +481,7 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
                 <p className="text-lg font-mono font-bold text-teal-900">{scannedCode}</p>
               </div>
               <p className="text-sm font-medium text-gray-700">Which order is this for?</p>
-              {unlinkedOrders.length === 0 ? (
-                <p className="text-sm text-gray-500 text-center py-4">No unlinked orders left</p>
-              ) : (
-                <div className="space-y-1.5 max-h-64 overflow-y-auto">
-                  {sortedUnlinked.map(order => (
-                    <button
-                      key={order.id}
-                      onClick={() => handlePickOrder(order)}
-                      disabled={saving}
-                      className="w-full text-left p-2.5 border border-gray-200 rounded-lg hover:border-teal-400 hover:bg-teal-50 transition disabled:opacity-50"
-                    >
-                      <p className="font-medium text-sm text-gray-900">{order.customer_name} <span className="text-xs text-gray-500 font-normal">{order.order_number}</span></p>
-                      <p className="text-xs text-gray-500">{orderHint(order)}</p>
-                    </button>
-                  ))}
-                </div>
-              )}
+              {renderOrderList(handlePickOrder, saving)}
               <button
                 onClick={() => setScannedCode(null)}
                 className="w-full px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg border border-gray-300"
@@ -759,124 +494,82 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
           {reviewQueue.length > 0 && (
             <div className="space-y-2">
               <h3 className="font-bold text-gray-900 text-sm flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 text-amber-600" /> Needs Your Check ({reviewQueue.length})
+                <AlertCircle className="w-4 h-4 text-amber-600" /> Pick the order for each slip ({reviewQueue.length})
               </h3>
-              {reviewQueue.map(item => (
-                <div key={item.id} className="p-3 bg-amber-50 border border-amber-200 rounded-lg space-y-2">
-                  <div className="flex gap-2.5">
-                    {item.previewUrl && (
-                      // Don't trust the AI's name guess — let her read the
-                      // actual handwriting herself and pick from that,
-                      // instead of typing a name that might not match what's
-                      // actually written on the slip.
-                      <button
-                        onClick={() => setZoomedUrl(item.previewUrl)}
-                        className="flex-shrink-0 w-20 h-20 rounded border border-amber-300 overflow-hidden bg-gray-100"
-                        title="Tap to enlarge"
-                      >
-                        <img src={item.previewUrl} alt="Slip" className="w-full h-full object-cover" />
-                      </button>
+              {reviewQueue.map(item => {
+                const open = item.id === activeId;
+                const numberLooksWrong = item.trackingNumber && !isValidTracking(item.trackingNumber);
+                const fixes = numberLooksWrong ? suggestTrackingFixes(item.trackingNumber, knownNumbers) : [];
+                return (
+                  <div key={item.id} className="p-3 bg-amber-50 border border-amber-200 rounded-lg space-y-2">
+                    {open && item.previewUrl && (
+                      <div className="relative">
+                        <button
+                          onClick={() => setZoomedUrl(item.previewUrl)}
+                          className="block w-full h-56 rounded border border-amber-300 overflow-hidden bg-gray-100"
+                          title="Tap to enlarge"
+                        >
+                          <img src={item.previewUrl} alt="Slip" className="w-full h-full object-contain" />
+                        </button>
+                        <button
+                          onClick={() => turnItemPhoto(item)}
+                          className="absolute top-1.5 right-1.5 flex items-center gap-1 px-2 py-1 bg-white border border-gray-300 rounded text-xs font-medium text-gray-700 hover:bg-gray-50"
+                        >
+                          <RotateCw className="w-3.5 h-3.5" /> Turn
+                        </button>
+                      </div>
                     )}
-                    <div className="flex-1 min-w-0 space-y-1">
-                      <label className="flex items-center gap-1.5 text-xs text-gray-600">Tracking
-                        <input
-                          value={item.trackingNumber || ''}
-                          onChange={(e) => updateItemTracking(item.id, e.target.value)}
-                          placeholder="Type it from the slip"
-                          className={`flex-1 min-w-0 px-1.5 py-1 border rounded font-mono text-xs bg-white ${item.trackingNumber && !isValidTracking(item.trackingNumber) ? 'border-red-400' : 'border-gray-300'}`}
-                        />
-                      </label>
-                      {item.trackingNumber && !isValidTracking(item.trackingNumber) && (
-                        <div className="text-xs text-red-700 space-y-1">
-                          <p>This number looks misread. Check it against the photo.</p>
-                          {suggestTrackingFixes(item.trackingNumber, knownNumbers).length > 0 && (
-                            <p className="flex flex-wrap items-center gap-1">Could be
-                              {suggestTrackingFixes(item.trackingNumber, knownNumbers).map(fix => (
-                                <button key={fix} onClick={() => updateItemTracking(item.id, fix)}
-                                  className="px-1.5 py-0.5 bg-white border border-red-300 rounded font-mono hover:bg-red-50">{fix}</button>
-                              ))}
-                            </p>
-                          )}
-                        </div>
+                    <div className="flex gap-2.5">
+                      {!open && item.previewUrl && (
+                        <img src={item.previewUrl} alt="Slip" className="flex-shrink-0 w-14 h-14 rounded border border-amber-300 object-cover bg-gray-100" />
                       )}
-                      <p className="text-sm text-amber-800">{item.reason}</p>
-                    </div>
-                  </div>
-
-                  {item.order && (
-                    <div className="p-2 bg-white border border-amber-200 rounded">
-                      <p className="text-sm font-semibold text-gray-900">{item.order.customer_name}</p>
-                      <p className="text-xs text-gray-500">{item.order.order_number} · {item.order.shipping_address?.slice(0, 50) || ''}</p>
-                    </div>
-                  )}
-
-                  <div className="flex flex-wrap gap-1.5">
-                    {item.order && item.trackingNumber && (
-                      <button
-                        onClick={() => confirmReviewItem(item)}
-                        disabled={saving}
-                        className="flex items-center gap-1 px-2.5 py-1.5 bg-teal-600 text-white rounded text-xs font-medium hover:bg-teal-700 disabled:opacity-50"
-                      >
-                        <CheckCircle className="w-3.5 h-3.5" /> Confirm
-                      </button>
-                    )}
-                    {item.file && (
-                      <button
-                        onClick={() => retryReviewItem(item)}
-                        disabled={retryingId === item.id}
-                        title="Re-read this photo — worth trying again if the earlier failure was Gemini being overloaded"
-                        className="flex items-center gap-1 px-2.5 py-1.5 bg-white border border-gray-300 rounded text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                      >
-                        <RefreshCw className={`w-3.5 h-3.5 ${retryingId === item.id ? 'animate-spin' : ''}`} /> {retryingId === item.id ? 'Retrying...' : 'Retry'}
-                      </button>
-                    )}
-                    {item.trackingNumber && (
-                      <button
-                        onClick={() => { setPickerOpenFor(pickerOpenFor === item.id ? null : item.id); setPickerSearch(''); }}
-                        className="flex items-center gap-1 px-2.5 py-1.5 bg-white border border-gray-300 rounded text-xs font-medium text-gray-700 hover:bg-gray-50"
-                      >
-                        <Search className="w-3.5 h-3.5" /> {item.order ? 'Not this one' : 'Pick order'}
-                      </button>
-                    )}
-                    <button
-                      onClick={() => dismissReviewItem(item.id)}
-                      className="px-2.5 py-1.5 text-xs text-gray-500 hover:bg-gray-100 rounded"
-                    >
-                      Skip
-                    </button>
-                  </div>
-
-                  {pickerOpenFor === item.id && (
-                    <div className="pt-1 space-y-1.5">
-                      <input
-                        autoFocus
-                        value={pickerSearch}
-                        onChange={(e) => setPickerSearch(e.target.value)}
-                        placeholder="Search customer, order # or city..."
-                        className="w-full px-2.5 py-1.5 border border-gray-300 rounded text-sm"
-                      />
-                      <div className="space-y-1 max-h-40 overflow-y-auto">
-                        {pickerResults.map(o => (
-                          <button
-                            key={o.id}
-                            onClick={() => assignReviewItem(item, o)}
-                            disabled={saving}
-                            className="w-full text-left px-2 py-1.5 border border-gray-200 rounded hover:border-teal-400 hover:bg-teal-50 text-sm disabled:opacity-50"
-                          >
-                            <span className="font-medium text-gray-900">{o.customer_name}</span>
-                            <span className="text-xs text-gray-500 ml-1.5">{o.order_number}</span>
-                            <span className="block text-[11px] text-gray-500">{orderHint(o)}</span>
-                            {o.matchWhy && <span className="block text-[11px] text-teal-700">{o.matchWhy}</span>}
-                          </button>
-                        ))}
-                        {pickerResults.length === 0 && (
-                          <p className="text-xs text-gray-400 text-center py-2">No matching orders</p>
+                      <div className="flex-1 min-w-0 space-y-1">
+                        <label className="flex items-center gap-1.5 text-xs text-gray-600">Tracking
+                          <input
+                            value={item.trackingNumber || ''}
+                            onChange={(e) => updateItemTracking(item.id, e.target.value)}
+                            placeholder="Type it from the slip"
+                            className={`flex-1 min-w-0 px-1.5 py-1 border rounded font-mono text-xs bg-white ${numberLooksWrong ? 'border-red-400' : 'border-gray-300'}`}
+                          />
+                        </label>
+                        {numberLooksWrong && (
+                          <div className="text-xs text-red-700 space-y-1">
+                            <p>This number doesn't look right. Check it against the photo.</p>
+                            {fixes.length > 0 && (
+                              <p className="flex flex-wrap items-center gap-1">Could be
+                                {fixes.map(fix => (
+                                  <button key={fix} onClick={() => updateItemTracking(item.id, fix)}
+                                    className="px-1.5 py-0.5 bg-white border border-red-300 rounded font-mono hover:bg-red-50">{fix}</button>
+                                ))}
+                              </p>
+                            )}
+                          </div>
                         )}
+                        {item.reason && <p className="text-xs text-amber-800">{item.reason}</p>}
                       </div>
                     </div>
-                  )}
-                </div>
-              ))}
+
+                    <div className="flex flex-wrap gap-1.5">
+                      {!open && !item.done && (
+                        <button
+                          onClick={() => { setActiveSlipId(item.id); setOrderSearch(''); }}
+                          className="flex items-center gap-1 px-2.5 py-1.5 bg-white border border-gray-300 rounded text-xs font-medium text-gray-700 hover:bg-gray-50"
+                        >
+                          <Search className="w-3.5 h-3.5" /> Pick order
+                        </button>
+                      )}
+                      <button
+                        onClick={() => dismissReviewItem(item.id)}
+                        className="px-2.5 py-1.5 text-xs text-gray-500 hover:bg-gray-100 rounded"
+                      >
+                        Skip
+                      </button>
+                    </div>
+
+                    {open && !item.done && item.trackingNumber && renderOrderList((o) => assignReviewItem(item, o), saving)}
+                  </div>
+                );
+              })}
             </div>
           )}
 
@@ -929,7 +622,7 @@ export default function TrackingScanner({ orders, onClose, onUpdate }) {
                         </div>
                         {(sug.weightFrom || sug.costFrom) && (
                           <p className="text-[11px] text-gray-500">
-                            {[sug.weightFrom && `Weight from ${sug.weightFrom}`, sug.costFrom && `cost ${sug.costFrom.startsWith('read') ? '' : 'from '}${sug.costFrom}`].filter(Boolean).join(' · ')}
+                            {[sug.weightFrom && `Weight from ${sug.weightFrom}`, sug.costFrom && `cost from ${sug.costFrom}`].filter(Boolean).join(' · ')}
                           </p>
                         )}
                       </div>
