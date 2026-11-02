@@ -125,7 +125,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 // later without re-uploading the whole stack.
 const readSlipWithRetry = async (file, candidates = []) => {
   let lastResult;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 5; attempt++) {
     try {
       const base64 = await fileToBase64(file);
       const res = await fetch('/api/scan-slip', {
@@ -150,8 +150,19 @@ const readSlipWithRetry = async (file, candidates = []) => {
     // how many times we asked — wasted time and burned through the free
     // quota even faster.
     const status = lastResult.data?.geminiStatus ?? lastResult.data?.groqStatus;
-    if (lastResult.ok || status === 429 || status === 400 || status === 404) break;
+    if (lastResult.ok) break;
+    // Groq allows about two photos a minute and says how long to wait, so a
+    // stack of slips waits its turn here instead of failing from the third
+    // photo on. A daily limit won't clear by waiting, so that still stops.
+    const groqSays = String(lastResult.data?.groqDetail || '');
+    if (lastResult.data?.groqStatus === 429 && /per minute|ITPM|TPM|RPM/i.test(groqSays)) {
+      const wait = parseFloat((groqSays.match(/try again in ([\d.]+)s/i) || [])[1]) || 20;
+      if (attempt < 4) await sleep(Math.min(wait + 1, 40) * 1000);
+      continue;
+    }
+    if (status === 429 || status === 400 || status === 404) break;
     if (attempt < 2) await sleep(3000 * (attempt + 1));
+    else break;
   }
   // The reader answers with a list number; turn it back into the order.
   if (lastResult.ok && lastResult.data?.matchIndex) {
