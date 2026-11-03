@@ -21,6 +21,9 @@ function getPackTypesForSKU(sku) {
       { value: 'monthly', label: 'Monthly Cycle (2 pouches)' },
     ];
   }
+  // "Sold as" on the product: a monthly-only or weekly-only product has one price.
+  if (sku.soldAs === 'monthly') return [{ value: 'monthly', label: 'Monthly Pack' }];
+  if (sku.soldAs === 'weekly') return [{ value: 'weekly', label: 'Weekly Pack (7 sachets)' }];
   // Regular sachet-based (Day Pack, Night Soak)
   return [
     { value: 'weekly', label: 'Weekly Pack (7 sachets)' },

@@ -317,6 +317,9 @@ export default function SKUManagement() {
 
   // Stock items (product + grade) recipe lines link to, so batches take the right stock.
   const [stockItems, setStockItems] = useState([]);
+  // Cards price from this page's own fresh copy of the stock list, the same one
+  // the recipe editor's cost preview uses, so the two can't disagree.
+  const costItems = stockItems.length ? stockItems : ingredients;
   const pickVendorIngredient = (ingredientId) => {
     const ing = getIngredientsByVendor(formData.selectedVendorId).find(i => String(i.id) === String(ingredientId));
     const vendorName = vendors.find(v => v.id == formData.selectedVendorId)?.name || '';
@@ -3087,7 +3090,7 @@ export default function SKUManagement() {
                         // Live — today's weighted-average stock rate (via alias mapping
                         // where the recipe uses a generic name), not the snapshot frozen
                         // when this recipe was last saved. See skuCost.js.
-                        const { cost: materialCost, unmatched } = liveRawMaterialCost(sku, ingredients, ingredientAliases);
+                        const { cost: materialCost, unmatched } = liveRawMaterialCost(sku, costItems, ingredientAliases);
                         const packagingCost = (sku.packagingMaterials || []).reduce((sum, pkg) =>
                           sum + ((parseFloat(pkg.quantity_per_pack) || 0) * (parseFloat(pkg.price_per_unit) || 0)), 0);
                         const processCost = (sku.processCosts || []).reduce((sum, c) => sum + (parseFloat(c.cost_per_unit) || 0), 0);
@@ -3103,7 +3106,7 @@ export default function SKUManagement() {
                               </p>
                             )}
                             {unmatched.length > 0 ? (
-                              <p className="text-[10px] text-amber-600 mt-1">⚠ Not mapped to stock yet: {unmatched.join(', ')} — see Inventory → Recipe Mapping</p>
+                              <p className="text-[10px] text-amber-600 mt-1">⚠ No bill price yet for: {unmatched.join(', ')} — using the price saved in the recipe</p>
                             ) : (
                               <p className="text-[10px] text-blue-400 mt-1">Material cost is live — today's stock rate</p>
                             )}
@@ -3181,12 +3184,19 @@ export default function SKUManagement() {
                           stock rate, via alias mapping for generic recipe names), not
                           the snapshot frozen when the recipe was last saved. See skuCost.js. */}
                       {(() => {
-                        const weekly = liveRawMaterialCost(sku, ingredients, ingredientAliases, 'weekly');
-                        const monthly = liveRawMaterialCost(sku, ingredients, ingredientAliases, 'monthly');
+                        const weekly = liveRawMaterialCost(sku, costItems, ingredientAliases, 'weekly');
+                        const monthly = liveRawMaterialCost(sku, costItems, ingredientAliases, 'monthly');
                         const unmatched = weekly.unmatched;
+                        // Only the packs this product is actually sold in ("Sold as" on the product).
+                        const showWeekly = sku.soldAs !== 'monthly';
+                        const showMonthly = sku.soldAs !== 'weekly';
+                        const innerCount = sku.monthlyPack?.sachets || sku.weeklyPack?.sachets || 7;
+                        const innerUnit = sku.monthlyPack?.innerUnit || sku.weeklyPack?.innerUnit || 'sachet';
+                        const innerLabel = `${innerCount} ${innerUnit === 'pouch' ? 'pouches' : `${innerUnit}s`}`;
                         return (
                           <>
-                            <div className="grid grid-cols-2 gap-4 pt-4 border-t">
+                            <div className={`grid ${showWeekly && showMonthly ? 'grid-cols-2' : 'grid-cols-1'} gap-4 pt-4 border-t`}>
+                              {showWeekly && (
                               <div className="bg-blue-50 p-3 rounded-lg">
                                 <p className="text-xs text-blue-600 font-semibold mb-1">WEEKLY PACK</p>
                                 <p className="text-sm text-gray-700">7 different sachets</p>
@@ -3194,22 +3204,25 @@ export default function SKUManagement() {
                                   {((sku.weeklyPack?.totalGrams || 0) / 1000).toFixed(2)} kg total
                                 </p>
                                 <p className="text-sm font-bold text-blue-700">
-                                  ₹{weekly.cost.toFixed(2)}
+                                  ₹{weekly.cost.toFixed(2)} <span className="font-normal text-xs">raw material</span>
                                 </p>
                               </div>
+                              )}
+                              {showMonthly && (
                               <div className="bg-accent-50 p-3 rounded-lg">
-                                <p className="text-xs text-accent-600 font-semibold mb-1">MONTHLY PACK</p>
-                                <p className="text-sm text-gray-700">28 sachets (4 weeks)</p>
+                                <p className="text-xs text-accent-600 font-semibold mb-1">{showWeekly ? 'MONTHLY PACK' : 'MONTHLY PACK ONLY'}</p>
+                                <p className="text-sm text-gray-700">{showWeekly ? '28 sachets (4 weeks)' : innerLabel}</p>
                                 <p className="text-sm text-gray-700">
                                   {((sku.monthlyPack?.totalGrams || 0) / 1000).toFixed(2)} kg total
                                 </p>
                                 <p className="text-sm font-bold text-accent-700">
-                                  ₹{monthly.cost.toFixed(2)}
+                                  ₹{monthly.cost.toFixed(2)} <span className="font-normal text-xs">raw material</span>
                                 </p>
                               </div>
+                              )}
                             </div>
                             {unmatched.length > 0 ? (
-                              <p className="text-[10px] text-amber-600 mt-1">⚠ Not mapped to stock yet: {unmatched.join(', ')} — see Inventory → Recipe Mapping</p>
+                              <p className="text-[10px] text-amber-600 mt-1">⚠ No bill price yet for: {unmatched.join(', ')} — using the price saved in the recipe</p>
                             ) : (
                               <p className="text-[10px] text-gray-400 mt-1">Material cost is live — today's stock rate</p>
                             )}
