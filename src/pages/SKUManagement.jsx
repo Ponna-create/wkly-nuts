@@ -185,6 +185,11 @@ export default function SKUManagement() {
   const [productionRequirements, setProductionRequirements] = useState(null);
   const [skuCodeEdited, setSkuCodeEdited] = useState(false);
   const [availablePackagingMaterials, setAvailablePackagingMaterials] = useState([]);
+  // Stock items (product + grade) recipe lines link to, so batches take the right stock.
+  const [stockItems, setStockItems] = useState([]);
+  // Cards price from this page's own fresh copy of the stock list, the same one
+  // the recipe editor's cost preview uses, so the two can't disagree.
+  const costItems = stockItems.length ? stockItems : ingredients;
 
   // Load the packaging master list once, so packaging cost can auto-fill (still editable)
   useEffect(() => {
@@ -315,11 +320,6 @@ export default function SKUManagement() {
     setShowForm(false);
   };
 
-  // Stock items (product + grade) recipe lines link to, so batches take the right stock.
-  const [stockItems, setStockItems] = useState([]);
-  // Cards price from this page's own fresh copy of the stock list, the same one
-  // the recipe editor's cost preview uses, so the two can't disagree.
-  const costItems = stockItems.length ? stockItems : ingredients;
   const pickVendorIngredient = (ingredientId) => {
     const ing = getIngredientsByVendor(formData.selectedVendorId).find(i => String(i.id) === String(ingredientId));
     const vendorName = vendors.find(v => v.id == formData.selectedVendorId)?.name || '';
