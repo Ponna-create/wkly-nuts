@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, ChevronDown, ChevronRight, Package, AlertCircle, Search, X, Edit2, Check, RefreshCw, Warehouse, Boxes, ClipboardCheck } from 'lucide-react';
 import { dbService } from '../services/supabase';
@@ -32,6 +32,7 @@ export default function IngredientInventory() {
   const [savingWaste, setSavingWaste] = useState(false);
 
   const [billFilter, setBillFilter] = useState('');
+  const [showAllRaw, setShowAllRaw] = useState(false); // false: only what is on the shelf
   const [activeTab, setActiveTab] = useState('raw'); // 'raw' | 'finished' | 'count'
   const [finishedGoods, setFinishedGoods] = useState([]);
   const [loadingFinished, setLoadingFinished] = useState(true);
@@ -189,10 +190,37 @@ export default function IngredientInventory() {
     return { label, cls: 'bg-gray-100 text-gray-600' };
   };
 
+  // Per raw material: stock value at what it cost, the last bill, and about how
+  // many days it lasts at the pace it was bought over the last 90 days (there are
+  // too few batches to measure use directly; buying pace ≈ using pace).
+  const rawInfo = useMemo(() => {
+    const since = Date.now() - 90 * 86400000;
+    const out = {};
+    ingredients.forEach(ing => {
+      const lots = (ing.ingredient_batches || []).filter(b => !/^COUNT-/.test(b.batch_number || ''));
+      const active = (ing.ingredient_batches || []).filter(b => b.status === 'active' && parseFloat(b.quantity_remaining || 0) > 0);
+      const value = active.reduce((t, b) => t + parseFloat(b.quantity_remaining || 0) * parseFloat(b.price_per_unit || 0), 0);
+      const bought90 = lots.filter(b => b.received_date && new Date(b.received_date).getTime() >= since)
+        .reduce((t, b) => t + parseFloat(b.quantity_initial || 0), 0);
+      const last = lots.filter(b => b.received_date && parseFloat(b.price_per_unit || 0) > 0)
+        .sort((a, b) => String(b.received_date).localeCompare(String(a.received_date)))[0] || null;
+      const stock = parseFloat(ing.current_stock_total || 0);
+      const perDay = bought90 / 90;
+      out[ing.id] = {
+        stock, value, last, bought90,
+        daysLeft: stock > 0 && perDay > 0 ? Math.round(stock / perDay) : null,
+      };
+    });
+    return out;
+  }, [ingredients]);
+  const inStock = ingredients.filter(i => (rawInfo[i.id]?.stock || 0) > 0);
+  const shelfValue = inStock.reduce((t, i) => t + (rawInfo[i.id]?.value || 0), 0);
+
   const filtered = ingredients.filter(ing =>
     ing.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
-    (!billFilter || lotsFor(ing).length > 0)
-  );
+    (!billFilter || lotsFor(ing).length > 0) &&
+    (showAllRaw || billFilter || searchTerm || (rawInfo[ing.id]?.stock || 0) > 0)
+  ).sort((a, b) => (rawInfo[b.id]?.value || 0) - (rawInfo[a.id]?.value || 0) || a.name.localeCompare(b.name));
 
   const billOptions = (() => {
     const seen = new Map();
@@ -237,8 +265,9 @@ export default function IngredientInventory() {
       {/* Summary tiles */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-          <p className="text-sm text-gray-500">Raw ingredients</p>
-          <p className="text-2xl font-bold">{ingredients.length}</p>
+          <p className="text-sm text-gray-500">Raw in stock</p>
+          <p className="text-2xl font-bold">{inStock.length}<span className="text-sm font-normal text-gray-400"> of {ingredients.length}</span></p>
+          <p className="text-[11px] text-gray-400">Worth ₹{Math.round(shelfValue).toLocaleString('en-IN')} at cost</p>
         </div>
         <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
           <p className="text-sm text-gray-500">Low-stock raw</p>
@@ -368,6 +397,10 @@ export default function IngredientInventory() {
             <Link to="/quick-bill" className="inline-flex items-center gap-1.5 px-3 py-2 bg-teal-600 text-white rounded-lg text-sm font-medium hover:bg-teal-700">
               <Plus className="w-4 h-4" /> Add bill
             </Link>
+            <label className="inline-flex items-center gap-2 text-sm text-gray-600 ml-auto cursor-pointer">
+              <input type="checkbox" checked={showAllRaw} onChange={e => setShowAllRaw(e.target.checked)} className="rounded" />
+              Show items with no stock ({ingredients.length - inStock.length})
+            </label>
           </div>
 
           {filtered.length === 0 && (
@@ -389,12 +422,23 @@ export default function IngredientInventory() {
                   onClick={() => setExpandedId(isExpanded ? null : ing.id)}>
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-gray-900 truncate">{ing.name}</p>
-                    <p className="text-xs text-gray-400">{lots.length} lot{lots.length !== 1 ? 's' : ''}</p>
+                    <p className="text-xs text-gray-400">
+                      {lots.length} lot{lots.length !== 1 ? 's' : ''}
+                      {rawInfo[ing.id]?.last && ` · last bought ${formatDate(rawInfo[ing.id].last.received_date)} at ₹${Math.round(parseFloat(rawInfo[ing.id].last.price_per_unit))}/${(ing.unit || 'kg').toLowerCase()}`}
+                    </p>
                   </div>
                   {isLow && (
                     <span className="flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-medium">
                       <AlertCircle className="w-3 h-3" /> Low
                     </span>
+                  )}
+                  {(rawInfo[ing.id]?.stock || 0) > 0 && (
+                    <div className="text-right hidden sm:block">
+                      <p className="text-sm font-semibold text-gray-700 leading-tight">₹{Math.round(rawInfo[ing.id].value).toLocaleString('en-IN')}</p>
+                      <p className={`text-[11px] ${rawInfo[ing.id].daysLeft != null && rawInfo[ing.id].daysLeft < 14 ? 'text-red-600 font-medium' : 'text-gray-400'}`}>
+                        {rawInfo[ing.id].daysLeft != null ? `about ${rawInfo[ing.id].daysLeft} days` : 'not bought in 90 days'}
+                      </p>
+                    </div>
                   )}
                   <div className="text-right">
                     <p className="text-lg font-bold text-gray-900 leading-tight">{parseFloat(ing.current_stock_total || 0).toFixed(2)}</p>
