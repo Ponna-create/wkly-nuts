@@ -41,6 +41,7 @@ export default function Reports() {
   const [productions, setProductions] = useState([]);
   const [workLog, setWorkLog] = useState([]);
   const [ingredients, setIngredients] = useState([]);
+  const [otherSales, setOtherSales] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dateRange, setDateRange] = useState('this_month');
   const [customFrom, setCustomFrom] = useState('');
@@ -50,13 +51,15 @@ export default function Reports() {
 
   const loadData = async () => {
     setLoading(true);
-    const [ordersRes, expensesRes, prodRes, workRes, ingRes] = await Promise.all([
+    const [ordersRes, expensesRes, prodRes, workRes, ingRes, otherRes] = await Promise.all([
       dbService.getSalesOrders(),
       dbService.getExpenses(),
       dbService.getProductionRuns(),
       dbService.getWorkLog(),
       dbService.getIngredients(),
+      dbService.getOtherSales(),
     ]);
+    if (otherRes.data) setOtherSales(otherRes.data);
     if (workRes.data) setWorkLog(workRes.data);
     if (ingRes.data) setIngredients(ingRes.data);
     if (ordersRes.data) setOrders(ordersRes.data);
@@ -213,8 +216,8 @@ export default function Reports() {
   }, [filteredProductions]);
 
   // === PROFIT/LOSS === the one profit rule shared with Profit & Cost (utils/profit.js)
-  const P = useMemo(() => computeProfit({ orders, expenses, runs: productions, workLog, skus: state.skus || [], ingredients, from: rangeFrom, to: rangeTo }),
-    [orders, expenses, productions, workLog, ingredients, state.skus, rangeFrom, rangeTo]);
+  const P = useMemo(() => computeProfit({ orders, expenses, runs: productions, workLog, skus: state.skus || [], ingredients, otherSales, from: rangeFrom, to: rangeTo }),
+    [orders, expenses, productions, workLog, ingredients, otherSales, state.skus, rangeFrom, rangeTo]);
   const netProfit = P.profit;
 
   // === MONTHLY TREND (last 6 months, uses all orders not filtered) ===
@@ -234,11 +237,11 @@ export default function Reports() {
         return ed && ed.startsWith(key);
       });
       const last = new Date(d.getFullYear(), d.getMonth() + 1, 0);
-      const mp = computeProfit({ orders, expenses, runs: productions, workLog, skus: state.skus || [], ingredients, from: `${key}-01`, to: `${key}-${String(last.getDate()).padStart(2, '0')}` });
+      const mp = computeProfit({ orders, expenses, runs: productions, workLog, skus: state.skus || [], ingredients, otherSales, from: `${key}-01`, to: `${key}-${String(last.getDate()).padStart(2, '0')}` });
       months.push({ key, label, revenue: mp.salesEx, expense: mp.salesEx - mp.profit, profit: mp.profit, orderCount: mp.orders });
     }
     return months;
-  }, [orders, expenses, productions, workLog, ingredients, state.skus]);
+  }, [orders, expenses, productions, workLog, ingredients, otherSales, state.skus]);
 
   // === CUSTOMER RETENTION ===
   const customerRetention = useMemo(() => {
@@ -362,7 +365,7 @@ export default function Reports() {
             <p className="text-sm text-gray-600">Sales (without GST)</p>
           </div>
           <p className="text-2xl font-bold text-green-700">{P.salesEx.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
-          <p className="text-xs text-gray-500">{P.orders} orders · {P.salesIncl.toLocaleString('en-IN', { maximumFractionDigits: 0 })} with GST</p>
+          <p className="text-xs text-gray-500">{P.orders} orders{P.otherCount > 0 && ` + ${P.otherCount} without order`} · {P.salesIncl.toLocaleString('en-IN', { maximumFractionDigits: 0 })} with GST</p>
         </div>
         <div className="bg-white p-4 rounded-lg border border-gray-200">
           <div className="flex items-center gap-2 mb-1">

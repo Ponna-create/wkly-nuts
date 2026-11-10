@@ -66,11 +66,13 @@ export default function ProfitReport() {
   const [workLog, setWorkLog] = useState([]);
   const [ingredients, setIngredients] = useState([]);
   const [runs, setRuns] = useState([]);
+  const [otherSales, setOtherSales] = useState([]);
 
   useEffect(() => {
     dbService.getWorkLog().then(r => setWorkLog(r.data || []));
     dbService.getIngredients().then(r => setIngredients(r.data || []));
     dbService.getProductionRuns().then(r => setRuns(r.data || []));
+    dbService.getOtherSales().then(r => setOtherSales(r.data || []));
   }, []);
 
   const skus = state.skus || [];
@@ -205,8 +207,8 @@ export default function ProfitReport() {
   const P = useMemo(() => {
     const [y, m] = month.split('-').map(Number);
     const last = new Date(y, m, 0).getDate();
-    return computeProfit({ orders: state.salesOrders, expenses: state.expenses, runs, workLog, skus, ingredients, from: `${month}-01`, to: `${month}-${String(last).padStart(2, '0')}` });
-  }, [state.salesOrders, state.expenses, runs, workLog, skus, ingredients, month]);
+    return computeProfit({ orders: state.salesOrders, expenses: state.expenses, runs, workLog, skus, ingredients, otherSales, from: `${month}-01`, to: `${month}-${String(last).padStart(2, '0')}` });
+  }, [state.salesOrders, state.expenses, runs, workLog, skus, ingredients, otherSales, month]);
 
   // Box cost over the last 4 months up to the chosen one, for products with a cost
   const costMonths = useMemo(() => {
@@ -239,7 +241,7 @@ export default function ProfitReport() {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Tile label="Sales (without GST)" value={inr(P.salesEx)} sub={`${P.orders} orders · ${inr(P.salesIncl)} with GST`} />
+        <Tile label="Sales (without GST)" value={inr(P.salesEx)} sub={`${P.orders} orders${P.otherCount ? ` + ${P.otherCount} without order (${inr(P.otherIncl)})` : ''} · ${inr(P.salesIncl)} with GST`} />
         <Tile label="Cost of boxes sold" value={inr(P.cogs)} sub={P.noCost.length ? `No cost yet: ${P.noCost.join(', ')}` : P.estimated.length ? `Typed cost used: ${P.estimated.join(', ')}` : P.billPriced.length ? 'From bill prices on each order date' : 'Batch cost per box'} />
         <Tile label="Other costs" value={inr(P.runningExpenses + P.courier + P.freeSends + P.labourOther)}
           sub={`Expenses ${inr(P.runningExpenses)} · courier ${inr(P.courier)} · free sends ${inr(P.freeSends)} · packing ${inr(P.labourOther)}`} />
@@ -250,6 +252,7 @@ export default function ProfitReport() {
         Cash left over this month (every bill paid, stock still on the shelf included): <b>{inr(P.cashLeft)}</b>
         {' '}(about {inr(r.shelfValue)} of raw material is on the shelf right now).
         {r.labourBills > 0 && ` Labour bills of ${inr(r.labourBills)} entered in Bill are not added again, to avoid counting wages twice.`}
+        {P.otherCount > 0 && ` Sales without order: ${inr(P.otherEx)} without GST; their product cost (${inr(P.otherCogs)}) is estimated at the same share as this month's orders.`}
         {P.slipsSkipped > 0 && ` ${P.slipsSkipped} courier slip amount(s) over ₹500 were skipped as misreads.`}
       </p>
 

@@ -2307,6 +2307,36 @@ const _realDbService = {
     return { data: data || [], error };
   },
 
+  // ==========================================
+  // SALES WITHOUT ORDER (other_sales): money received for sales that never
+  // got an order. No customer details, no invoice, no invoice number.
+  // ==========================================
+  async getOtherSales() {
+    if (!isSupabaseAvailable()) return { data: [], error: null };
+    const { data, error } = await supabase.from('other_sales').select('*').order('sale_date', { ascending: false }).order('created_at', { ascending: false });
+    return { data: data || [], error };
+  },
+
+  async saveOtherSale(row) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    const clean = {
+      sale_date: row.sale_date, amount: parseFloat(row.amount), gst_rate: parseFloat(row.gst_rate ?? 5),
+      paid_by: row.paid_by || null, payment_method: row.payment_method || 'UPI',
+      period: row.period || 'after_app', note: row.note || null,
+    };
+    const q = row.id
+      ? supabase.from('other_sales').update(clean).eq('id', row.id).select().single()
+      : supabase.from('other_sales').insert(clean).select().single();
+    const { data, error } = await q;
+    return { data, error };
+  },
+
+  async deleteOtherSale(id) {
+    if (!isSupabaseAvailable()) return { error: new Error('Supabase not configured') };
+    const { error } = await supabase.from('other_sales').delete().eq('id', id);
+    return { error };
+  },
+
   // When "Refuse hand-over when boxes are short" is on (Settings key
   // blockHandoverWhenShort, switched on after the shelf count), an order
   // can't move to fulfilled-or-later unless every item's boxes are in stock.

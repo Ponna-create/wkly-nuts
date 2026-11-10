@@ -31,6 +31,7 @@ import QuickBatch from './pages/QuickBatch';
 import QuickHours from './pages/QuickHours';
 import ProfitReport from './pages/ProfitReport';
 import AiUsage from './pages/AiUsage';
+import OtherSales from './pages/OtherSales';
 
 function App() {
   return (
@@ -52,6 +53,7 @@ function App() {
               <Route path="/ingredients" element={<ErrorBoundary><IngredientInventory /></ErrorBoundary>} />
               <Route path="/skus" element={<ErrorBoundary><SKUManagement /></ErrorBoundary>} />
               <Route path="/pricing" element={<ErrorBoundary><PricingStrategy /></ErrorBoundary>} />
+              <Route path="/other-sales" element={<ErrorBoundary><OtherSales /></ErrorBoundary>} />
               <Route path="/customers" element={<ErrorBoundary><CustomerManagement /></ErrorBoundary>} />
               <Route path="/invoices" element={<ErrorBoundary><InvoiceManagement /></ErrorBoundary>} />
               <Route path="/reports" element={<ErrorBoundary><Reports /></ErrorBoundary>} />
