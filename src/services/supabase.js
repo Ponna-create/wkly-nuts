@@ -3000,6 +3000,7 @@ const _realDbService = {
         ['customer_id', 'customerId', 'customer_id'],
         ['customer_name', 'customerName', 'customer_name'],
         ['order_source', 'orderSource', 'order_source'],
+        ['influencer_id', 'influencerId', 'influencer_id'],
         ['items', 'items', 'items'],
         ['subtotal', 'subtotal', 'subtotal'],
         ['gst_rate', 'gstRate', 'gst_rate'],
