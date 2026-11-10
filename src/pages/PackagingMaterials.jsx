@@ -3,6 +3,7 @@ import { Plus, Package, AlertTriangle, Search, X, Trash2, Edit2, ArrowUpCircle, 
 import { dbService } from '../services/supabase';
 import { useApp } from '../context/AppContext';
 import { formatDate, formatDateShort } from '../utils/dateFormat';
+import PackingBills from '../components/PackingBills';
 
 const CATEGORIES = {
   box_weekly: { label: 'Weekly Box', color: 'bg-blue-100 text-blue-800' },
@@ -40,6 +41,7 @@ export default function PackagingMaterials() {
   const [txnForm, setTxnForm] = useState(emptyTxn);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
+  const [tab, setTab] = useState('items'); // 'items' | 'bills'
 
   useEffect(() => { loadData(); }, []);
 
@@ -157,8 +159,8 @@ export default function PackagingMaterials() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Packaging Materials</h1>
-          <p className="text-gray-600 mt-1">Track boxes, sachets, labels, tape & nitrogen</p>
+          <h1 className="text-3xl font-bold text-gray-900">Packaging</h1>
+          <p className="text-gray-600 mt-1">Boxes, sachets, pouches, stickers and nitrogen: stock and every packing bill</p>
         </div>
         <div className="flex gap-2">
           <button onClick={() => { setForm(emptyForm); setEditingId(null); setShowForm(true); }}
@@ -172,6 +174,17 @@ export default function PackagingMaterials() {
         </div>
       </div>
 
+      {/* Tabs */}
+      <div className="flex gap-1 bg-white rounded-xl p-1 shadow-sm border border-gray-100 max-w-md">
+        {[['items', 'Items & stock'], ['bills', 'Packing bills']].map(([k, l]) => (
+          <button key={k} onClick={() => setTab(k)}
+            className={`px-4 py-2.5 rounded-lg text-sm font-medium flex-1 transition-all ${tab === k ? 'bg-teal-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}>{l}</button>
+        ))}
+      </div>
+
+      {tab === 'bills' && <PackingBills materials={materials} />}
+
+      {tab === 'items' && (<>
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="bg-white p-4 rounded-lg border border-gray-200">
@@ -333,6 +346,8 @@ export default function PackagingMaterials() {
           })}
         </div>
       )}
+
+      </>)}
 
       {/* Add/Edit Material Modal */}
       {showForm && (
