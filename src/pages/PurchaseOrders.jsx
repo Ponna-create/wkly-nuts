@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { formatDate } from '../utils/dateFormat';
 import BillCSVImport from '../components/BillCSVImport';
+import CostImpact from '../components/CostImpact';
 import { generatePurchaseOrderPDF } from '../utils/purchaseOrderPdf';
 
 const inr0 = (v) => `₹${Math.round(v || 0).toLocaleString('en-IN')}`;
@@ -441,7 +442,7 @@ export default function PurchaseOrders() {
       {activeTab === 'pricewatch' && <PriceWatchTab orders={priceRecords} />}
 
       {/* Tab: Cost Impact */}
-      {activeTab === 'costimpact' && <CostImpactTab orders={priceRecords} skus={state?.skus || []} ingredients={stockItems} />}
+      {activeTab === 'costimpact' && <CostImpact skus={state?.skus || []} ingredients={stockItems} orders={state?.salesOrders || []} />}
 
       {/* Modals */}
       {showForm && (
@@ -924,195 +925,6 @@ function MiniSparkline({ data, color = '#6b7280' }) {
 // ═══════════════════════════════════════════════
 //  COST IMPACT TAB
 // ═══════════════════════════════════════════════
-function CostImpactTab({ orders, skus, ingredients = [] }) {
-  const costData = useMemo(() => {
-    const sorted = [...orders]
-      .filter(o => Array.isArray(o.items) && o.items.length > 0 && o.order_date)
-      .sort((a, b) => (a.order_date || '').localeCompare(b.order_date || ''));
-
-    const latestPrices = {};
-    const priceHistory = {};
-
-    sorted.forEach(po => {
-      po.items.forEach(item => {
-        const name = (item.ingredient_name || item.name || '').trim().toLowerCase();
-        if (!name) return;
-        const rate = parseFloat(item.unit_price || item.rate || 0);
-        if (rate <= 0) return;
-        const pricePerGram = rate / 1000;
-        // also under the product, so an "any grade" recipe line gets the latest price of any grade
-        [name, item.product ? `product:${String(item.product).toLowerCase()}` : null].filter(Boolean).forEach(k => {
-          latestPrices[k] = { pricePerGram, rate, date: po.order_date, vendor: po.vendor_name };
-          if (!priceHistory[k]) priceHistory[k] = [];
-          priceHistory[k].push({ pricePerGram, rate, date: po.order_date });
-        });
-      });
-    });
-
-    const skuCosts = skus
-      .filter(s => s.recipes && Object.keys(s.recipes).length > 0)
-      .map(sku => {
-        const recipes = sku.recipes || {};
-        const days = Object.keys(recipes);
-        if (days.length === 0) return null;
-
-        let totalCostPerSachet = 0;
-        let ingredientBreakdown = [];
-        let missingPrices = [];
-
-        const firstDayRecipe = recipes[days[0]] || [];
-        for (const item of firstDayRecipe) {
-          // linked recipe line -> its stock item (or "any grade" -> the product); old lines by name
-          const linked = item.stockItemId ? ingredients.find(i => i.id === item.stockItemId) : null;
-          const name = linked ? linked.name.trim().toLowerCase()
-            : item.stockProduct && item.stockGrade === '*' ? `product:${String(item.stockProduct).toLowerCase()}`
-            : (item.ingredientName || item.ingredient_name || '').trim().toLowerCase();
-          const grams = parseFloat(item.gramsPerSachet) || 0;
-          if (!name || grams <= 0) continue;
-
-          const priceInfo = latestPrices[name];
-          if (priceInfo) {
-            const cost = grams * priceInfo.pricePerGram;
-            totalCostPerSachet += cost;
-
-            const history = priceHistory[name] || [];
-            const prevPrice = history.length >= 2 ? history[history.length - 2].pricePerGram : null;
-            const prevCost = prevPrice ? grams * prevPrice : null;
-            const costChange = prevCost ? cost - prevCost : 0;
-
-            ingredientBreakdown.push({
-              name: item.ingredientName || item.ingredient_name,
-              grams,
-              costPerSachet: cost,
-              prevCostPerSachet: prevCost,
-              costChange,
-              pricePerKg: priceInfo.rate,
-            });
-          } else {
-            missingPrices.push(item.ingredientName || item.ingredient_name);
-            const fallbackRate = parseFloat(item.pricePerGram) || 0;
-            const cost = grams * fallbackRate;
-            totalCostPerSachet += cost;
-            ingredientBreakdown.push({
-              name: item.ingredientName || item.ingredient_name,
-              grams,
-              costPerSachet: cost,
-              prevCostPerSachet: null,
-              costChange: 0,
-              pricePerKg: fallbackRate * 1000,
-              noPOData: true,
-            });
-          }
-        }
-
-        ingredientBreakdown.sort((a, b) => b.costPerSachet - a.costPerSachet);
-
-        const sp = parseFloat(sku.sellingPrice || sku.selling_price) || 0;
-        const margin = sp > 0 ? ((sp - totalCostPerSachet) / sp * 100) : 0;
-        const totalChange = ingredientBreakdown.reduce((s, i) => s + i.costChange, 0);
-
-        return {
-          skuName: sku.sku_name || sku.skuName,
-          skuCode: sku.skuCode || sku.sku_code,
-          totalCostPerSachet,
-          sellingPrice: sp,
-          margin,
-          totalChange,
-          ingredientBreakdown,
-          missingPrices,
-        };
-      })
-      .filter(Boolean)
-      .sort((a, b) => Math.abs(b.totalChange) - Math.abs(a.totalChange));
-
-    return skuCosts;
-  }, [orders, skus]);
-
-  if (costData.length === 0) {
-    return (
-      <div className="bg-white rounded-lg shadow-sm border p-8 text-center text-gray-500">
-        <BarChart3 className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-        <p>Need SKUs with recipes and at least one purchase order to show cost impact.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      <p className="text-sm text-gray-500">Per-sachet raw material cost based on latest PO prices. Shows which ingredients are driving cost changes.</p>
-      <div className="space-y-4">
-        {costData.map(sku => (
-          <div key={sku.skuCode} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-            <div className="p-4 border-b bg-gray-50">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="font-semibold text-gray-900">{sku.skuName}</h4>
-                  <span className="text-xs text-gray-400">{sku.skuCode}</span>
-                </div>
-                <div className="text-right">
-                  <div className="text-lg font-bold text-gray-900">₹{sku.totalCostPerSachet.toFixed(2)} <span className="text-xs font-normal text-gray-400">/sachet</span></div>
-                  {sku.sellingPrice > 0 && (
-                    <div className="text-xs">
-                      SP: ₹{sku.sellingPrice} •
-                      <span className={`font-bold ml-1 ${sku.margin > 30 ? 'text-green-600' : sku.margin > 15 ? 'text-amber-600' : 'text-red-600'}`}>
-                        {sku.margin.toFixed(1)}% margin
-                      </span>
-                    </div>
-                  )}
-                  {sku.totalChange !== 0 && (
-                    <div className={`text-xs font-semibold mt-0.5 ${sku.totalChange > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                      {sku.totalChange > 0 ? '▲' : '▼'} ₹{Math.abs(sku.totalChange).toFixed(2)}/sachet vs prev PO
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div className="p-3">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-xs text-gray-400 border-b">
-                    <th className="text-left pb-1.5">Ingredient</th>
-                    <th className="text-right pb-1.5">g/sachet</th>
-                    <th className="text-right pb-1.5">₹/kg</th>
-                    <th className="text-right pb-1.5">Cost/sachet</th>
-                    <th className="text-right pb-1.5">Change</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sku.ingredientBreakdown.map((ing, i) => (
-                    <tr key={i} className="border-b border-gray-50">
-                      <td className="py-1.5 font-medium text-gray-700">
-                        {ing.name}
-                        {ing.noPOData && <span className="text-[10px] text-amber-500 ml-1">(recipe rate)</span>}
-                      </td>
-                      <td className="py-1.5 text-right text-gray-500">{ing.grams.toFixed(1)}g</td>
-                      <td className="py-1.5 text-right text-gray-500">₹{Math.round(ing.pricePerKg).toLocaleString('en-IN')}</td>
-                      <td className="py-1.5 text-right font-medium">₹{ing.costPerSachet.toFixed(2)}</td>
-                      <td className={`py-1.5 text-right text-xs font-semibold ${
-                        ing.costChange > 0.01 ? 'text-red-600' : ing.costChange < -0.01 ? 'text-green-600' : 'text-gray-400'
-                      }`}>
-                        {ing.costChange > 0.01 ? `+₹${ing.costChange.toFixed(2)}` :
-                         ing.costChange < -0.01 ? `-₹${Math.abs(ing.costChange).toFixed(2)}` : '-'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {sku.missingPrices.length > 0 && (
-                <div className="mt-2 flex items-center gap-1 text-xs text-amber-600">
-                  <AlertTriangle className="w-3 h-3" />
-                  No PO data for: {sku.missingPrices.join(', ')} — using recipe rates
-                </div>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 // ═══════════════════════════════════════════════
 //  PO FORM
 // ═══════════════════════════════════════════════

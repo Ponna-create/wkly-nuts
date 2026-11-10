@@ -7,7 +7,7 @@ import { stockIdsForLine } from './batchRecipe';
 const num = (v) => parseFloat(v) || 0;
 
 // Packaging + process costs of one box, as typed in SKU Management.
-function packagingAndProcess(sku) {
+export function packagingAndProcess(sku) {
   const wp = sku.weeklyPack || sku.weekly_pack || {};
   const packaging = (sku.packagingMaterials || wp.packaging || []).reduce((t, p) => t + num(p.quantity_per_pack) * num(p.price_per_unit), 0);
   const process = (sku.processCosts || wp.processCosts || []).reduce((t, p) => t + num(p.cost_per_unit), 0);
@@ -45,7 +45,7 @@ export const todayStr = () => new Date().toISOString().slice(0, 10);
 // ₹/kg on a date: the latest bill on or before it (same-day bills averaged by
 // quantity). Before the first bill, the first bill's price. Shelf-count lots
 // and voided lots are not purchases, and items not held in kg can't be priced by grams.
-function billRateAt(ids, ingredients, date) {
+export function billRateAt(ids, ingredients, date) {
   const wanted = ids.map(String);
   const lots = (ingredients || [])
     .filter(i => wanted.includes(String(i.id)) && String(i.unit || 'kg').toLowerCase() === 'kg')
