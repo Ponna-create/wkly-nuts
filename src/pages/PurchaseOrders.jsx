@@ -12,6 +12,9 @@ import { formatDate } from '../utils/dateFormat';
 import BillCSVImport from '../components/BillCSVImport';
 import { generatePurchaseOrderPDF } from '../utils/purchaseOrderPdf';
 
+const inr0 = (v) => `₹${Math.round(v || 0).toLocaleString('en-IN')}`;
+const inr2 = (v) => (parseFloat(v) || 0).toLocaleString('en-IN', { style: 'currency', currency: 'INR' });
+
 const STATUS_CONFIG = {
   draft: { label: 'Draft', color: 'bg-gray-100 text-gray-700', icon: Clock },
   ordered: { label: 'Ordered', color: 'bg-blue-100 text-blue-700', icon: Package },
@@ -23,7 +26,7 @@ const STATUS_CONFIG = {
 };
 
 const TABS = [
-  { id: 'orders', label: 'Purchase Orders', icon: ShoppingCart },
+  { id: 'orders', label: 'Raw Material Purchases', icon: ShoppingCart },
   { id: 'pricewatch', label: 'Price Watch', icon: Eye },
   { id: 'costimpact', label: 'Cost Impact', icon: BarChart3 },
 ];
@@ -44,6 +47,9 @@ export default function PurchaseOrders() {
   const [expandedId, setExpandedId] = useState(null);
   const [activeTab, setActiveTab] = useState('orders');
   const [showSmartPO, setShowSmartPO] = useState(false);
+  const [vendorFilter, setVendorFilter] = useState('all');
+  const [fromMonth, setFromMonth] = useState('');
+  const [toMonth, setToMonth] = useState('');
 
   const loadOrders = useCallback(async () => {
     setLoading(true);
@@ -54,17 +60,54 @@ export default function PurchaseOrders() {
 
   useEffect(() => { loadOrders(); }, [loadOrders]);
 
-  const filtered = orders.filter(o => {
-    const matchesSearch = !search ||
-      (o.vendor_name || '').toLowerCase().includes(search.toLowerCase()) ||
-      (o.po_number || '').toLowerCase().includes(search.toLowerCase()) ||
-      (o.notes || '').toLowerCase().includes(search.toLowerCase());
-    const matchesStatus = filterStatus === 'all' || o.status === filterStatus;
-    return matchesSearch && matchesStatus;
-  });
+  // Every raw material bill in one list: the old purchase orders plus every
+  // Quick Bill raw-material bill (an expense, with its lines from the stock lots
+  // it created). Packing bills live on the Packaging page; all bills are in Expenses.
+  const rows = useMemo(() => {
+    const poExpenseIds = new Set(orders.map(o => o.expense_id).filter(Boolean));
+    const lotsByExpense = {};
+    stockItems.forEach(ing => (ing.ingredient_batches || []).forEach(lot => {
+      if (!lot.expense_id || /^COUNT-/.test(lot.batch_number || '')) return;
+      const qty = parseFloat(lot.quantity_initial) || 0;
+      if (qty <= 0) return;
+      (lotsByExpense[lot.expense_id] = lotsByExpense[lot.expense_id] || [])
+        .push({ name: ing.name, qty, unit: ing.unit || 'Kg', rate: parseFloat(lot.price_per_unit) || 0 });
+    }));
+    const fromPOs = orders.filter(o => o.status !== 'cancelled').map(o => ({
+      key: `po-${o.id}`, kind: 'po', po: o, planned: !['received', 'partially_received'].includes(o.status),
+      date: o.order_date, vendor: (o.vendor_name || '').trim(), total: parseFloat(o.total_amount) || 0,
+      ref: o.bill_number ? `Bill ${o.bill_number}` : o.po_number,
+      lines: (Array.isArray(o.items) ? o.items : []).map(it => ({ name: it.ingredient_name || it.name, qty: parseFloat(it.quantity_kg || it.quantity) || 0, unit: it.unit || 'Kg', rate: parseFloat(it.unit_price || it.rate) || 0 })),
+    }));
+    const fromBills = (state?.expenses || []).filter(e => e.category === 'raw_materials' && !poExpenseIds.has(e.id)).map(e => ({
+      key: `exp-${e.id}`, kind: 'bill', planned: false,
+      date: e.bill_date || e.payment_date || String(e.created_at || '').slice(0, 10), vendor: (e.vendor_name || '').trim(),
+      total: parseFloat(e.total_amount) || 0, ref: e.bill_number ? `Bill ${e.bill_number}` : 'No bill',
+      lines: lotsByExpense[e.id] || [], notes: e.notes, expenseNo: e.expense_number, payMethod: e.payment_method,
+    }));
+    return [...fromPOs, ...fromBills].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+  }, [orders, stockItems, state?.expenses]);
 
-  const totalValue = filtered.reduce((sum, o) => sum + (parseFloat(o.total_amount) || 0), 0);
-  const pendingPayment = filtered.filter(o => o.payment_status === 'pending').reduce((sum, o) => sum + (parseFloat(o.total_amount) || 0), 0);
+  const q = search.trim().toLowerCase();
+  const matches = (r) => (!q || r.vendor.toLowerCase().includes(q) || String(r.ref).toLowerCase().includes(q) || r.lines.some(l => String(l.name || '').toLowerCase().includes(q)))
+    && (vendorFilter === 'all' || r.vendor === vendorFilter)
+    && (!fromMonth || String(r.date || '').slice(0, 7) >= fromMonth)
+    && (!toMonth || String(r.date || '').slice(0, 7) <= toMonth);
+  const hasFilter = !!(q || vendorFilter !== 'all' || fromMonth || toMonth);
+  const bills = rows.filter(r => !r.planned);
+  const planned = rows.filter(r => r.planned);
+  const shownBills = bills.filter(matches);
+  const listRows = filterStatus === 'planned' ? planned.filter(matches) : shownBills;
+  const spentShown = shownBills.reduce((t, r) => t + r.total, 0);
+  const thisMonthKey = new Date().toISOString().slice(0, 7);
+  const spentThisMonth = bills.filter(r => String(r.date || '').slice(0, 7) === thisMonthKey).reduce((t, r) => t + r.total, 0);
+  const vendorOptions = [...new Set(bills.map(r => r.vendor).filter(Boolean))].sort();
+  const vendorsUsed = new Set(shownBills.map(r => r.vendor).filter(Boolean)).size;
+  const byMonth = Object.entries(shownBills.reduce((m, r) => {
+    const k = String(r.date || '').slice(0, 7);
+    if (!k) return m;
+    m[k] = m[k] || { n: 0, amt: 0 }; m[k].n += 1; m[k].amt += r.total; return m;
+  }, {})).sort((a, b) => a[0].localeCompare(b[0]));
 
   const handleDelete = async (id) => {
     if (!confirm('Delete this purchase order?')) return;
@@ -139,46 +182,58 @@ export default function PurchaseOrders() {
           {/* Stats */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-              <p className="text-sm text-gray-500">Total Orders</p>
-              <p className="text-2xl font-bold">{orders.length}</p>
+              <p className="text-sm text-gray-500">Bills</p>
+              <p className="text-2xl font-bold">{shownBills.length}</p>
+              <p className="text-[11px] text-gray-400">{vendorsUsed} vendor{vendorsUsed === 1 ? '' : 's'}</p>
             </div>
             <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-              <p className="text-sm text-gray-500">Total Value</p>
-              <p className="text-2xl font-bold">{totalValue.toLocaleString('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })}</p>
+              <p className="text-sm text-gray-500">Spent{hasFilter ? ' (filtered)' : ''}</p>
+              <p className="text-2xl font-bold">{inr0(spentShown)}</p>
             </div>
             <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-              <p className="text-sm text-gray-500">Pending Payment</p>
-              <p className="text-2xl font-bold text-red-600">{pendingPayment.toLocaleString('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })}</p>
+              <p className="text-sm text-gray-500">This month</p>
+              <p className="text-2xl font-bold text-teal-700">{inr0(spentThisMonth)}</p>
             </div>
             <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-              <p className="text-sm text-gray-500">Active Orders</p>
-              <p className="text-2xl font-bold text-blue-600">{orders.filter(o => !['received', 'cancelled'].includes(o.status)).length}</p>
+              <p className="text-sm text-gray-500">Planned orders</p>
+              <p className="text-2xl font-bold text-blue-600">{planned.length}</p>
+              <p className="text-[11px] text-gray-400">Drafts, not bought yet</p>
             </div>
           </div>
 
-          {/* Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-3 flex-1">
-              <div className="relative flex-1 max-w-md">
+          {/* Filters */}
+          <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3">
+            <div className="flex flex-wrap items-end gap-2 flex-1">
+              <div className="relative flex-1 min-w-[180px] max-w-sm">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input type="text" placeholder="Search POs..." value={search} onChange={e => setSearch(e.target.value)}
+                <input type="text" placeholder="Search vendor, bill no or item..." value={search} onChange={e => setSearch(e.target.value)}
                   className="w-full pl-10 pr-4 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-teal-500" />
               </div>
+              <select value={vendorFilter} onChange={e => setVendorFilter(e.target.value)}
+                className="border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500">
+                <option value="all">All vendors</option>
+                {vendorOptions.map(v => <option key={v} value={v}>{v}</option>)}
+              </select>
+              <label className="text-xs text-gray-500">From
+                <input type="month" value={fromMonth} onChange={e => setFromMonth(e.target.value)} className="block border rounded-lg px-2 py-1.5 text-sm" />
+              </label>
+              <label className="text-xs text-gray-500">To
+                <input type="month" value={toMonth} onChange={e => setToMonth(e.target.value)} className="block border rounded-lg px-2 py-1.5 text-sm" />
+              </label>
               <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
                 className="border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500">
-                <option value="all">All Status</option>
-                {Object.entries(STATUS_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                <option value="all">Bills</option>
+                <option value="planned">Planned orders</option>
               </select>
+              {hasFilter && (
+                <button onClick={() => { setSearch(''); setVendorFilter('all'); setFromMonth(''); setToMonth(''); }}
+                  className="text-xs text-teal-700 underline py-2">Clear</button>
+              )}
             </div>
             <div className="flex gap-2">
               <button onClick={() => setShowSmartPO(true)}
                 className="flex items-center gap-2 px-3 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 text-sm font-medium">
                 <Zap className="w-4 h-4" /> Smart PO
-              </button>
-              <button onClick={() => setShowCSVImport(true)}
-                className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
-                title="Import POs from CSV (use ChatGPT/Gemini to convert bills)">
-                <FileSpreadsheet className="w-4 h-4" /> Import Bill
               </button>
               <button onClick={() => { setEditingPO(null); setShowForm(true); }}
                 className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 text-sm font-medium">
@@ -186,49 +241,96 @@ export default function PurchaseOrders() {
               </button>
             </div>
           </div>
+          <p className="text-[11px] text-gray-400 -mt-2">New bills are added in Quick → Bill. Only raw material bills are here; packing bills and every other bill are in Expenses.</p>
 
-          {/* PO List */}
+          {/* Spent by month */}
+          {filterStatus === 'all' && byMonth.length > 0 && (
+            <div className="bg-white rounded-xl p-3 shadow-sm border border-gray-100">
+              <p className="text-xs font-semibold text-gray-500 mb-2">Spent by month</p>
+              <div className="flex flex-wrap gap-2">
+                {byMonth.map(([m, v]) => (
+                  <span key={m} className="px-2.5 py-1 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700">
+                    {new Date(`${m}-01`).toLocaleDateString('en-IN', { month: 'short', year: '2-digit' })}: <b>{inr0(v.amt)}</b> ({v.n})
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Bill list */}
           {loading ? (
-            <div className="text-center py-12 text-gray-500">Loading purchase orders...</div>
-          ) : filtered.length === 0 ? (
+            <div className="text-center py-12 text-gray-500">Loading purchases...</div>
+          ) : listRows.length === 0 ? (
             <div className="text-center py-12">
               <Package className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-              <p className="text-gray-500">No purchase orders found</p>
-              <button onClick={() => { setEditingPO(null); setShowForm(true); }} className="mt-3 text-teal-600 text-sm font-medium">+ Create your first PO</button>
+              <p className="text-gray-500">{filterStatus === 'planned' ? 'No planned orders' : 'No bills match'}</p>
             </div>
           ) : (
             <div className="space-y-2">
-              {filtered.map(po => {
-                const statusConf = STATUS_CONFIG[po.status] || STATUS_CONFIG.draft;
-                const items = Array.isArray(po.items) ? po.items : [];
+              {listRows.map(row => {
+                const po = row.po;
+                const open = expandedId === row.key;
                 return (
-                  <div key={po.id} className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
+                  <div key={row.key} className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
                     <div className="flex items-center gap-3 p-4 cursor-pointer hover:bg-gray-50"
-                      onClick={() => setExpandedId(expandedId === po.id ? null : po.id)}>
+                      onClick={() => setExpandedId(open ? null : row.key)}>
                       <div className="w-10 h-10 rounded-lg bg-teal-50 flex items-center justify-center flex-shrink-0">
                         <Package className="w-5 h-5 text-teal-600" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-gray-900 text-sm">{po.po_number}</span>
-                          <span className={`px-2 py-0.5 text-xs rounded-full ${statusConf.color}`}>{statusConf.label}</span>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-medium text-gray-900 text-sm">{row.vendor || 'Unknown vendor'}</span>
+                          <span className="text-xs text-gray-500">{row.ref}</span>
+                          {row.planned && <span className="px-2 py-0.5 text-xs rounded-full bg-blue-100 text-blue-700">Planned</span>}
+                          {!row.planned && row.lines.length === 0 && <span className="px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-500">No item details</span>}
                         </div>
-                        <div className="flex items-center gap-3 text-xs text-gray-400 mt-0.5">
-                          <span>{po.vendor_name}</span>
-                          <span>{formatDate(po.order_date)}</span>
-                          <span>{items.length} items</span>
+                        <div className="flex flex-wrap items-center gap-x-3 text-xs text-gray-400 mt-0.5">
+                          <span>{formatDate(row.date)}</span>
+                          {row.lines.length > 0 && <span>{row.lines.length} items</span>}
+                          {row.lines.length > 0 && <span className="truncate max-w-[22rem]">{row.lines.map(l => l.name).join(', ')}</span>}
                         </div>
                       </div>
                       <div className="text-right flex-shrink-0">
-                        <p className="font-semibold text-gray-900">{parseFloat(po.total_amount).toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}</p>
-                        <span className={`text-xs ${po.payment_status === 'paid' ? 'text-green-600' : 'text-red-500'}`}>
-                          {po.payment_status}
-                        </span>
+                        <p className="font-semibold text-gray-900">{inr2(row.total)}</p>
                       </div>
-                      {expandedId === po.id ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+                      {open ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
                     </div>
 
-                    {expandedId === po.id && (
+                    {open && row.kind === 'bill' && (
+                      <div className="border-t bg-gray-50 p-4 space-y-3">
+                        {row.lines.length > 0 ? (
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="text-xs text-gray-500 border-b">
+                                  <th className="text-left pb-2">Item</th>
+                                  <th className="text-right pb-2">Qty</th>
+                                  <th className="text-right pb-2">Rate</th>
+                                  <th className="text-right pb-2">Total</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {row.lines.map((l, i) => (
+                                  <tr key={i} className="border-b border-gray-100">
+                                    <td className="py-1.5">{l.name}</td>
+                                    <td className="py-1.5 text-right">{l.qty} {l.unit}</td>
+                                    <td className="py-1.5 text-right">{inr2(l.rate)}</td>
+                                    <td className="py-1.5 text-right font-medium">{inr2(l.qty * l.rate)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : <p className="text-sm text-gray-500">Paid without item details (no bill).</p>}
+                        {row.lines.length > 0 && Math.abs(row.lines.reduce((t, l) => t + l.qty * l.rate, 0) - row.total) > 1 && (
+                          <p className="text-xs text-gray-500">Items not kept in stock (for example honey or Mexican Bites) make up the rest of the bill.</p>
+                        )}
+                        {row.notes && <p className="text-xs text-gray-600 bg-white p-2 rounded">{row.notes}</p>}
+                        <p className="text-[11px] text-gray-400">{row.expenseNo} · paid by {row.payMethod || '—'}. To change this bill, edit it in Expenses.</p>
+                      </div>
+                    )}
+
+                    {open && row.kind === 'po' && (
                       <div className="border-t bg-gray-50 p-4 space-y-3">
                         {items.length > 0 && (
                           <div className="overflow-x-auto">

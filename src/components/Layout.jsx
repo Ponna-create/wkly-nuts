@@ -48,7 +48,7 @@ const navGroups = [
     label: 'Inventory',
     items: [
       { name: 'Inventory', href: '/ingredients', icon: Warehouse },
-      { name: 'Purchases', href: '/purchase-orders', icon: ShoppingCart },
+      { name: 'Raw Purchases', href: '/purchase-orders', icon: ShoppingCart },
       { name: 'Vendors', href: '/vendors', icon: Users },
       { name: 'Packaging', href: '/packaging', icon: Boxes },
     ],
