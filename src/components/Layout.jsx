@@ -4,7 +4,7 @@ import {
   Home, Package, Warehouse, ShoppingCart, FileText,
   Menu, X, LogOut, Users, Truck, Factory,
   ChevronDown, ChevronRight, Database, Settings, BarChart3, Boxes, Tag, ClipboardList,
-  Heart, Megaphone, Layers, Zap, Sparkles
+  Heart, Megaphone, Layers, Zap, Sparkles, IndianRupee
 } from 'lucide-react';
 import { logout } from './Auth';
 import { isTestMode, setTestMode, resetTestData } from '../services/supabase';
@@ -31,6 +31,7 @@ const navGroups = [
     label: 'Sales',
     items: [
       { name: 'Orders', href: '/orders', icon: Truck },
+      { name: 'Sales without order', href: '/other-sales', icon: IndianRupee },
       { name: 'Customers', href: '/customers', icon: Users },
       { name: 'CRM', href: '/crm', icon: Heart },
     ],

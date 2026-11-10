@@ -13,6 +13,11 @@
 // they count when the boxes made from them are sold. Labour bills ('salary')
 // are left out because labour is counted from Hours. Barter marketing is the
 // product sent, already in free sends.
+//
+// Sales without order (other_sales: money received with no order in the app)
+// add to sales. Their product cost is unknown, so it is estimated at the same
+// cost-to-sales share as the orders in the period (64% when there are none,
+// the Jan–Nov 2026 average).
 import { isPromotionalOrder } from './invoiceFromOrder';
 import { makeBoxCoster, productCostOfOrders } from './productCost';
 import { boxesForPacks } from './packSize';
@@ -25,15 +30,23 @@ const expenseDay = (e) => dayOf(e.bill_date || e.payment_date || e.expense_date 
 const gstOf = (o) => num(o.gst_amount) + (num(o.shipping_charge) - num(o.shipping_charge) / 1.05);
 
 // from / to: 'YYYY-MM-DD' inclusive
-export function computeProfit({ orders, expenses, runs, workLog, skus, ingredients, from, to }) {
+export function computeProfit({ orders, expenses, runs, workLog, skus, ingredients, otherSales = [], from, to }) {
   const inRange = (d) => d && d >= from && d <= to;
   const live = (orders || []).filter(o => inRange(dayOf(o.order_date || o.created_at)) && !['cancelled', 'returned'].includes(o.status));
   const sales = live.filter(o => !isPromotionalOrder(o) && num(o.total_amount) > 0);
   const promos = live.filter(o => isPromotionalOrder(o));
 
-  const salesIncl = sales.reduce((t, o) => t + num(o.total_amount), 0);
-  const gst = sales.reduce((t, o) => t + gstOf(o), 0);
-  const salesEx = salesIncl - gst;
+  const orderIncl = sales.reduce((t, o) => t + num(o.total_amount), 0);
+  const orderGst = sales.reduce((t, o) => t + gstOf(o), 0);
+  const orderEx = orderIncl - orderGst;
+
+  const others = (otherSales || []).filter(x => inRange(dayOf(x.sale_date)));
+  const otherIncl = others.reduce((t, x) => t + num(x.amount), 0);
+  const otherEx = others.reduce((t, x) => t + num(x.amount) / (1 + num(x.gst_rate ?? 5) / 100), 0);
+
+  const salesIncl = orderIncl + otherIncl;
+  const gst = orderGst + (otherIncl - otherEx);
+  const salesEx = orderEx + otherEx;
 
   // cost of the boxes sold
   const costAt = makeBoxCoster({ runs, skus, ingredients });
@@ -54,6 +67,10 @@ export function computeProfit({ orders, expenses, runs, workLog, skus, ingredien
     } else noCost.add(name);
   }));
   const freeSends = productCostOfOrders(promos, skus, costAt);
+  const DEFAULT_COST_SHARE = 0.64;
+  const costShare = orderEx > 0 && cogs > 0 ? cogs / orderEx : DEFAULT_COST_SHARE;
+  const otherCogs = otherEx * costShare;
+  cogs += otherCogs;
 
   // running expenses (cash, not stock bought, not labour bills)
   const exp = (expenses || []).filter(e => inRange(expenseDay(e)));
@@ -82,6 +99,7 @@ export function computeProfit({ orders, expenses, runs, workLog, skus, ingredien
 
   return {
     orders: sales.length, salesIncl, gst, salesEx,
+    otherCount: others.length, otherIncl, otherEx, otherCogs, orderEx,
     cogs, noCost: [...noCost], estimated: [...estimated], billPriced: [...billPriced], freeSends: freeSends.cost, freeSendCount: promos.length,
     runningExpenses, byCategory, courier, courierBills, courierSlips, slipsSkipped, labourOther,
     profit, margin: salesEx > 0 ? (profit / salesEx) * 100 : 0,
