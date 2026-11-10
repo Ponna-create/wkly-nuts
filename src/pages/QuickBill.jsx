@@ -85,6 +85,15 @@ export default function QuickBill() {
     setAddToFee(!(selectedContact && num(selectedContact.fee) > 0));
   }, [influencerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // A name printed on the bill that belongs to a known vendor (vendors.aliases) is
+  // shown and saved under that vendor's own name.
+  const canonVendor = (name) => {
+    const k = keyOf(name);
+    if (!k) return name;
+    const v = (state.vendors || []).find(x => keyOf(x.name) === k || (x.aliases || []).some(al => keyOf(al) === k));
+    return v ? String(v.name).trim() : name;
+  };
+
   const vendorNames = useMemo(() => {
     const set = new Set();
     (state.expenses || []).forEach(e => { if (e.vendor_name) set.add(e.vendor_name); });
@@ -147,7 +156,7 @@ export default function QuickBill() {
         if (upi) { applyUpi(upi); setReading(false); return; }
         bill = parseBillPhoto(text);
         if (!bill.items.length) {
-          if (bill.vendor) setVendor(bill.vendor);
+          if (bill.vendor) setVendor(canonVendor(bill.vendor));
           if (bill.billNo) setBillNo(bill.billNo);
           if (bill.date) setBillDate(bill.date);
           if (bill.total) setPrintedTotal(bill.total);
@@ -162,7 +171,7 @@ export default function QuickBill() {
         return;
       }
       setCategory('raw_materials');
-      if (bill.vendor) setVendor(bill.vendor);
+      if (bill.vendor) setVendor(canonVendor(bill.vendor));
       if (bill.billNo) setBillNo(bill.billNo);
       if (bill.date) setBillDate(bill.date);
       setPrintedTotal(bill.total || 0);
@@ -449,7 +458,7 @@ export default function QuickBill() {
         </div>
         <div>
           <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Vendor / paid to</label>
-          <input list="vendor-list" value={vendor} onChange={e => setVendor(e.target.value)} className={field} placeholder="Sri Balaji Traders" />
+          <input list="vendor-list" value={vendor} onChange={e => setVendor(e.target.value)} onBlur={e => setVendor(canonVendor(e.target.value))} className={field} placeholder="Sri Balaji Traders" />
           <datalist id="vendor-list">{vendorNames.map(v => <option key={v} value={v} />)}</datalist>
           <p className="text-[11px] text-gray-400 mt-1">New supplier? Just type the name. It is remembered and suggested next time.</p>
         </div>
