@@ -40,7 +40,9 @@ export default function QuickOrder() {
   const [fields, setFields] = useState(EMPTY_FIELDS);
   const [phoneLookupStatus, setPhoneLookupStatus] = useState('idle'); // idle | searching | found | not_found
   const [selectedCustomer, setSelectedCustomer] = useState(null);
-  const [items, setItems] = useState([]); // { key, skuId, skuName, packType, quantity, unitPrice, total }
+  // listPrice: the SKU's selling price when the line was added. A lower unitPrice
+  // is a discount; Profit & Cost adds these up (Given below list price).
+  const [items, setItems] = useState([]); // { key, skuId, skuName, packType, quantity, unitPrice, listPrice, total }
   const [shippingCharge, setShippingCharge] = useState(0);
   const [saving, setSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(null); // the last saved order, with phone attached for printing
@@ -156,7 +158,7 @@ export default function QuickOrder() {
           : i);
       }
       const unitPrice = getPricingForSku(sku, packType);
-      return [...prev, { key, skuId: String(sku.id), skuName: sku.name, packType, quantity: 1, unitPrice, total: unitPrice }];
+      return [...prev, { key, skuId: String(sku.id), skuName: sku.name, packType, quantity: 1, unitPrice, listPrice: unitPrice > 0 ? unitPrice : null, total: unitPrice }];
     });
   };
 
@@ -971,6 +973,11 @@ export default function QuickOrder() {
                         <button onClick={() => removeItem(item.key)} className="p-1 text-red-500 hover:bg-red-50 rounded"><Trash2 className="w-3.5 h-3.5" /></button>
                       </div>
                     </div>
+                    {item.skuId && item.listPrice > 0 && item.unitPrice > 0 && item.unitPrice < item.listPrice && (
+                      <p className="text-[11px] text-amber-700 mt-0.5">
+                        ₹{(item.listPrice - item.unitPrice).toLocaleString('en-IN')} below list price (₹{item.listPrice.toLocaleString('en-IN')}){item.quantity > 1 ? ` × ${item.quantity}` : ''}. Saved as a discount.
+                      </p>
+                    )}
                     {!item.skuId && (
                       <div className="flex items-center gap-1.5 mt-1">
                         <span className="text-xs text-gray-400">Weight:</span>
