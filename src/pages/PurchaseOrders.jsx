@@ -269,6 +269,7 @@ export default function PurchaseOrders() {
             <div className="space-y-2">
               {listRows.map(row => {
                 const po = row.po;
+                const items = Array.isArray(po?.items) ? po.items : []; // used by the order detail below
                 const open = expandedId === row.key;
                 return (
                   <div key={row.key} className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
