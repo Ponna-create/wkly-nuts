@@ -77,6 +77,7 @@ const _realDbService = {
         location: vendor.location,
         email: vendor.email,
         ingredients: vendor.ingredients || [],
+        aliases: vendor.aliases || [],
         created_at: vendor.created_at,
       }));
 
@@ -136,7 +137,8 @@ const _realDbService = {
 
       const { data: rows, error } = await supabase.from('vendors').select('*');
       if (error) throw error;
-      let vendor = (rows || []).find(v => norm(v.name) === norm(clean));
+      // the same vendor can print another name on its bills (vendors.aliases, e.g. DRYFRUITS = Jagan Dry Fruits)
+      let vendor = (rows || []).find(v => norm(v.name) === norm(clean) || (v.aliases || []).some(al => norm(al) === norm(clean)));
       let created = false;
       if (!vendor) {
         const res = await this.createVendor({ name: clean, ingredients: [] });
