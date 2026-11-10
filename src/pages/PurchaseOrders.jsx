@@ -32,7 +32,7 @@ const TABS = [
 ];
 
 export default function PurchaseOrders() {
-  const { state, showToast } = useApp();
+  const { state, dispatch, showToast } = useApp();
   const [orders, setOrders] = useState([]);
   // Price Watch / Cost Impact read purchase orders AND every Quick Bill bill.
   const [stockItems, setStockItems] = useState([]);
@@ -76,7 +76,7 @@ export default function PurchaseOrders() {
     const fromPOs = orders.filter(o => o.status !== 'cancelled').map(o => ({
       key: `po-${o.id}`, kind: 'po', po: o, planned: !['received', 'partially_received'].includes(o.status),
       date: o.order_date, vendor: (o.vendor_name || '').trim(), total: parseFloat(o.total_amount) || 0,
-      ref: o.bill_number ? `Bill ${o.bill_number}` : o.po_number,
+      ref: o.bill_number ? `Bill ${o.bill_number}` : o.po_number, rating: o.quality_rating || null, qualityNote: o.quality_notes || '', recordId: o.id,
       lines: (Array.isArray(o.items) ? o.items : []).map(it => ({ name: it.ingredient_name || it.name, qty: parseFloat(it.quantity_kg || it.quantity) || 0, unit: it.unit || 'Kg', rate: parseFloat(it.unit_price || it.rate) || 0 })),
     }));
     const fromBills = (state?.expenses || []).filter(e => e.category === 'raw_materials' && !poExpenseIds.has(e.id)).map(e => ({
@@ -84,6 +84,7 @@ export default function PurchaseOrders() {
       date: e.bill_date || e.payment_date || String(e.created_at || '').slice(0, 10), vendor: (e.vendor_name || '').trim(),
       total: parseFloat(e.total_amount) || 0, ref: e.bill_number ? `Bill ${e.bill_number}` : 'No bill',
       lines: lotsByExpense[e.id] || [], notes: e.notes, expenseNo: e.expense_number, payMethod: e.payment_method,
+      rating: e.quality_rating || null, qualityNote: e.quality_note || '', recordId: e.id,
     }));
     return [...fromPOs, ...fromBills].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
   }, [orders, stockItems, state?.expenses]);
@@ -108,6 +109,18 @@ export default function PurchaseOrders() {
     if (!k) return m;
     m[k] = m[k] || { n: 0, amt: 0 }; m[k].n += 1; m[k].amt += r.total; return m;
   }, {})).sort((a, b) => a[0].localeCompare(b[0]));
+
+  // Quality of what a bill delivered, for Vendors → Compare prices
+  const saveQuality = async (row, rating, note) => {
+    const { data, error } = await dbService.setBillQuality(row.kind, row.recordId, rating, note);
+    if (error) { showToast(`Not saved: ${error.message}`, 'error'); return; }
+    if (row.kind === 'po') setOrders(prev => prev.map(o => o.id === row.recordId ? { ...o, ...data } : o));
+    else {
+      const old = (state?.expenses || []).find(e => e.id === row.recordId);
+      dispatch({ type: 'UPDATE_EXPENSE', payload: { ...old, ...data }, localOnly: true });
+    }
+    showToast('Quality saved', 'success');
+  };
 
   const handleDelete = async (id) => {
     if (!confirm('Delete this purchase order?')) return;
@@ -283,6 +296,7 @@ export default function PurchaseOrders() {
                           <span className="font-medium text-gray-900 text-sm">{row.vendor || 'Unknown vendor'}</span>
                           <span className="text-xs text-gray-500">{row.ref}</span>
                           {row.planned && <span className="px-2 py-0.5 text-xs rounded-full bg-blue-100 text-blue-700">Planned</span>}
+                          {row.rating && <span className="text-xs text-amber-600">{'★'.repeat(row.rating)}</span>}
                           {!row.planned && row.lines.length === 0 && <span className="px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-500">No item details</span>}
                         </div>
                         <div className="flex flex-wrap items-center gap-x-3 text-xs text-gray-400 mt-0.5">
@@ -326,6 +340,7 @@ export default function PurchaseOrders() {
                         {row.lines.length > 0 && Math.abs(row.lines.reduce((t, l) => t + l.qty * l.rate, 0) - row.total) > 1 && (
                           <p className="text-xs text-gray-500">Items not kept in stock (for example honey or Mexican Bites) make up the rest of the bill.</p>
                         )}
+                        {!row.planned && <QualityRater row={row} onSave={saveQuality} />}
                         {row.notes && <p className="text-xs text-gray-600 bg-white p-2 rounded">{row.notes}</p>}
                         <p className="text-[11px] text-gray-400">{row.expenseNo} · paid by {row.payMethod || '—'}. To change this bill, edit it in Expenses.</p>
                       </div>
@@ -377,6 +392,7 @@ export default function PurchaseOrders() {
                           </div>
                         </div>
 
+                        {!row.planned && <QualityRater row={row} onSave={saveQuality} />}
                         {po.notes && <p className="text-sm text-gray-600 bg-white p-2 rounded">{po.notes}</p>}
 
                         <div className="flex flex-wrap items-center gap-2 pt-2">
@@ -713,6 +729,29 @@ function SmartPOModal({ skus, vendors, onClose, onCreatePO }) {
 // ═══════════════════════════════════════════════
 //  PRICE WATCH TAB
 // ═══════════════════════════════════════════════
+function QualityRater({ row, onSave }) {
+  const [rating, setRating] = useState(row.rating || 0);
+  const [note, setNote] = useState(row.qualityNote || '');
+  const changed = rating !== (row.rating || 0) || note !== (row.qualityNote || '');
+  return (
+    <div className="bg-white rounded-lg p-3 border border-gray-200">
+      <p className="text-xs font-semibold text-gray-600 mb-1">Quality of this bill <span className="font-normal text-gray-400">(shown in Vendors → Compare prices)</span></p>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex">
+          {[1, 2, 3, 4, 5].map(n => (
+            <button key={n} type="button" onClick={() => setRating(rating === n ? 0 : n)} title={`${n} of 5`}
+              className={`text-2xl leading-none px-0.5 ${n <= rating ? 'text-amber-500' : 'text-gray-300'}`}>★</button>
+          ))}
+        </div>
+        <input value={note} onChange={e => setNote(e.target.value)} placeholder="Note: size, freshness, broken pieces…"
+          className="flex-1 min-w-[180px] border rounded-lg px-2 py-1.5 text-sm" />
+        <button type="button" disabled={!changed} onClick={() => onSave(row, rating || null, note.trim())}
+          className="px-3 py-1.5 bg-teal-600 text-white rounded-lg text-sm disabled:opacity-40">Save</button>
+      </div>
+    </div>
+  );
+}
+
 function PriceWatchTab({ orders }) {
   const [vendorFilter, setVendorFilter] = useState('all');
 

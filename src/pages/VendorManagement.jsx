@@ -4,6 +4,7 @@ import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
 import { LineChart, TrendingUp, TrendingDown, History } from 'lucide-react';
 import { formatDate } from '../utils/dateFormat';
+import VendorCompare from '../components/VendorCompare';
 
 const VolatilityBadge = ({ volatility, trend }) => {
   if (!volatility && volatility !== 0) return null;
@@ -119,6 +120,7 @@ export default function VendorManagement() {
   const { vendors } = state;
   const [showForm, setShowForm] = useState(false);
   const [editingVendor, setEditingVendor] = useState(null);
+  const [tab, setTab] = useState('compare');
   const [searchTerm, setSearchTerm] = useState('');
   const [editingIngredient, setEditingIngredient] = useState(null);
 
@@ -262,13 +264,8 @@ export default function VendorManagement() {
   };
 
   const handleSaveVendor = () => {
-    if (!formData.name || !formData.phone || !formData.location) {
-      showToast('Please fill in all required fields', 'error');
-      return;
-    }
-
-    if (formData.ingredients.length === 0) {
-      showToast('Please add at least one ingredient', 'error');
+    if (!formData.name.trim()) {
+      showToast('Enter the vendor name', 'error');
       return;
     }
 
@@ -303,8 +300,8 @@ export default function VendorManagement() {
   };
 
   const filteredVendors = vendors.filter((vendor) =>
-    vendor.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    vendor.location.toLowerCase().includes(searchTerm.toLowerCase())
+    String(vendor.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    String(vendor.location || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const calculateTotalSpend = (vendor) => {
@@ -326,18 +323,29 @@ export default function VendorManagement() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Vendor Management</h1>
-          <p className="text-gray-600 mt-1">Manage your ingredient suppliers</p>
+          <h1 className="text-2xl font-bold text-gray-900">Vendors</h1>
+          <p className="text-gray-600 mt-1">Compare prices and quality, and keep supplier details</p>
         </div>
-        <button
+        {tab === 'list' && <button
           onClick={() => setShowForm(true)}
           className="btn-primary flex items-center gap-2"
         >
           <Plus className="w-5 h-5" />
           Create Vendor
-        </button>
+        </button>}
       </div>
 
+      {/* Tabs */}
+      <div className="flex gap-1 bg-white rounded-xl p-1 shadow-sm border border-gray-100">
+        {[['compare', 'Compare prices'], ['list', 'Vendor list']].map(([k, l]) => (
+          <button key={k} onClick={() => setTab(k)}
+            className={`px-4 py-2.5 rounded-lg text-sm font-medium flex-1 transition-all ${tab === k ? 'bg-teal-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}>{l}</button>
+        ))}
+      </div>
+
+      {tab === 'compare' && <VendorCompare />}
+
+      {tab === 'list' && (<>
       {/* Search Bar */}
       {!showForm && vendors.length > 0 && (
         <div className="relative">
@@ -691,6 +699,7 @@ export default function VendorManagement() {
           )}
         </div>
       )}
+      </>)}
     </div>
   );
 }

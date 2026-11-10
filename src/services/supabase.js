@@ -275,6 +275,7 @@ const _realDbService = {
           location: data.location,
           email: data.email,
           ingredients: data.ingredients || [],
+          aliases: data.aliases || [],
         },
         error: null
       };
@@ -299,6 +300,34 @@ const _realDbService = {
       console.error('Error deleting vendor:', error);
       return { error };
     }
+  },
+
+  // Every price ever recorded for a vendor (price lists and typed market
+  // quotes), for Vendors → Compare prices.
+  async getAllPriceQuotes() {
+    if (!isSupabaseAvailable()) return { data: [], error: null };
+    const { data, error } = await supabase.from('price_history').select('*').order('created_at', { ascending: true });
+    return { data: data || [], error };
+  },
+
+  async addPriceQuote({ vendorId, itemName, price, unit = 'kg', date, note }) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    const { data, error } = await supabase.from('price_history').insert({
+      vendor_id: vendorId, ingredient_name: itemName, price_per_unit: price, unit,
+      changed_by: note ? `Quote: ${note}` : 'Quote', created_at: date ? `${date}T12:00:00+05:30` : new Date().toISOString(),
+    }).select().single();
+    return { data, error };
+  },
+
+  // Quality of what a raw material bill delivered (1-5 + note). kind: 'bill'
+  // (a Quick Bill expense) or 'po' (an old purchase order).
+  async setBillQuality(kind, id, rating, note) {
+    if (!isSupabaseAvailable()) return { data: null, error: new Error('Supabase not configured') };
+    const q = kind === 'po'
+      ? supabase.from('purchase_orders').update({ quality_rating: rating || null, quality_notes: note || null }).eq('id', id)
+      : supabase.from('expenses').update({ quality_rating: rating || null, quality_note: note || null }).eq('id', id);
+    const { data, error } = await q.select().single();
+    return { data, error };
   },
 
   // Price History & Volatility
