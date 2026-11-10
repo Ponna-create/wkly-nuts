@@ -257,12 +257,15 @@ export default function NewOrderForm({ onClose }) {
     }
 
     const itemTotal = newItem.quantity * newItem.unitPrice;
+    // the SKU's selling price at this moment; a lower price is a discount (Profit & Cost)
+    const list = parseFloat(getPricingForSku(newItem.skuId, newItem.packType)?.sellingPrice) || 0;
     setFormData(prev => ({
       ...prev,
       items: [
         ...prev.items,
         {
           ...newItem,
+          listPrice: list > 0 ? list : null,
           total: itemTotal,
         }
       ]

@@ -222,6 +222,36 @@ export default function ProfitReport() {
     .map(sk => ({ sk, cells: costMonths.map(mm => costAt(sk.id, monthEnd(mm))?.cost ?? null) }))
     .filter(row => row.cells.some(c => c != null)), [skus, costMonths, costAt]);
 
+  // Given below list price this month: order lines saved with the SKU's list price
+  // (orders from 10 Nov 2026 on) sold for less, plus any whole-order discount.
+  const disc = useMemo(() => {
+    const byCustomer = {}; const byProduct = {};
+    let lines = 0; let lineAmt = 0; let orderAmt = 0; let tracked = 0;
+    (state.salesOrders || []).filter(o => monthOf(o.order_date) === month && !['cancelled', 'returned'].includes(o.status) && !isPromotionalOrder(o))
+      .forEach(o => {
+        const cust = (o.customer_name || 'Customer').trim();
+        let given = 0;
+        (o.items || []).forEach(it => {
+          const list = num(it.listPrice ?? it.list_price);
+          if (list > 0) tracked += 1;
+          const unit = num(it.unitPrice ?? it.unit_price);
+          if (!(list > 0) || unit >= list) return;
+          const amt = (list - unit) * num(it.quantity || 1);
+          lines += 1; lineAmt += amt; given += amt;
+          const name = `${(it.skuName || it.sku_name || 'Item').trim()} (${it.packType || it.pack_type || 'weekly'})`;
+          byProduct[name] = byProduct[name] || { n: 0, amt: 0 }; byProduct[name].n += num(it.quantity || 1); byProduct[name].amt += amt;
+        });
+        const od = num(o.discount_amount);
+        if (od > 0) { orderAmt += od; given += od; }
+        if (given > 0) { byCustomer[cust] = byCustomer[cust] || { n: 0, amt: 0 }; byCustomer[cust].n += 1; byCustomer[cust].amt += given; }
+      });
+    return {
+      lines, lineAmt, orderAmt, total: lineAmt + orderAmt, tracked,
+      byCustomer: Object.entries(byCustomer).sort((a, b) => b[1].amt - a[1].amt),
+      byProduct: Object.entries(byProduct).sort((a, b) => b[1].amt - a[1].amt),
+    };
+  }, [state.salesOrders, month]);
+
   const noCost = r.products.filter(p => p.perBox == null).length;
   const catRows = Object.entries(r.byCat).sort((a, b) => b[1] - a[1]);
   const sourceRows = Object.entries(r.bySource).sort((a, b) => b[1].revenue - a[1].revenue);
@@ -255,6 +285,40 @@ export default function ProfitReport() {
         {P.otherCount > 0 && ` Sales without order: ${inr(P.otherEx)} without GST; their product cost (${inr(P.otherCogs)}) is estimated at the same share as this month's orders.`}
         {P.slipsSkipped > 0 && ` ${P.slipsSkipped} courier slip amount(s) over ₹500 were skipped as misreads.`}
       </p>
+
+      <Section title="Given below list price" hint="Orders where the price charged was lower than the product's selling price in SKUs (for example long-term customers on an old price), plus whole-order discounts. Tracked for orders from 10 Nov 2026.">
+        {disc.total <= 0 ? (
+          <p className="text-sm text-gray-400">{disc.tracked > 0 ? 'Every order this month was at list price.' : 'No orders with a saved list price in this month yet.'}</p>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-sm text-gray-700">
+              <b className="text-amber-700">{inr(disc.total)}</b> given this month
+              {disc.lineAmt > 0 && <> · {inr(disc.lineAmt)} on {disc.lines} line{disc.lines > 1 ? 's' : ''} sold below list</>}
+              {disc.orderAmt > 0 && <> · {inr(disc.orderAmt)} whole-order discounts</>}
+            </p>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div>
+                <p className="text-xs font-semibold text-gray-500 mb-1">By customer</p>
+                <table className="w-full text-sm"><tbody className="divide-y divide-gray-100">
+                  {disc.byCustomer.map(([c, v]) => (
+                    <tr key={c}><td className="py-1 pr-2">{c}<span className="text-[11px] text-gray-400"> · {v.n} order{v.n > 1 ? 's' : ''}</span></td><td className="py-1 text-right font-medium">{inr(v.amt)}</td></tr>
+                  ))}
+                </tbody></table>
+              </div>
+              {disc.byProduct.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 mb-1">By product</p>
+                  <table className="w-full text-sm"><tbody className="divide-y divide-gray-100">
+                    {disc.byProduct.map(([p, v]) => (
+                      <tr key={p}><td className="py-1 pr-2">{p}<span className="text-[11px] text-gray-400"> · {v.n} sold</span></td><td className="py-1 text-right font-medium">{inr(v.amt)}</td></tr>
+                    ))}
+                  </tbody></table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </Section>
 
       <Section title="Cost per box" hint="As at the end of this month. From a finished batch that recorded ingredients and packaging; otherwise the recipe at the bill prices of that time, plus packaging and process costs from SKU Management.">
         {Object.keys(r.costBySku).length === 0 ? (
