@@ -159,7 +159,7 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
   // amount before confirming (e.g. a partial return). Default CGST/SGST
   // split assumes Tamil Nadu (the overwhelming majority of orders); flip to
   // IGST manually for an interstate customer.
-  const openCreditNoteModal = () => {
+  const openCreditNoteModal = (reason = 'RTO / Customer Refused') => {
     const taxableValue = linkedInvoice?.subtotal || currentOrder.subtotal || 0;
     const gstAmount = linkedInvoice?.gstAmount || currentOrder.gst_amount || 0;
     const totalAmount = linkedInvoice?.totalAmount || currentOrder.total_amount || 0;
@@ -169,7 +169,7 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
       sgstAmount: (gstAmount / 2).toFixed(2),
       igstAmount: '0.00',
       totalAmount: totalAmount.toFixed(2),
-      reason: 'RTO / Customer Refused',
+      reason,
       notes: '',
       date: new Date().toISOString().split('T')[0],
     });
@@ -327,6 +327,7 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
     setEditForm({
       customer_name: currentOrder.customer_name || '',
       order_source: currentOrder.order_source || '',
+      influencer_id: currentOrder.influencer_id || '',
       shipping_address: currentOrder.shipping_address || '',
       courier_number: currentOrder.courier_number || '',
       shipping_charge: currentOrder.shipping_charge || 0,
@@ -406,11 +407,18 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
       amountPaid = totalAmount; // was paid in full (or recorded as paid with ₹0) — follows the corrected total
     }
     const balanceDue = Math.max(0, totalAmount - amountPaid);
+    const nowPromo = isPromotionalOrder({ order_source: editForm.order_source });
+    const wasPromo = isPromotionalOrder(currentOrder);
+    const promoMoney = nowPromo ? {
+      subtotal: 0, gst_amount: 0, shipping_charge: 0, total_amount: 0, amount_paid: 0, balance_due: 0,
+      payment_method: 'promotion', payment_status: 'received',
+    } : {};
 
     const updatedOrder = {
       ...currentOrder,
       customer_name: editForm.customer_name,
       order_source: editForm.order_source,
+      influencer_id: nowPromo ? (editForm.influencer_id || null) : (currentOrder.influencer_id || null),
       shipping_address: editForm.shipping_address,
       courier_number: editForm.courier_number || null,
       items: editForm.items,
@@ -420,6 +428,7 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
       total_amount: totalAmount,
       amount_paid: amountPaid,
       balance_due: balanceDue,
+      ...promoMoney,
     };
 
     const { error } = await dbService.updateSalesOrder(updatedOrder);
@@ -428,9 +437,14 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
     } else {
       setCurrentOrder(updatedOrder);
       dispatch({ type: 'UPDATE_SALES_ORDER', payload: updatedOrder });
-      showToast('Order updated', 'success');
+      showToast(nowPromo && !wasPromo ? 'Changed to a promotion (free send)' : 'Order updated', 'success');
       setEditingOrder(false);
       onUpdate();
+      // A sale turned into a free send after its GST invoice was made: the invoice
+      // is never edited or deleted; a credit note reverses it (GST-correct).
+      if (nowPromo && !wasPromo && currentOrder.invoice_id && creditNotes.length === 0) {
+        openCreditNoteModal('Entered by mistake: free promotion send, not a sale');
+      }
     }
     setSavingOrder(false);
   };
@@ -610,12 +624,23 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
                     <option value="meta_ad">Meta Ad</option>
                     <option value="zoho">Zoho</option>
                     <option value="amazon">Amazon</option>
-                    {editForm.order_source && !['whatsapp', 'instagram', 'website', 'walkin', 'meta_ad', 'zoho', 'amazon'].includes(editForm.order_source) && (
+                    <option value="promotion">🎁 Promotion / Collab (free send)</option>
+                    {editForm.order_source && !['whatsapp', 'instagram', 'website', 'walkin', 'meta_ad', 'zoho', 'amazon', 'promotion'].includes(editForm.order_source) && (
                       <option value={editForm.order_source}>{editForm.order_source}</option>
                     )}
                   </select>
                 ) : (
                   <p className="text-lg font-bold text-gray-900 capitalize">{currentOrder.order_source}</p>
+                )}
+                {editingOrder && isPromotionalOrder({ order_source: editForm.order_source }) && (
+                  <div className="mt-2 space-y-1">
+                    <select value={editForm.influencer_id || ''} onChange={(e) => setEditForm(prev => ({ ...prev, influencer_id: e.target.value }))}
+                      className="w-full px-2 py-1 border border-gray-300 rounded text-sm">
+                      <option value="">Who is it for? (optional)</option>
+                      {(state.marketingContacts || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                    <p className="text-[11px] text-amber-700">Saved as a free send: amount, GST, shipping and payment become ₹0. Its cost counts as marketing.{currentOrder.invoice_id ? ' This order has a GST invoice, so a credit note opens after saving to cancel it.' : ''}</p>
+                  </div>
                 )}
               </div>
             </div>
