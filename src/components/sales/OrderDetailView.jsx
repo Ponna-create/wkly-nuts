@@ -160,14 +160,23 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
   // split assumes Tamil Nadu (the overwhelming majority of orders); flip to
   // IGST manually for an interstate customer.
   const openCreditNoteModal = (reason = 'RTO / Customer Refused') => {
-    const taxableValue = linkedInvoice?.subtotal || currentOrder.subtotal || 0;
-    const gstAmount = linkedInvoice?.gstAmount || currentOrder.gst_amount || 0;
-    const totalAmount = linkedInvoice?.totalAmount || currentOrder.total_amount || 0;
+    // Reverse the whole invoice total, shipping included: the GST report taxes
+    // shipping at the same rate, so taxable value and GST are backed out of the
+    // total (prices are GST-inclusive). Outside Tamil Nadu it is IGST, using the
+    // same customer-state rule as the GST report.
+    const totalAmount = parseFloat(linkedInvoice?.totalAmount || currentOrder.total_amount || 0) || 0;
+    const rate = parseFloat(linkedInvoice?.gstRate ?? currentOrder.gst_rate ?? 5) || 5;
+    const taxableValue = totalAmount / (1 + rate / 100);
+    const gstAmount = totalAmount - taxableValue;
+    const cust = (state.customers || []).find(c => String(c.id) === String(currentOrder.customer_id));
+    const custState = String(cust?.state || cust?.city || '').toLowerCase();
+    const isTN = !custState || custState.includes('tamil') || custState.includes('chennai') || custState.includes('tn');
+    const half = Math.round((gstAmount / 2) * 100) / 100;
     setCnForm({
       taxableValue: taxableValue.toFixed(2),
-      cgstAmount: (gstAmount / 2).toFixed(2),
-      sgstAmount: (gstAmount / 2).toFixed(2),
-      igstAmount: '0.00',
+      cgstAmount: isTN ? half.toFixed(2) : '0.00',
+      sgstAmount: isTN ? (Math.round((gstAmount - half) * 100) / 100).toFixed(2) : '0.00',
+      igstAmount: isTN ? '0.00' : gstAmount.toFixed(2),
       totalAmount: totalAmount.toFixed(2),
       reason,
       notes: '',
