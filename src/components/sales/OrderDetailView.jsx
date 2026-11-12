@@ -449,10 +449,12 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
       showToast(nowPromo && !wasPromo ? 'Changed to a promotion (free send)' : 'Order updated', 'success');
       setEditingOrder(false);
       onUpdate();
-      // A sale turned into a free send after its GST invoice was made: the invoice
-      // is never edited or deleted; a credit note reverses it (GST-correct).
-      if (nowPromo && !wasPromo && currentOrder.invoice_id && creditNotes.length === 0) {
-        openCreditNoteModal('Entered by mistake: free promotion send, not a sale');
+      // A sale turned into a free send after its GST invoice was made. The owner's
+      // rule (auditor: promotions get no invoice, and the series must have no
+      // gaps) is to remove that invoice and close the numbering before the
+      // month is filed, which is done centrally, not with a credit note here.
+      if (nowPromo && !wasPromo && currentOrder.invoice_id) {
+        showToast(`This order still has GST invoice ${linkedInvoice?.invoiceNumber || linkedInvoice?.invoice_number || ''}. Tell Ponnambalam so it is removed before GST filing. Don't issue a credit note.`, 'error');
       }
     }
     setSavingOrder(false);
@@ -648,7 +650,7 @@ export default function OrderDetailView({ order, onClose, onUpdate }) {
                       <option value="">Who is it for? (optional)</option>
                       {(state.marketingContacts || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
-                    <p className="text-[11px] text-amber-700">Saved as a free send: amount, GST, shipping and payment become ₹0. Its cost counts as marketing.{currentOrder.invoice_id ? ' This order has a GST invoice, so a credit note opens after saving to cancel it.' : ''}</p>
+                    <p className="text-[11px] text-amber-700">Saved as a free send: amount, GST, shipping and payment become ₹0. Its cost counts as marketing.{currentOrder.invoice_id ? ' This order has a GST invoice: it must be removed before GST filing (no credit note).' : ''}</p>
                   </div>
                 )}
               </div>
