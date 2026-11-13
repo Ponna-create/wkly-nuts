@@ -1,5 +1,6 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
-import { X, Printer, CheckSquare, Square } from 'lucide-react';
+import { X, Printer, CheckSquare, Square, FileDown } from 'lucide-react';
+import { buildLabelPdf, shareOrSavePdf } from '../../utils/labelPdf';
 import { sanitizeHtml } from '../../utils/sanitize';
 import { dbService } from '../../services/supabase';
 import { useApp } from '../../context/AppContext';
@@ -56,12 +57,9 @@ export default function BulkLabelPrint({ orders, onClose, onPrinted, showToast }
 
   const selectedOrders = dateOrders.filter(o => selectedIds.has(o.id));
 
-  const handlePrint = async () => {
-    if (selectedOrders.length === 0) {
-      showToast('No orders selected to print', 'error');
-      return;
-    }
-
+  // After labels go out (printed or saved as a PDF): confirmed orders move to
+  // packing, each order is stamped as label-printed, and has its invoice.
+  const recordPrinted = async () => {
     // Printing the label moves a confirmed order into packing
     const toBump = selectedOrders.filter(o => o.status === 'confirmed');
     if (toBump.length > 0) {
@@ -101,6 +99,15 @@ export default function BulkLabelPrint({ orders, onClose, onPrinted, showToast }
       if (onPrinted) onPrinted();
     }
 
+  };
+
+  const handlePrint = async () => {
+    if (selectedOrders.length === 0) {
+      showToast('No orders selected to print', 'error');
+      return;
+    }
+    await recordPrinted();
+
     if (isA4) {
       // A4 uses the same compact multi-per-page grid (6 labels/sheet) as the
       // "A4 Sheet" button and Quick Order's A4 print — not the detailed
@@ -126,6 +133,32 @@ export default function BulkLabelPrint({ orders, onClose, onPrinted, showToast }
 
   const businessInfo = getBusinessInfo();
 
+  // 4x6 / 4x5 labels as a PDF of exactly that page size, shared to the
+  // printer's app (iPhone + Bluetooth printer) or downloaded.
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pendingPdf, setPendingPdf] = useState(null); // { doc, fileName } when the phone needs a second tap
+  const fileName = `WKLY-Labels-${labelSize}-${dateFrom}${dateTo && dateTo !== dateFrom ? '_to_' + dateTo : ''}.pdf`;
+  const handlePdf = async () => {
+    if (selectedOrders.length === 0) { showToast('No orders selected', 'error'); return; }
+    setPdfBusy(true);
+    try {
+      const doc = await buildLabelPdf({ orders: selectedOrders, settings, business: businessInfo, skus: state.skus, size: labelSize });
+      const res = await shareOrSavePdf(doc, fileName);
+      if (res === 'needs-tap') setPendingPdf({ doc, fileName });
+      else if (res !== 'cancelled') showToast(`${selectedOrders.length} label(s) ready as a ${LABEL_SIZES[labelSize].name} PDF`, 'success');
+      await recordPrinted();
+    } catch (e) {
+      console.error('Label PDF failed', e);
+      showToast('Could not make the label PDF', 'error');
+    }
+    setPdfBusy(false);
+  };
+  const sharePending = async () => {
+    if (!pendingPdf) return;
+    const res = await shareOrSavePdf(pendingPdf.doc, pendingPdf.fileName);
+    if (res !== 'needs-tap') setPendingPdf(null);
+  };
+
   // Render a single label (layout chosen in Settings -> Shipping Label)
   const renderLabel = (order) => (
     <div key={order.id} className="label-page" style={{ padding: labelPadding(labelSize) }}>
@@ -150,6 +183,11 @@ export default function BulkLabelPrint({ orders, onClose, onPrinted, showToast }
                 <button key={key} onClick={() => setLabelSize(key)} className={`px-3 py-1.5 text-sm font-medium ${labelSize === key ? 'bg-teal-600 text-white' : 'bg-white text-gray-600'}`}>{size.name}</button>
               ))}
             </div>
+            {!isA4 && (
+              <button onClick={handlePdf} disabled={selectedOrders.length === 0 || pdfBusy} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium disabled:opacity-50">
+                <FileDown className="w-4 h-4" /> {pdfBusy ? 'Making PDF…' : `PDF (${selectedOrders.length})`}
+              </button>
+            )}
             <button onClick={handlePrint} disabled={selectedOrders.length === 0} className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 font-medium disabled:opacity-50">
               <Printer className="w-4 h-4" /> Print All ({selectedOrders.length})
             </button>
@@ -158,10 +196,15 @@ export default function BulkLabelPrint({ orders, onClose, onPrinted, showToast }
         </div>
 
         <div className="p-4 space-y-4">
+          {pendingPdf && (
+            <button onClick={sharePending} className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-lg font-semibold">
+              <FileDown className="w-5 h-5" /> PDF ready: tap to send it to the printer app
+            </button>
+          )}
           {labelSize !== 'a4' && (
             <p className="text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-3 py-2">
-              In the print window: choose the <b>thermal printer</b> (not "Save as PDF"), Paper size <b>{labelSize === '4x5' ? '4×5 in (100×127 mm)' : '4×6 in (100×150 mm)'}</b>,
-              Margins <b>None</b>, Scale <b>Default / 100</b>, and untick <b>Headers and footers</b>. If the paper size is missing, set it once in the printer's Printing Preferences in Windows.
+              <b>Phone + Bluetooth printer:</b> tap <b>PDF</b>. It makes a PDF with pages exactly {labelSize === '4x5' ? '4×5' : '4×6'} inches and opens Share: pick the printer's app (or save to Files and open it there). In the printer app keep the size {labelSize === '4x5' ? '4×5 / 100×127 mm' : '4×6 / 100×150 mm'} and scale 100% (actual size), not "fit to page".
+              {' '}<b>Computer printer:</b> use Print All, paper {labelSize === '4x5' ? '4×5' : '4×6'}, margins None, headers and footers off.
             </p>
           )}
           {/* Date range filter — one calendar, pick a start and end day (e.g.
