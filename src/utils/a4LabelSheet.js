@@ -32,7 +32,16 @@ export function itemsSummary(order) {
     .join(', ') || 'No items';
 }
 
-function drawLabel(doc, x, y, w, h, order, business, L, qrDataUrl) {
+// Addresses pasted from WhatsApp often have one part per line ("ADDRESS",
+// name, building, street...). Joined into one flowing line so they wrap to
+// the box width instead of taking a line each.
+export const oneLineAddress = (text) => String(text || '')
+  .split(/\s*[\r\n]+\s*/).map(p => p.trim().replace(/,+$/, '')).filter(Boolean).join(', ')
+  .replace(/(\s*,\s*)+/g, ', ').replace(/^,\s*|,\s*$/g, '').trim();
+
+// s = scale for every font size and line step. Returns the bottom of the
+// drawn content, so the caller can shrink s until a label fits its box.
+function drawLabel(doc, x, y, w, h, order, business, L, qrDataUrl, s = 1) {
   const pad = 4.5;
   const innerW = w - 2 * pad;
 
@@ -42,32 +51,35 @@ function drawLabel(doc, x, y, w, h, order, business, L, qrDataUrl) {
   doc.rect(x, y, w, h);
   doc.setLineDashPattern([], 0);
 
-  let cy = y + pad + 3;
+  let cy = y + pad + 3 * s;
 
   const blockLabel = (text) => {
-    doc.setFont(undefined, 'bold'); doc.setFontSize(7); doc.setTextColor(85, 85, 85);
+    doc.setFont(undefined, 'bold'); doc.setFontSize(7 * s); doc.setTextColor(85, 85, 85);
     doc.text(text.toUpperCase(), x + pad, cy);
-    cy += 5.5;
+    cy += 5.5 * s;
   };
   const nameLine = (text, size) => {
+    size *= s;
     doc.setFont(undefined, 'bold'); doc.setFontSize(size); doc.setTextColor(17, 17, 17);
-    doc.text(text, x + pad, cy);
-    cy += size * 0.4 + 2.2;
+    const lines = doc.splitTextToSize(text, innerW);
+    lines.forEach(line => { doc.text(line, x + pad, cy); cy += size * 0.4 + 2.2 * s; });
   };
   const addrLines = (text, size) => {
+    size *= s;
     doc.setFont(undefined, 'normal'); doc.setFontSize(size); doc.setTextColor(34, 34, 34);
-    const lines = doc.splitTextToSize(text || '—', innerW);
-    lines.forEach(line => { doc.text(line, x + pad, cy); cy += size * 0.42 + 1.2; });
+    const lines = doc.splitTextToSize(oneLineAddress(text) || '—', innerW);
+    lines.forEach(line => { doc.text(line, x + pad, cy); cy += size * 0.42 + 1.2 * s; });
   };
   const phoneLine = (text, size) => {
+    size *= s;
     doc.setFont(undefined, 'bold'); doc.setFontSize(size); doc.setTextColor(17, 17, 17);
     doc.text('Ph: ' + (text || '—'), x + pad, cy);
-    cy += size * 0.42 + 1.8;
+    cy += size * 0.42 + 1.8 * s;
   };
   const divider = () => {
     doc.setDrawColor(187, 187, 187); doc.setLineWidth(0.15);
     doc.line(x + pad, cy, x + w - pad, cy);
-    cy += 2.6;
+    cy += 2.6 * s;
   };
 
   // TO
@@ -85,33 +97,48 @@ function drawLabel(doc, x, y, w, h, order, business, L, qrDataUrl) {
   phoneLine(business.phone, L.fromPhone);
 
   // Order block — pinned to a fixed offset from the top of the label so
-  // every label on the sheet lines up at the same height (a short address
-  // used to leave this floating much higher than a long one, making the
-  // whole sheet look unaligned). Only overridden — pushed further down —
-  // for an address long enough that the fixed position would actually
-  // collide with it; that's the rare case, not the common one.
-  const orderTop = Math.max(cy - 1.5, y + L.orderOffset);
-  doc.setDrawColor(0, 0, 0); doc.setLineWidth(0.3);
-  doc.line(x + pad, orderTop, x + w - pad, orderTop);
-
+  // every label on the sheet lines up at the same height. Pushed further
+  // down only when a long address would collide with it.
+  const orderTop = Math.max(cy - 1.5 * s, y + L.orderOffset);
   // QR sits in the bottom-right corner; the order text wraps beside it.
   const textW = qrDataUrl ? innerW - L.qr - 3 : innerW;
+  // the line stops short of the QR when a long address pushes it that low
+  const lineEnd = qrDataUrl && orderTop > y + h - pad - L.qr - 1 ? x + pad + textW : x + w - pad;
+  doc.setDrawColor(0, 0, 0); doc.setLineWidth(0.3);
+  doc.line(x + pad, orderTop, lineEnd, orderTop);
   if (qrDataUrl) doc.addImage(qrDataUrl, 'PNG', x + w - pad - L.qr, y + h - pad - L.qr, L.qr, L.qr);
 
-  doc.setFont(undefined, 'bold'); doc.setFontSize(L.orderSize); doc.setTextColor(17, 17, 17);
-  doc.text(order.order_number || '', x + pad, orderTop + 4.6);
+  const oSize = L.orderSize * s, iSize = L.itemSize * s;
+  doc.setFont(undefined, 'bold'); doc.setFontSize(oSize); doc.setTextColor(17, 17, 17);
+  doc.text(order.order_number || '', x + pad, orderTop + 4.6 * s);
 
-  doc.setFont(undefined, 'normal'); doc.setFontSize(L.itemSize); doc.setTextColor(34, 34, 34);
+  doc.setFont(undefined, 'normal'); doc.setFontSize(iSize); doc.setTextColor(34, 34, 34);
   const itemLines = doc.splitTextToSize(itemsSummary(order), textW);
-  let iy = orderTop + 4.6 + L.itemSize * 0.5;
-  itemLines.forEach(line => { doc.text(line, x + pad, iy); iy += L.itemSize * 0.43; });
+  let iy = orderTop + 4.6 * s + iSize * 0.5;
+  itemLines.forEach((line, i) => { doc.text(line, x + pad, iy); if (i < itemLines.length - 1) iy += iSize * 0.43; });
+  return iy + 1; // bottom of the last line of text
+}
+
+// The biggest scale (up to 1) at which this order's label stays inside its box.
+function fitScale(order, business, L, w, h, qr) {
+  let s = 1;
+  for (let tries = 0; tries < 20 && s > 0.55; tries++) {
+    const probe = new jsPDF({ unit: 'mm', format: 'a4' });
+    if (drawLabel(probe, 0, 0, w, h, order, business, L, qr, s) <= h - 3) break;
+    s *= 0.95;
+  }
+  return s;
 }
 
 // orders: array of sales_order rows (snake_case, as returned by dbService.getSalesOrders)
 export async function generateA4LabelSheet(orders) {
   if (!orders || orders.length === 0) return;
-  const business = getBusinessInfo();
-  const settings = getLabelSettings();
+  const doc = await buildA4LabelDoc(orders, getBusinessInfo(), getLabelSettings());
+  const dateStr = new Date().toISOString().split('T')[0];
+  doc.save(`WKLY-Nuts-Labels-A4-${dateStr}.pdf`);
+}
+
+export async function buildA4LabelDoc(orders, business, settings) {
   const L = a4LayoutFor(settings.a4PerSheet);
   const { w, h } = a4CellSize(L);
   const perPage = L.cols * L.rows;
@@ -127,9 +154,7 @@ export async function generateA4LabelSheet(orders) {
     const col = posInPage % L.cols;
     const x = MARGIN + col * (w + GAP);
     const y = MARGIN + row * (h + GAP);
-    drawLabel(doc, x, y, w, h, order, business, L, qrs[idx]);
+    drawLabel(doc, x, y, w, h, order, business, L, qrs[idx], fitScale(order, business, L, w, h, qrs[idx]));
   });
-
-  const dateStr = new Date().toISOString().split('T')[0];
-  doc.save(`WKLY-Nuts-Labels-A4-${dateStr}.pdf`);
+  return doc;
 }

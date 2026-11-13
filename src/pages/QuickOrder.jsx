@@ -1,12 +1,14 @@
 import React, { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Check, Minus, Plus, Trash2, Loader2, AlertTriangle, Printer, ScanLine } from 'lucide-react';
+import { ArrowLeft, Check, Minus, Plus, Trash2, Loader2, AlertTriangle, Printer, ScanLine, FileDown } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/supabase';
 import { parseOrderPaste } from '../utils/orderPasteParser';
 import { inferState, addressWithState } from '../utils/addressParser';
 import { generateA4LabelSheet } from '../utils/a4LabelSheet';
 import LabelPrinter from '../components/sales/LabelPrinter';
+import { buildLabelPdf, shareOrSavePdf } from '../utils/labelPdf';
+import { getBusinessInfo, getLabelSettings, setLabelSettings } from '../utils/settings';
 import { buildInvoiceDataFromOrder, isPromotionalOrder } from '../utils/invoiceFromOrder';
 import TrackingScanner from '../components/sales/TrackingScanner';
 
@@ -48,6 +50,16 @@ export default function QuickOrder() {
   const [justSaved, setJustSaved] = useState(null); // the last saved order, with phone attached for printing
   const [showLabelPrinter, setShowLabelPrinter] = useState(false);
   const [showTrackingScanner, setShowTrackingScanner] = useState(false);
+  // Label size, shared with Bulk Print (Settings > Shipping Label): A4 sheet
+  // for the normal printer, 4x6 / 4x5 as a PDF for the phone + Bluetooth printer.
+  const [labelSize, setLabelSizeState] = useState(() => getLabelSettings().size || 'a4');
+  const changeLabelSize = (size) => {
+    setLabelSizeState(size);
+    setLabelSettings({ ...getLabelSettings(), size });
+  };
+  const isThermal = labelSize === '4x6' || labelSize === '4x5';
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pendingPdf, setPendingPdf] = useState(null); // { doc, fileName } when the phone needs a second tap
   const [customItemMode, setCustomItemMode] = useState(false);
   const [customItemName, setCustomItemName] = useState('');
   const [customItemPrice, setCustomItemPrice] = useState('');
@@ -430,8 +442,37 @@ export default function QuickOrder() {
     ensureInvoiceForJustSaved();
   };
 
-  const handlePrintA4Sheet = () => {
+  // 4x6 / 4x5 labels as a PDF sized exactly to the sticker, shared to the printer app
+  const makeThermalPdf = async (orders, fileName) => {
+    setPdfBusy(true);
+    try {
+      const doc = await buildLabelPdf({ orders, settings: getLabelSettings(), business: getBusinessInfo(), skus, size: labelSize });
+      const res = await shareOrSavePdf(doc, fileName);
+      if (res === 'needs-tap') setPendingPdf({ doc, fileName });
+      else if (res !== 'cancelled') showToast(`${orders.length} label(s) ready as a ${labelSize} PDF`, 'success');
+      return true;
+    } catch (e) {
+      console.error('Label PDF failed', e);
+      showToast('Could not make the label PDF', 'error');
+      return false;
+    } finally {
+      setPdfBusy(false);
+    }
+  };
+  const sharePending = async () => {
+    if (!pendingPdf) return;
+    const res = await shareOrSavePdf(pendingPdf.doc, pendingPdf.fileName);
+    if (res !== 'needs-tap') setPendingPdf(null);
+  };
+
+  const handlePrintA4Sheet = async () => {
     if (!justSaved) return;
+    if (isThermal) {
+      if (!(await makeThermalPdf([justSaved], `Label-${justSaved.order_number}.pdf`))) return;
+      ensureInvoiceForJustSaved();
+      dbService.updateSalesOrder({ id: justSaved.id, label_printed_at: new Date().toISOString() }).catch(() => {});
+      return;
+    }
     generateA4LabelSheet([justSaved]);
     ensureInvoiceForJustSaved();
     showToast('Label downloaded — 1 label on an A4 sheet (5 slots left blank)', 'success');
@@ -453,8 +494,12 @@ export default function QuickOrder() {
       showToast("No orders for the selected date yet", 'error');
       return;
     }
-    generateA4LabelSheet(todaysOrders);
-    showToast(`Printed ${todaysOrders.length} label(s) for ${orderDate}`, 'success');
+    if (isThermal) {
+      if (!(await makeThermalPdf(todaysOrders, `WKLY-Labels-${labelSize}-${orderDate}.pdf`))) return;
+    } else {
+      generateA4LabelSheet(todaysOrders);
+      showToast(`Printed ${todaysOrders.length} label(s) for ${orderDate}`, 'success');
+    }
     await Promise.all(todaysOrders.map(o => dbService.updateSalesOrder({ id: o.id, label_printed_at: new Date().toISOString() })));
     // Same as single-order printing — make sure every one of these has an
     // invoice record for GST filing, not just the ones already printed individually.
@@ -496,6 +541,16 @@ export default function QuickOrder() {
         </Link>
         <h1 className="text-base font-bold text-gray-900">Quick Order</h1>
         <div className="flex items-center gap-1.5">
+          <select
+            value={labelSize}
+            onChange={e => changeLabelSize(e.target.value)}
+            className="text-xs font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-md px-1 py-1.5"
+            title="Label size: A4 sheet, or 4x6 / 4x5 thermal PDF for the phone printer"
+          >
+            <option value="a4">A4</option>
+            <option value="4x6">4×6</option>
+            <option value="4x5">4×5</option>
+          </select>
           <button
             onClick={() => setShowTrackingScanner(true)}
             className="flex items-center gap-1 text-xs font-semibold text-fuchsia-700 bg-fuchsia-50 border border-fuchsia-200 rounded-md px-2 py-1.5 whitespace-nowrap"
@@ -505,10 +560,11 @@ export default function QuickOrder() {
           </button>
           <button
             onClick={handlePrintTodaysLabels}
-            className="flex items-center gap-1 text-xs font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-md px-2 py-1.5 whitespace-nowrap"
-            title={`Print all orders dated ${orderDate} as A4 label sheets`}
+            disabled={pdfBusy}
+            className="flex items-center gap-1 text-xs font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-md px-2 py-1.5 whitespace-nowrap disabled:opacity-50"
+            title={isThermal ? `All orders dated ${orderDate} as one ${labelSize} label PDF` : `Print all orders dated ${orderDate} as A4 label sheets`}
           >
-            <Printer className="w-3.5 h-3.5" /> {orderDate === new Date().toISOString().split('T')[0] ? 'Today' : orderDate} ({todaysOrders.length})
+            {isThermal ? <FileDown className="w-3.5 h-3.5" /> : <Printer className="w-3.5 h-3.5" />} {orderDate === new Date().toISOString().split('T')[0] ? 'Today' : orderDate} ({todaysOrders.length})
           </button>
         </div>
       </div>
@@ -667,12 +723,20 @@ export default function QuickOrder() {
             <button onClick={handlePrintLabel} className="flex items-center gap-1.5 px-3 py-1 bg-white text-green-700 rounded-md text-xs font-semibold hover:bg-green-50">
               <Printer className="w-3.5 h-3.5" /> Print Label
             </button>
-            <button onClick={handlePrintA4Sheet} className="flex items-center gap-1.5 px-3 py-1 bg-white text-green-700 rounded-md text-xs font-semibold hover:bg-green-50">
-              <Printer className="w-3.5 h-3.5" /> A4 Sheet
+            <button onClick={handlePrintA4Sheet} disabled={pdfBusy} className="flex items-center gap-1.5 px-3 py-1 bg-white text-green-700 rounded-md text-xs font-semibold hover:bg-green-50 disabled:opacity-50">
+              {isThermal
+                ? <><FileDown className="w-3.5 h-3.5" /> {pdfBusy ? 'Making…' : `${labelSize === '4x5' ? '4×5' : '4×6'} PDF`}</>
+                : <><Printer className="w-3.5 h-3.5" /> A4 Sheet</>}
             </button>
             <button onClick={() => setJustSaved(null)} className="text-white/80 hover:text-white text-xs px-1.5">✕</button>
           </div>
         </div>
+      )}
+
+      {pendingPdf && (
+        <button onClick={sharePending} className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 text-white font-semibold">
+          <FileDown className="w-5 h-5" /> PDF ready: tap to send it to the printer app
+        </button>
       )}
 
       {showLabelPrinter && justSaved && (
