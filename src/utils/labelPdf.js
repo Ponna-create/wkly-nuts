@@ -2,6 +2,7 @@ import jsPDF from 'jspdf';
 import QRCode from 'qrcode';
 import { labelData } from '../components/sales/ShippingLabel';
 import { labelQrValue } from './labelPrint';
+import { oneLineAddress } from './a4LabelSheet';
 
 // Thermal labels as a real PDF whose pages are exactly the sticker size
 // (4x6 or 4x5 inches), one label per page. Made for printing from an iPhone:
@@ -74,7 +75,7 @@ function drawCompact(doc, { order, d, show, business, qr, W, H, s }) {
   let dy = y + 4;
   cap('DELIVER TO', x0 + pad, dy); dy += lineH(7.5 * s) + 1.4;
   dy += text(d.name, x0 + pad, dy + 1.5, 15, true, w - 2 * pad) + 1;
-  if (d.address) dy += text(d.address, x0 + pad, dy + 1, 11, false, w - 2 * pad) + 0.6;
+  if (d.address) dy += text(oneLineAddress(d.address), x0 + pad, dy + 1, 11, false, w - 2 * pad) + 0.6;
   if (d.pin) dy += text(`PIN ${d.pin}`, x0 + pad, dy + 2, 14, true) + 1;
   if (show.phone && d.phone) dy += text(`Ph: ${d.phone}`, x0 + pad, dy + 1.5, 12, true) + 0.5;
   y = dy + 1.5;
