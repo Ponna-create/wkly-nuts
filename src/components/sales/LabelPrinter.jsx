@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
-import { X, Printer, Edit3 } from 'lucide-react';
+import { X, Printer, Edit3, FileDown } from 'lucide-react';
+import { buildLabelPdf, shareOrSavePdf } from '../../utils/labelPdf';
 import { sanitizeHtml } from '../../utils/sanitize';
 import { getBusinessInfo, getLabelSettings, setLabelSettings } from '../../utils/settings';
 import { dbService } from '../../services/supabase';
@@ -43,6 +44,33 @@ export default function LabelPrinter({ order, onClose, onPrinted }) {
 
   const isA4 = labelSize === 'a4';
 
+  // 4x6 / 4x5: a PDF of exactly that page size for the phone + Bluetooth printer
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pendingPdf, setPendingPdf] = useState(null);
+  const handlePdf = async () => {
+    setPdfBusy(true);
+    try {
+      const doc = await buildLabelPdf({
+        orders: [order], settings, business: businessInfo, skus, size: labelSize,
+        overrides: { [order.id]: { weight, contents, shipDate, dimensions } },
+      });
+      const res = await shareOrSavePdf(doc, `Label-${order.order_number}.pdf`);
+      if (res === 'needs-tap') setPendingPdf(doc);
+      if (order.id) {
+        dbService.updateSalesOrder({ id: order.id, label_printed_at: new Date().toISOString() })
+          .then(() => { if (onPrinted) onPrinted(); }).catch(() => {});
+      }
+    } catch (e) {
+      console.error('Label PDF failed', e);
+    }
+    setPdfBusy(false);
+  };
+  const sharePending = async () => {
+    if (!pendingPdf) return;
+    const res = await shareOrSavePdf(pendingPdf, `Label-${order.order_number}.pdf`);
+    if (res !== 'needs-tap') setPendingPdf(null);
+  };
+
   const handlePrint = () => {
     // A4 uses the same cut-out sheet PDF as bulk and Quick Order printing.
     if (isA4) generateA4LabelSheet([order]);
@@ -75,6 +103,11 @@ export default function LabelPrinter({ order, onClose, onPrinted }) {
               <Edit3 className="w-4 h-4" />
               {editing ? 'Done' : 'Edit'}
             </button>
+            {!isA4 && (
+              <button onClick={pendingPdf ? sharePending : handlePdf} disabled={pdfBusy} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium disabled:opacity-50">
+                <FileDown className="w-4 h-4" /> {pdfBusy ? 'Making PDF…' : pendingPdf ? 'Tap to share PDF' : 'PDF'}
+              </button>
+            )}
             <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 font-medium">
               <Printer className="w-4 h-4" /> Print
             </button>
