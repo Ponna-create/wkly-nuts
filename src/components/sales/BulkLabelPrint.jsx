@@ -158,6 +158,12 @@ export default function BulkLabelPrint({ orders, onClose, onPrinted, showToast }
         </div>
 
         <div className="p-4 space-y-4">
+          {labelSize !== 'a4' && (
+            <p className="text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-3 py-2">
+              In the print window: choose the <b>thermal printer</b> (not "Save as PDF"), Paper size <b>{labelSize === '4x5' ? '4×5 in (100×127 mm)' : '4×6 in (100×150 mm)'}</b>,
+              Margins <b>None</b>, Scale <b>Default / 100</b>, and untick <b>Headers and footers</b>. If the paper size is missing, set it once in the printer's Printing Preferences in Windows.
+            </p>
+          )}
           {/* Date range filter — one calendar, pick a start and end day (e.g.
               a Sat+Sun+Monday backlog) instead of one day at a time */}
           <div className="flex items-center gap-3 bg-gray-50 p-3 rounded-lg">
