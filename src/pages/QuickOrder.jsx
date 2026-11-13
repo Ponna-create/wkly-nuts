@@ -257,6 +257,14 @@ export default function QuickOrder() {
       else if (items.length === 0) showToast('Add at least one item', 'error');
       return;
     }
+    // Every shipped order needs a real 6-digit PIN for the label and the
+    // courier; only walk-in (handed over in person) can go without one.
+    if (src !== 'walkin' && !/^\d{6}$/.test(fields.pincode.replace(/\s/g, ''))) {
+      showToast(fields.oldStylePostalCode
+        ? `"${fields.oldStylePostalCode}" is not a 6-digit pincode. Ask the customer for their pincode before saving.`
+        : 'Pincode is missing. Enter the 6-digit pincode before saving.', 'error');
+      return;
+    }
     if (!fields.state.trim()) {
       showToast('State is missing — enter it (or a valid pincode). It decides the GST on the invoice.', 'error');
       return;
